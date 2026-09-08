@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "subscription-oauth",
+  "name": "订阅 OAuth（ChatGPT / Claude / Grok）",
+  "version": "1.2.5",
+  "description": "用订阅账号（ChatGPT Plus/Pro、Claude Pro/Max、SuperGrok/X Premium+）登录 OpenAI/Anthropic/xAI，通过本地代理把订阅转成 OpenAI 兼容接口，支持模型目录与用量显示。",
+  "author": "Cyrene 社区",
+  "entry": "index.cjs",
+  "deps": ["secrets"]
+}

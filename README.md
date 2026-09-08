@@ -21,6 +21,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [scheduled-automation](./plugins/scheduled-automation) | 0.1.0 | 通过对话创建、管理自己的定时任务（创建后需在宿主界面确认启用） | —（示例，不分发） | Cyrene 示例 | — |
 | [local-asr-contract](./plugins/local-asr-contract) | 0.1.0 | 本地语音识别契约示例：演示语音输入租约的获取、提交与释放 | —（示例，不分发） | Cyrene 示例 | — |
 | [system-status](./plugins/system-status) | 0.1.0 | 查询本机系统状态：CPU、内存、磁盘、电池与开机时长，附带可视化状态面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/system-status-0.1.0/system-status-0.1.0.zip) | Playa | — |
+| [subscription-oauth](./plugins/subscription-oauth) | 1.2.5 | 用订阅账号登录 ChatGPT / Claude / Grok，经本地代理在 Cyrene 中直接使用订阅模型；支持多账号切换、模型目录与用量显示 | —（待维护者打包） | Cyrene 社区 | — |
 
 ---
 
