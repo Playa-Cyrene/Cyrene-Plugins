@@ -6,15 +6,23 @@
   <style>
     :root { --bg: #fff9fc; --card: #ffffff; --border: #f3e2ec; --accent: #e84a8a; --muted: #8d7c83; --ok: #2e9e6b; --bad: #d64545; }
     * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
     body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: #3b2a32; }
-    .titlebar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #fff; border-bottom: 1px solid var(--border); -webkit-app-region: drag; position: sticky; top: 0; z-index: 5; }
-    .titlebar h1 { font-size: 15px; margin: 0; flex: 1; font-weight: 600; }
-    .titlebar button { -webkit-app-region: no-drag; border: 0; background: transparent; font-size: 16px; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; color: var(--muted); }
+    .app-shell { height: 100vh; display: flex; flex-direction: column; }
+    .titlebar { height: 44px; flex: 0 0 44px; display: flex; align-items: center; gap: 9px; padding-left: 14px; background: #fff; border-bottom: 1px solid var(--border); -webkit-app-region: drag; user-select: none; position: relative; z-index: 5; }
+    .titlebar__icon { width: 22px; height: 22px; object-fit: contain; pointer-events: none; }
+    .titlebar h1 { font-size: 14px; margin: 0; flex: 1; font-weight: 600; }
+    .window-controls { align-self: stretch; display: flex; -webkit-app-region: no-drag; }
+    .titlebar button { border: 0; background: transparent; width: 46px; height: 43px; padding: 0; border-radius: 0; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
+    .titlebar button svg { width: 14px; height: 14px; pointer-events: none; }
     .titlebar button:hover { background: #fdeef5; }
     .titlebar button.close:hover { background: #ffe2e8; color: var(--bad); }
+    .titlebar button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+    .content-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
     .wrap { padding: 16px; display: grid; gap: 14px; max-width: 760px; margin: 0 auto; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
-    .card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+    .card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .card h2 > .hint { margin-left: auto; font-weight: 400; text-align: right; }
     .hint { font-size: 12px; color: var(--muted); }
     .provider { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
     .provider:last-child { margin-bottom: 0; }
@@ -23,7 +31,7 @@
     .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
     .dot.on { background: var(--ok); }
     .dot.off { background: var(--bad); }
-    .provider-meta { font-size: 12px; color: var(--muted); margin-top: 4px; min-height: 14px; }
+    .provider-meta { font-size: 12px; color: var(--muted); margin-top: 4px; min-height: 14px; overflow-wrap: anywhere; }
     .provider-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .accounts { display: grid; gap: 6px; margin-top: 10px; }
     .account { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; }
@@ -34,9 +42,9 @@
     button { border: 1px solid var(--border); background: #fff; color: #3b2a32; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     button:disabled { opacity: .5; cursor: default; }
-    .proxy-box { font-family: ui-monospace, monospace; font-size: 13px; background: #fdf3f8; border: 1px dashed var(--accent); border-radius: 10px; padding: 10px 12px; color: #a41f60; }
+    .proxy-box { font-family: ui-monospace, monospace; font-size: 13px; background: #fdf3f8; border: 1px dashed var(--accent); border-radius: 10px; padding: 10px 12px; color: #a41f60; overflow-wrap: anywhere; }
     .proxy-box .copy { background: transparent; border: 0; color: var(--accent); font-size: 12px; padding: 2px 6px; cursor: pointer; }
-    .usage-row { display: grid; grid-template-columns: 110px 1fr 90px; align-items: center; gap: 10px; font-size: 12px; margin: 8px 0; }
+    .usage-row { display: grid; grid-template-columns: minmax(86px, 110px) minmax(100px, 1fr) minmax(150px, auto); align-items: center; gap: 10px; font-size: 12px; margin: 8px 0; }
     .bar { height: 8px; background: #f4e4ec; border-radius: 4px; overflow: hidden; }
     .bar > span { display: block; height: 100%; background: linear-gradient(90deg, #f6a1c8, var(--accent)); border-radius: 4px; }
     .models { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -46,21 +54,36 @@
     .status-msg.ok { color: var(--ok); }
     .status-msg.err { color: var(--bad); }
     .busy { opacity: .55; pointer-events: none; }
+    @media (max-width: 620px) {
+      .wrap { padding: 12px; }
+      .card h2 > .hint { width: 100%; margin-left: 0; text-align: left; }
+      .usage-row { grid-template-columns: 1fr; gap: 5px; }
+      .provider-head { align-items: flex-start; }
+    }
   </style>
 </head>
 <body>
-  <div class="titlebar">
-    <h1>订阅 OAuth</h1>
-    <button id="btn-min" title="最小化">─</button>
-    <button id="btn-close" class="close" title="关闭">✕</button>
-  </div>
+  <div class="app-shell">
+    <header class="titlebar">
+      <img class="titlebar__icon" src="./icon.png" alt="" draggable="false" />
+      <h1>订阅 OAuth</h1>
+      <div class="window-controls">
+        <button id="btn-min" type="button" aria-label="最小化">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        </button>
+        <button id="btn-close" class="close" type="button" aria-label="关闭">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        </button>
+      </div>
+    </header>
 
-  <div class="wrap">
+    <main class="content-scroll">
+    <div class="wrap">
     <div class="card">
-      <h2>本地代理<span class="hint">Cyrene 用 OpenAI 兼容端点接入</span></h2>
+        <h2>本地代理<span class="hint">三种原生协议自动直通</span></h2>
       <div class="proxy-box" id="proxy-box">正在启动…</div>
       <div class="hint" style="margin-top:8px">
-        使用：Cyrene 设置 → 新建自定义端点 → baseUrl 填上面的地址（transport 选 OpenAI），模型名填订阅实际模型。启用本插件后无需 API Key。
+        登录后点「查看用量/模型」→「一键写入全部模型档案」即可；插件会自动选择 Responses、Messages 或 Chat Completions，无需手动创建端点，也无需 API Key。
       </div>
     </div>
 
@@ -75,7 +98,9 @@
       <div id="detail"></div>
     </div>
 
-    <div class="status-msg" id="status-msg"></div>
+      <div class="status-msg" id="status-msg"></div>
+    </div>
+    </main>
   </div>
 
   <script>
@@ -96,6 +121,18 @@
     function formatTime(ts) {
       if (!ts) return "";
       return new Date(ts).toLocaleString();
+    }
+
+    function displayAccountLabel(value) {
+      const text = typeof value === "string" ? value.trim() : "";
+      if (!text) return "已登录账号";
+      const email = text.match(/^([^@]+)@(.+)$/);
+      if (email) {
+        const local = email[1];
+        return `${local.slice(0, 1)}***@${email[2]}`;
+      }
+      if (text.length > 12) return `${text.slice(0, 4)}…${text.slice(-4)}`;
+      return text;
     }
 
     async function refreshStatus() {
@@ -162,7 +199,7 @@
         const meta = document.createElement("div");
         meta.className = "provider-meta";
         meta.textContent = info.connected
-          ? `当前账号：${active ? active.label : (info.accountLabel || "已登录")} · 过期 ${formatTime(info.expiresAt)}`
+          ? `当前账号：${displayAccountLabel(active ? active.label : info.accountLabel)} · 过期 ${formatTime(info.expiresAt)}`
           : "未登录";
 
         box.append(head, meta);
@@ -181,9 +218,9 @@
 
             const label = document.createElement("span");
             label.className = "account__label";
-            const idHint = acc.accountId ? ` · ${String(acc.accountId).slice(0, 8)}` : "";
-            label.textContent = (acc.label || acc.id) + idHint;
-            label.title = `账号 ID: ${acc.id}${acc.accountId ? `\n平台 accountId: ${acc.accountId}` : "\n平台 accountId: 缺失"}${acc.expiresAt ? `\n过期: ${formatTime(acc.expiresAt)}` : ""}`;
+            const safeLabel = displayAccountLabel(acc.label || acc.id);
+            label.textContent = safeLabel;
+            label.setAttribute("aria-label", safeLabel);
 
             row.append(radio, label);
 
@@ -191,10 +228,10 @@
               const btnUse = document.createElement("button");
               btnUse.textContent = "切换";
               btnUse.onclick = async () => {
-                setStatus(`正在切换到 ${acc.label || acc.id}…`);
+                setStatus(`正在切换到 ${safeLabel}…`);
                 const res = await ipcRenderer.invoke("plugin:subscription-oauth:switchAccount", id, acc.id);
                 if (res && res.ok) {
-                  setStatus(`已切换到 ${acc.label || acc.id}`, "ok");
+                  setStatus(`已切换到 ${safeLabel}`, "ok");
                   await refreshStatus();
                   if (activeProvider === id) await selectProvider(id);
                 } else {
@@ -208,7 +245,7 @@
             btnDel.onclick = async () => {
               const res = await ipcRenderer.invoke("plugin:subscription-oauth:removeAccount", id, acc.id);
               if (res && res.ok) {
-                setStatus(`已删除账号 ${acc.label || acc.id}`, "ok");
+                setStatus(`已删除账号 ${safeLabel}`, "ok");
                 await refreshStatus();
                 if (activeProvider === id) await selectProvider(id);
               } else {

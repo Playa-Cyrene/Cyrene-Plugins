@@ -5,14 +5,13 @@
  *
  * 能力：
  *  - 三家订阅（ChatGPT / Claude / Grok）的 OAuth 登录（PKCE + 本地回调）
- *  - 本地代理：127.0.0.1:<port>/v1/chat/completions（OpenAI 兼容），
- *    按模型名路由到三家后端并注入订阅 token
+ *  - 本地代理：按 Responses / Messages / Chat Completions 三种原生协议直通，
+ *    并为对应上游注入订阅 token
  *  - 模型目录 / 用量拉取，弹窗内展示
  *  - token 过期自动 refresh；secrets 加密存储（host 可用时）
  *
- * 使用：在 Cyrene 设置里新建自定义端点档案，baseUrl 填
- * http://127.0.0.1:<port>/v1，transport 选 OpenAI，模型名填
- * 订阅实际模型（gpt-* / claude-* / grok-*）。
+ * 使用：登录后从插件窗口把目录一键写入模型档案；插件会为三家分别选择
+ * 正确的 transport 与本地代理端点。
  */
 const path = require("node:path");
 
@@ -23,6 +22,7 @@ const { fetchCatalog } = require("./lib/catalog.cjs");
 const { fetchUsage } = require("./lib/usage.cjs");
 const { syncProfilesIntoModelSettings, removeProfilesForProvider } = require("./lib/profiles.cjs");
 const { PROVIDERS } = require("./lib/vendor-http.cjs");
+const { sanitizeLogArg } = require("./lib/privacy.cjs");
 
 const PLUGIN_ID = "subscription-oauth";
 
@@ -33,7 +33,7 @@ let ctxRef = null;
 
 function log(...args) {
   try {
-    (ctxRef && ctxRef.log ? ctxRef.log : console.log)(...args);
+    (ctxRef && ctxRef.log ? ctxRef.log : console.log)(...args.map(sanitizeLogArg));
   } catch {
     // 日志失败不影响插件
   }
@@ -71,9 +71,9 @@ async function resolveTokens(providerId) {
     };
     const updated = await tokenStore.updateAccount(providerId, accountId, merged);
     if (!updated) {
-      log(`[oauth:${providerId}] 刷新后找不到账号 ${accountId}，跳过回写`);
+      log(`[oauth:${providerId}] token 刷新完成，但原账号记录不存在，跳过回写`);
     }
-    log(`[oauth:${providerId}] token 已刷新并回写账号 ${String(accountId).slice(0, 8)}…`);
+    log(`[oauth:${providerId}] token 已刷新并回写当前账号`);
     return merged;
   } catch (error) {
     log(`[oauth:${providerId}] refresh 失败，返回旧 token 兜底: ${error.message}`);
@@ -118,12 +118,11 @@ async function usagePayload(providerId) {
   const tokens = await resolveTokens(providerId);
   if (!tokens) return { ok: false, error: "尚未登录该订阅" };
   const result = await fetchUsage(providerId, tokens);
-  const accountTag = `${tokens.accountLabel || "?"}${tokens.accountId ? " / " + tokens.accountId.slice(0, 8) : ""}`;
   if (!result.ok) {
-    log(`[usage] ${providerId} 查询失败（账号 ${accountTag}）: ${result.error}`);
+    log(`[usage] ${providerId} 查询失败: ${result.error}`);
   } else {
     const windowCount = result.usage && Array.isArray(result.usage.windows) ? result.usage.windows.length : 0;
-    log(`[usage] ${providerId} 查询成功（账号 ${accountTag}）: 计划=${result.usage.plan || "?"} 窗口数=${windowCount}`);
+    log(`[usage] ${providerId} 查询成功: 计划=${result.usage.plan || "?"} 窗口数=${windowCount}`);
   }
   return result;
 }
@@ -175,8 +174,10 @@ async function openWindow() {
     height: 640,
     minWidth: 480,
     minHeight: 480,
+    frame: false,
     autoHideMenuBar: true,
     backgroundColor: "#fff9fc",
+    icon: path.join(__dirname, "icon.png"),
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -314,10 +315,12 @@ const plugin = {
         const payload = await statusPayload();
         const lines = [];
         for (const [id, info] of Object.entries(payload.providers)) {
-          lines.push(`${info.connected ? "已登录" : "未登录"} · ${PROVIDERS[id].displayName}${info.accountLabel ? `（${info.accountLabel}）` : ""}`);
+          const accountCount = Array.isArray(info.accounts) ? info.accounts.length : 0;
+          const countLabel = info.connected && accountCount > 1 ? `（${accountCount} 个账号）` : "";
+          lines.push(`${info.connected ? "已登录" : "未登录"} · ${PROVIDERS[id].displayName}${countLabel}`);
         }
         lines.push(`本地代理: http://127.0.0.1:${payload.port}/v1`);
-        lines.push(`存储: ${payload.encrypted ? "加密（系统密钥）" : "明文（secrets 不可用）"}`);
+        lines.push(`存储: ${payload.encrypted ? "加密（系统密钥）" : "宿主 secrets 不可用（不会写入新凭据）"}`);
         return lines.join("\n");
       },
     });

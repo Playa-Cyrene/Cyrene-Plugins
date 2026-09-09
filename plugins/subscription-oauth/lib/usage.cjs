@@ -4,6 +4,7 @@
  * 三家订阅的用量查询与解析。移植自 Cyrene 内置 usage.ts（备份提交 803d3eca）。
  */
 const { authHeaders, PROVIDERS, decodeJwtPayload } = require("./vendor-http.cjs");
+const { sanitizeDiagnosticPayload } = require("./privacy.cjs");
 
 function asRecord(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
@@ -213,7 +214,7 @@ async function fetchJson(url, headers) {
   return JSON.parse(text);
 }
 
-/** 把用量原始响应写到 plugin-data 下（诊断用，不含凭证；只保留字段结构）。 */
+/** 把用量响应的脱敏副本写到 plugin-data 下（诊断用，不含凭据或账号标识）。 */
 function dumpRawUsage(providerId, json) {
   try {
     const fs = require("node:fs");
@@ -223,7 +224,7 @@ function dumpRawUsage(providerId, json) {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, `usage-${providerId}-raw.json`),
-      JSON.stringify({ fetchedAt: new Date().toISOString(), payload: json }, null, 2),
+      JSON.stringify({ fetchedAt: new Date().toISOString(), payload: sanitizeDiagnosticPayload(json) }, null, 2),
       "utf8",
     );
   } catch {

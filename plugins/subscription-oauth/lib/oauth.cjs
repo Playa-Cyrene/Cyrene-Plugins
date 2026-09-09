@@ -7,6 +7,7 @@
 const http = require("node:http");
 const { createHash, randomBytes } = require("node:crypto");
 const { PROVIDERS, decodeJwtPayload } = require("./vendor-http.cjs");
+const { sanitizeLogText } = require("./privacy.cjs");
 
 const OAUTH_SPECS = {
   chatgpt: {
@@ -272,7 +273,7 @@ async function requestTokens(spec, providerId, params) {
   const response = await fetch(spec.tokenUrl, { method: "POST", headers, body });
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`${PROVIDERS[providerId].displayName} token 请求失败：HTTP ${response.status} ${text.slice(0, 240)}`);
+    throw new Error(`${PROVIDERS[providerId].displayName} token 请求失败：HTTP ${response.status} ${sanitizeLogText(text.slice(0, 240))}`);
   }
   let json;
   try {

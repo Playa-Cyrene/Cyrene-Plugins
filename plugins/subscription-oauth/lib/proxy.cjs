@@ -3,11 +3,10 @@
 /**
  * 订阅 OAuth 本地代理服务器。
  *
- * 对外只暴露 OpenAI 兼容的 `POST /v1/chat/completions`，Cyrene 里用
- * openai transport 把 baseUrl 指向本服务即可；内部按模型名路由：
- *  - gpt-* / o1-* → ChatGPT Codex（Responses API）
- *  - claude-*    → Claude Code（Messages API）
- *  - grok-*      → xAI（原生 OpenAI 兼容）
+ * 对外按订阅原生协议暴露三个端点，由 Cyrene 档案选择对应 transport：
+ *  - /v1/responses        → ChatGPT Codex（Responses API）
+ *  - /v1/messages         → Claude Code（Messages API）
+ *  - /v1/chat/completions → xAI（OpenAI Chat Completions）
  * token 由调用方（index.cjs）通过 getTokens 闭包注入，过期自动刷新。
  */
 const http = require("node:http");
