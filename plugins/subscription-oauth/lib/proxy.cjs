@@ -44,6 +44,80 @@ function readBody(req) {
   });
 }
 
+/**
+ * ChatGPT Codex 的 Responses SSE 在 `response.output_item.done` 中给出完整
+ * output item，但部分版本的终态 `response.completed.response.output` 为空。
+ * Cyrene 依赖终态 output 保存 function_call 供工具续轮回放；这里边收集边补齐，
+ * 不缓存整条响应，也不改动正常（终态 output 非空）的事件。
+ */
+function createResponsesSseRepair() {
+  const outputItems = new Map();
+  let pending = "";
+
+  function transformFrame(frame) {
+    const lineBreak = frame.includes("\r\n") ? "\r\n" : "\n";
+    const lines = frame.split(/\r?\n/);
+    const dataIndexes = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index].startsWith("data:")) dataIndexes.push(index);
+    }
+    // Responses 事件均为单行 JSON。遇到扩展 SSE 形状时原样透传。
+    if (dataIndexes.length !== 1) return frame;
+    const dataIndex = dataIndexes[0];
+    const raw = lines[dataIndex].slice(5).trimStart();
+    if (!raw || raw === "[DONE]") return frame;
+
+    let event;
+    try {
+      event = JSON.parse(raw);
+    } catch {
+      return frame;
+    }
+
+    if (event && event.type === "response.output_item.done" && event.item && typeof event.item === "object") {
+      const index = Number.isInteger(event.output_index) ? event.output_index : outputItems.size;
+      outputItems.set(index, event.item);
+    }
+
+    if (event && (event.type === "response.completed" || event.type === "response.incomplete")) {
+      const response = event.response;
+      const collected = [...outputItems.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map((entry) => entry[1]);
+      if (response && typeof response === "object"
+        && (!Array.isArray(response.output) || response.output.length === 0)
+        && collected.length > 0) {
+        response.output = collected;
+        lines[dataIndex] = `data: ${JSON.stringify(event)}`;
+        return lines.join(lineBreak);
+      }
+    }
+
+    return frame;
+  }
+
+  return {
+    push(text) {
+      pending += text;
+      let output = "";
+      for (;;) {
+        const separator = /\r?\n\r?\n/.exec(pending);
+        if (!separator) break;
+        const frame = pending.slice(0, separator.index);
+        output += transformFrame(frame) + separator[0];
+        pending = pending.slice(separator.index + separator[0].length);
+      }
+      return output;
+    },
+    flush() {
+      if (!pending) return "";
+      const output = transformFrame(pending);
+      pending = "";
+      return output;
+    },
+  };
+}
+
 /** 从 token 的 JWT 解析 tier，用于用量展示降级。 */
 function tierOf(tokens) {
   const claims = decodeJwtPayload(tokens.accessToken || tokens.idToken);
@@ -69,8 +143,8 @@ function createProxy({ getTokens, log = () => {}, fetchUsage, fetchCatalog }) {
 
   /**
  * 协议端点 → 上游路由表。
- * 关键：每种订阅用其**原生协议**直通，代理只注入认证头并原样转发，
- * 不做请求/响应格式转换——Cyrene 的对应 transport 本来就发对格式
+ * 关键：每种订阅用其**原生协议**直通，代理注入认证头并只做必要的
+ * 上游兼容性校正，不做跨协议转换——Cyrene 的对应 transport 本来就发对格式
  * （Responses transport 恒定发 store:false + instructions，见
  *  src/main/orchestrator/vendors/responses-adapter.ts 头注释）。
  */
@@ -155,7 +229,8 @@ async function handleChatCompletions(req, res, endpoint) {
     });
 
     if (body.stream) {
-      // SSE 透传：把上游字节流原样转发（真流式，不缓存全量）
+      // SSE 真流式转发；ChatGPT 只缓存已完成 output item，并在空终态中补回，
+      // 让 Cyrene 能保存 function_call 后继续发送工具结果。
       res.writeHead(upstream.status, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache",
@@ -169,16 +244,28 @@ async function handleChatCompletions(req, res, endpoint) {
       }
       if (upstream.body) {
         const reader = upstream.body.getReader();
+        const repair = providerId === "chatgpt" ? createResponsesSseRepair() : null;
+        const decoder = repair ? new TextDecoder() : null;
         const pump = async () => {
           try {
             for (;;) {
               const { done, value } = await reader.read();
               if (done) break;
-              if (value) res.write(Buffer.from(value));
+              if (!value) continue;
+              if (repair && decoder) {
+                const repaired = repair.push(decoder.decode(value, { stream: true }));
+                if (repaired) res.write(repaired);
+              } else {
+                res.write(Buffer.from(value));
+              }
             }
           } catch {
             // 客户端断开或上游中断：直接结束
           } finally {
+            if (repair && decoder) {
+              const repaired = repair.push(decoder.decode()) + repair.flush();
+              if (repaired) res.write(repaired);
+            }
             res.end();
           }
         };
@@ -281,4 +368,4 @@ async function handleChatCompletions(req, res, endpoint) {
   };
 }
 
-module.exports = { createProxy, DEFAULT_PORT, tierOf };
+module.exports = { createProxy, createResponsesSseRepair, DEFAULT_PORT, tierOf };

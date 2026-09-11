@@ -2,7 +2,7 @@
   "apiVersion": 1,
   "id": "subscription-oauth",
   "name": "订阅 OAuth（ChatGPT / Claude / Grok）",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "description": "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通，支持多账号切换、模型目录与用量显示。",
   "author": "1971687396",
   "entry": "index.cjs",
