@@ -138,6 +138,37 @@
         <p class="hint" style="margin:6px 0 0">开启后会额外加载 QwenEmotion 情感模型，占用更多内存；关闭可省下这部分。</p>
       </div>
 
+      <div class="field">
+        <label for="github-mirror">GitHub 镜像前缀（仓库 / uv / CPython）</label>
+        <input type="text" id="github-mirror" placeholder="留空 = 只用官方" />
+        <p class="hint" style="margin:6px 0 0">
+          仅在官方源下载失败后回退；多个用逗号分隔。仓库与 uv 下载下来会被执行，请只填你信得过的代理。
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="pypi-mirror">PyPI 镜像（uv 装依赖）</label>
+        <input type="text" id="pypi-mirror" placeholder="留空 = 只用官方 PyPI" />
+        <p class="hint" style="margin:6px 0 0">
+          同样只在官方源失败后回退。注意 torch 的 CUDA wheel 来自 download.pytorch.org，不受此项影响。
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="model-source">模型来源</label>
+        <select id="model-source">
+          <option value="auto">自动（推荐，按网络探测）</option>
+          <option value="modelscope">ModelScope / hf-mirror（国内）</option>
+          <option value="official">官方 HuggingFace</option>
+        </select>
+        <p class="hint" style="margin:6px 0 0">
+          先按这里选的来源下载，失败会自动换另一条路（官方 ⇄ ModelScope / hf-mirror）再试一次；自动 = 先按网络探测。
+        </p>
+        <p class="hint" style="margin:6px 0 0">
+          以上镜像与来源改完记得点「保存配置」——「一键配置并启动」用的也是已保存的配置。
+        </p>
+      </div>
+
       <div class="actions">
         <button type="button" class="primary" id="save">保存配置</button>
       </div>
@@ -167,6 +198,9 @@
       el("engine").value = cfg.engineVersion;
       el("auto-start").checked = cfg.autoStart !== false;
       el("emotion").checked = cfg.emotionGuidance === true;
+      el("github-mirror").value = cfg.githubMirror || "";
+      el("pypi-mirror").value = cfg.pypiMirror || "";
+      el("model-source").value = cfg.modelSource || "auto";
     }
 
     function renderStatus(state) {
@@ -221,6 +255,9 @@
         engineVersion: el("engine").value,
         autoStart: el("auto-start").checked,
         emotionGuidance: el("emotion").checked,
+        githubMirror: el("github-mirror").value.trim(),
+        pypiMirror: el("pypi-mirror").value.trim(),
+        modelSource: el("model-source").value,
       };
     }
 
@@ -310,8 +347,11 @@
       showMsg("");
       el("stop").disabled = true;
       try {
-        renderStatus(await invoke("stop"));
-        showMsg("服务已停止", true);
+        const state = await invoke("stop");
+        renderStatus(state);
+        // 进程没真死时如实提示：killChild 的失败信息会经 lastError 传上来，别谎报「已停止」。
+        if (state.lastError) showMsg("停止失败：" + state.lastError);
+        else showMsg("服务已停止", true);
       } catch (err) {
         showMsg("停止失败：" + (err && err.message ? err.message : err));
       }

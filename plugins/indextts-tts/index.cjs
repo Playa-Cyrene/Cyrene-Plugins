@@ -41,6 +41,23 @@ const STABLE_RESET_MS = 60000;
  */
 const HEALTH_NONCE = "cyrene-" + process.pid + "-" + Date.now().toString(36);
 
+// ---------------------------------------------------------------------------
+// 下载镜像：**只在官方源失败后启用**（fallback 语义），用户可在「高级选项 → 镜像」里
+// 改成自己的地址或清空（清空 = 只用官方）。
+//
+// GitHub 代理是「前缀式」的：把原始 URL 直接拼在镜像前缀后面。
+// 注意仓库 zip 与 uv 二进制下载下来是要执行的，走第三方代理等于信任它不塞私货；
+// 这一点在 README 的「网络访问」里如实披露，UI 上也给了提示。
+// ---------------------------------------------------------------------------
+const DEFAULT_GITHUB_MIRROR_TEXT = "https://gh-proxy.com/, https://ghfast.top/";
+const DEFAULT_PYPI_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple";
+/** 上游 network_detection / model_download 自己硬编码的回退点，强制走镜像时显式设置。 */
+const HF_MIRROR_ENDPOINT = "https://hf-mirror.com";
+/** uv 自己下载 CPython 的地址（GitHub Releases）；镜像前缀拼在它前面。 */
+const PYTHON_BUILD_STANDALONE_URL = "https://github.com/astral-sh/python-build-standalone/releases/download";
+/** 模型来源：auto = 交给上游探测（不设 USE_MODELSCOPE）。 */
+const MODEL_SOURCES = ["auto", "modelscope", "official"];
+
 const DEFAULT_CONFIG = {
   modelDir: "",
   pythonPath: "",
@@ -48,6 +65,9 @@ const DEFAULT_CONFIG = {
   engineVersion: "v2",
   autoStart: true,
   emotionGuidance: false,
+  githubMirror: DEFAULT_GITHUB_MIRROR_TEXT,
+  pypiMirror: DEFAULT_PYPI_MIRROR,
+  modelSource: "auto",
 };
 
 // ---------------------------------------------------------------------------
@@ -102,6 +122,10 @@ function normalizeConfig(raw) {
     engineVersion: c.engineVersion === "v2_5" ? "v2_5" : "v2",
     autoStart: c.autoStart !== false,
     emotionGuidance: c.emotionGuidance === true,
+    // 镜像字段的语义：没存过 → 给默认镜像；存过空串 → 保持空（只用官方）。
+    githubMirror: typeof c.githubMirror === "string" ? c.githubMirror.trim() : DEFAULT_GITHUB_MIRROR_TEXT,
+    pypiMirror: typeof c.pypiMirror === "string" ? c.pypiMirror.trim() : DEFAULT_PYPI_MIRROR,
+    modelSource: MODEL_SOURCES.includes(c.modelSource) ? c.modelSource : "auto",
   };
 }
 
@@ -137,7 +161,7 @@ function saveInstallDir(dir) {
   } catch { /* ignore */ }
 }
 
-/** 配置指纹：模型目录 / Python 路径 / 端口 / 引擎版本 / 情感引导任一变化都需要重启服务。 */
+/** 配置指纹：模型目录 / Python 路径 / 端口 / 引擎版本 / 情感引导 / 模型来源任一变化都需要重启服务。 */
 function fingerprint(cfg) {
   return JSON.stringify({
     modelDir: cfg.modelDir,
@@ -145,6 +169,9 @@ function fingerprint(cfg) {
     port: cfg.port,
     engineVersion: cfg.engineVersion,
     emotionGuidance: cfg.emotionGuidance,
+    // 模型来源会变成服务进程的 USE_MODELSCOPE 环境变量，改了必须重启才生效；
+    // 镜像前缀只用于安装阶段，故意不进指纹（改它不该重启已在跑的服务）。
+    modelSource: cfg.modelSource,
   });
 }
 
@@ -371,6 +398,89 @@ function downloadFile(url, dest, onProgress, signal) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// 镜像回退（fallback）：先官方，官方失败才依次试镜像前缀
+// ---------------------------------------------------------------------------
+/** 解析镜像配置文本（逗号 / 分号 / 空白 / 换行分隔）；只接受 http(s) 前缀，非法项直接忽略。 */
+function parseMirrors(text) {
+  const out = [];
+  for (const raw of String(text || "").split(/[\s,;]+/)) {
+    const item = raw.trim();
+    if (!item) continue;
+    if (!/^https?:\/\//i.test(item)) continue; // 不把用户输入当任意协议拼进 URL
+    out.push(item.endsWith("/") ? item : item + "/");
+  }
+  return out;
+}
+
+/** 把原始 URL 拼到每个镜像前缀后面；只对 GitHub 域名生效，其它主机不改写。 */
+function mirrorUrls(url, mirrors) {
+  if (!/^https:\/\/(codeload\.)?github\.com\//i.test(url)) return [];
+  return mirrors.map((prefix) => prefix + url);
+}
+
+/**
+ * 先试官方 URL，失败后依次试镜像；任一成功即返回。
+ * onRetry(nextUrl, err) 用来把「正在换镜像」推进安装进度（可选）。
+ * 用户取消（signal aborted）不算下载失败，不会再去试镜像。
+ */
+async function downloadWithMirrors(url, dest, opts) {
+  const options = opts || {};
+  const attempts = [url].concat(mirrorUrls(url, options.mirrors || []));
+  const failures = [];
+  for (let i = 0; i < attempts.length; i += 1) {
+    if (options.signal && options.signal.aborted) throw new Error("已取消");
+    try {
+      return await downloadFile(attempts[i], dest, options.onProgress, options.signal);
+    } catch (err) {
+      if (options.signal && options.signal.aborted) throw err;
+      failures.push({ url: attempts[i], error: err && err.message ? err.message : String(err) });
+      if (i + 1 < attempts.length && options.onRetry) {
+        try { options.onRetry(attempts[i + 1], err); } catch { /* 进度回调出错不影响下载 */ }
+      }
+    }
+  }
+  // 只有一个源时保持原样；有多个源就把每个源的错误都列出来，
+  // 便于区分「官方被墙」还是「镜像也不通」——用户报障时这行信息最关键。
+  if (failures.length === 1) throw new Error(failures[0].error);
+  throw new Error(
+    "所有下载源都失败（共 " + failures.length + " 个）：\n"
+      + failures.map((f) => "  · " + f.url + "\n    " + f.error).join("\n"),
+  );
+}
+
+/** 在 process.env 之上叠加一组变量（spawn 传 env 会覆盖整个环境，必须自己合并）。 */
+function withEnv(extra) {
+  return Object.assign({}, process.env, extra || {});
+}
+
+/**
+ * 模型来源 → 上游认的环境变量。上游 indextts/utils/network_detection.py 里
+ * USE_MODELSCOPE=true 会强制走 ModelScope（失败再退 hf-mirror.com），false 强制走官方 HF；
+ * auto 什么都不设，让上游按 TCP 探测自己决定。
+ */
+function modelSourceEnv(source) {
+  if (source === "modelscope") return { USE_MODELSCOPE: "true", HF_ENDPOINT: HF_MIRROR_ENDPOINT };
+  if (source === "official") return { USE_MODELSCOPE: "false" };
+  return {};
+}
+
+/** uv sync 失败后重试用的镜像环境变量；没配镜像就返回空对象（不做无意义的重试）。 */
+function uvMirrorEnv(cfg) {
+  const env = {};
+  if (cfg.pypiMirror) {
+    // uv 新名 UV_DEFAULT_INDEX，旧名 UV_INDEX_URL：两个都设，兼容用户机器上可能存在的旧 uv。
+    env.UV_DEFAULT_INDEX = cfg.pypiMirror;
+    env.UV_INDEX_URL = cfg.pypiMirror;
+  }
+  const githubMirrors = parseMirrors(cfg.githubMirror);
+  if (githubMirrors.length) {
+    // uv 自己下载的 CPython 来自 GitHub Releases，用镜像前缀顶替。
+    env.UV_PYTHON_INSTALL_MIRROR = githubMirrors[0] + PYTHON_BUILD_STANDALONE_URL;
+  }
+  return env;
+}
+
 /** 运行子进程并把输出逐行回调；非 0 退出码时 reject。进程会登记到 auxChildren 以便统一清理。 */
 function runStreaming(cmd, args, options, onLine) {
   return new Promise((resolve, reject) => {
@@ -501,10 +611,13 @@ function venvPythonPath(installDir) {
  *   2) 下载 uv（单文件，自带 Python 下载能力，避免要求系统 Python）
  *   3) uv sync：自动下载 Python 3.10/3.11 与 torch 等依赖
  *   4) 用 venv 的 python 把模型下载到 installDir/checkpoints
- * 每步都推进度；失败抛出带步骤名的错误。
+ * 每步都推进度；失败抛出带步骤名的错误。网络失败时按配置的镜像回退（先官方，失败才走镜像）。
  */
 async function bootstrapInstall(installDir, signal) {
   bootstrapLog = [];
+  // 镜像与引擎版本只读一次：安装过程中改配置不该影响正在跑的流程。
+  const cfg = loadConfig();
+  const githubMirrors = parseMirrors(cfg.githubMirror);
   /** 每步之间检查是否已被取消（禁用插件 / 退出 Cyrene 时 ctx.signal 会 abort）。 */
   const ensureLive = () => {
     if (signal && signal.aborted) throw new Error("已取消安装");
@@ -521,14 +634,19 @@ async function bootstrapInstall(installDir, signal) {
   ensureLive();
   sendProgress("repo", "正在从 GitHub 下载 IndexTTS 仓库…");
   const repoZip = path.join(cacheDir, "index-tts.zip");
-  await downloadFile(REPO_ZIP_URL, repoZip, (got, total) => {
-    if (!total) return;
-    sendProgress(
-      "repo",
-      "下载 IndexTTS 仓库 " + Math.round((got / total) * 100) + "%（"
-        + (got / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + " MB）",
-    );
-  }, signal);
+  await downloadWithMirrors(REPO_ZIP_URL, repoZip, {
+    mirrors: githubMirrors,
+    signal: signal,
+    onProgress: (got, total) => {
+      if (!total) return;
+      sendProgress(
+        "repo",
+        "下载 IndexTTS 仓库 " + Math.round((got / total) * 100) + "%（"
+          + (got / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + " MB）",
+      );
+    },
+    onRetry: (next, err) => sendProgress("repo", "官方源下载失败（" + err.message + "），改用镜像重试…"),
+  });
   ensureLive();
   sendProgress("repo", "正在解压仓库…");
   const repoExtract = path.join(cacheDir, "repo");
@@ -550,7 +668,11 @@ async function bootstrapInstall(installDir, signal) {
   if (!uvPath) {
     sendProgress("uv", "正在下载 uv（约 30MB）…");
     const uvArchive = path.join(cacheDir, asset.kind === "tar.gz" ? "uv.tar.gz" : "uv.zip");
-    await downloadFile(asset.url, uvArchive, null, signal);
+    await downloadWithMirrors(asset.url, uvArchive, {
+      mirrors: githubMirrors,
+      signal: signal,
+      onRetry: (next, err) => sendProgress("uv", "官方源下载失败（" + err.message + "），改用镜像重试…"),
+    });
     ensureLive();
     sendProgress("uv", "正在解压 uv…");
     const uvDir = path.join(cacheDir, "uv");
@@ -561,19 +683,38 @@ async function bootstrapInstall(installDir, signal) {
     try { fs.chmodSync(uvPath, 0o755); } catch { /* Windows 不需要 */ }
   }
 
-  // 3) uv sync
+  // 3) uv sync（官方 PyPI / GitHub 拉 CPython；失败才换镜像重试）
   ensureLive();
   sendProgress("deps", "正在安装依赖（会下载 Python 与 torch，数 GB，请耐心等待）…");
+  const feedUv = (line) => {
+    pushLog(line);
+    sendProgress("deps", line.length > 200 ? line.slice(-200) : line);
+  };
+  const uvFailure = (err, retried) => new Error(
+    "依赖安装失败（uv sync" + (retried ? "，官方与镜像均失败" : "") + "）：" + err.message
+      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
+  );
   try {
-    await runStreaming(uvPath, ["sync"], { cwd: installDir, signal: signal }, (line) => {
-      pushLog(line);
-      sendProgress("deps", line.length > 200 ? line.slice(-200) : line);
-    });
+    await runStreaming(uvPath, ["sync"], { cwd: installDir, signal: signal }, feedUv);
   } catch (err) {
-    throw new Error(
-      "依赖安装失败（uv sync）：" + err.message
-        + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
-    );
+    const mirrorEnv = uvMirrorEnv(cfg);
+    // 没配镜像（或用户已取消）就没得回退，如实报错。
+    if (!Object.keys(mirrorEnv).length || (signal && signal.aborted)) throw uvFailure(err, false);
+    const via = [
+      mirrorEnv.UV_DEFAULT_INDEX ? "PyPI 镜像" : "",
+      mirrorEnv.UV_PYTHON_INSTALL_MIRROR ? "CPython 镜像" : "",
+    ].filter(Boolean).join(" + ");
+    sendProgress("deps", "官方源安装失败（" + err.message + "），改用 " + via + " 重试…");
+    try {
+      await runStreaming(
+        uvPath,
+        ["sync"],
+        { cwd: installDir, signal: signal, env: withEnv(mirrorEnv) },
+        feedUv,
+      );
+    } catch (err2) {
+      throw uvFailure(err2, true);
+    }
   }
 
   // 4) 模型（主权重 + 辅助模型）
@@ -584,27 +725,42 @@ async function bootstrapInstall(installDir, signal) {
     throw new Error("依赖安装完成但未找到虚拟环境 Python：" + pythonPath);
   }
   // 用当前配置的引擎版本下载对应模型，避免「代码/权重版本不一致」。
-  const engine = loadConfig().engineVersion;
+  const engine = cfg.engineVersion;
   sendProgress(
     "model",
     "正在下载模型权重与辅助模型（" + (engine === "v2_5" ? "IndexTTS 2.5" : "IndexTTS 2.0") + "，数 GB，请耐心等待）…",
   );
   const modelDir = path.join(installDir, "checkpoints");
+  const modelArgs = [SERVER_SCRIPT, "--download-only", "--download-aux", "--model-dir", modelDir, "--engine", engine];
+  const feedModel = (line) => {
+    pushLog(line);
+    sendProgress("model", line.length > 200 ? line.slice(-200) : line);
+  };
+  const modelFailure = (err, retried) => new Error(
+    "模型下载失败" + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
+      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
+  );
+  // 先按用户选的来源（auto = 交给上游探测）；失败就换另一条路再试一次（fallback 语义）。
+  const secondSource = cfg.modelSource === "modelscope" ? "official" : "modelscope";
+  const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
   try {
-    await runStreaming(
-      pythonPath,
-      [SERVER_SCRIPT, "--download-only", "--download-aux", "--model-dir", modelDir, "--engine", engine],
-      { cwd: __dirname, signal: signal },
-      (line) => {
-        pushLog(line);
-        sendProgress("model", line.length > 200 ? line.slice(-200) : line);
-      },
-    );
+    await runStreaming(pythonPath, modelArgs, {
+      cwd: __dirname,
+      signal: signal,
+      env: withEnv(modelSourceEnv(cfg.modelSource)),
+    }, feedModel);
   } catch (err) {
-    throw new Error(
-      "模型下载失败：" + err.message
-        + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
-    );
+    if (signal && signal.aborted) throw modelFailure(err, false);
+    sendProgress("model", "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
+    try {
+      await runStreaming(pythonPath, modelArgs, {
+        cwd: __dirname,
+        signal: signal,
+        env: withEnv(modelSourceEnv(secondSource)),
+      }, feedModel);
+    } catch (err2) {
+      throw modelFailure(err2, true);
+    }
   }
   if (!fs.existsSync(path.join(modelDir, "config.yaml"))) {
     throw new Error("模型下载完成但未找到 checkpoints/config.yaml");
@@ -686,11 +842,14 @@ function killChild() {
   } catch {
     try { proc.kill(); } catch { /* 进程可能已退出，忽略 */ }
   }
-  // 等待结束后复核：确实没杀掉就如实记 lastError，别谎报「已停止」。
+  // 等待结束后复核：确实没杀掉就把失败信息回给调用方，别谎报「已停止」。
   return exited.then(() => {
     if (proc.exitCode === null && proc.signalCode === null) {
-      lastError = "无法终止 Python 进程（pid " + proc.pid + "），它可能仍在占用端口/显存，请手动结束";
+      const msg = "无法终止 Python 进程（pid " + proc.pid + "），它可能仍在占用端口/显存，请手动结束";
+      lastError = msg;
+      return msg;
     }
+    return null;
   });
 }
 
@@ -816,6 +975,8 @@ async function doStartServer(options) {
     cwd: __dirname,
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
+    // USE_MODELSCOPE / HF_ENDPOINT：构造模型时若 hf_cache 不全，上游会按这个变量决定走哪条下载路径。
+    env: withEnv(modelSourceEnv(cfg.modelSource)),
   });
   child = proc;
   const feedServer = (d) => {
@@ -884,13 +1045,15 @@ async function stopServer() {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
-  await killChild();
+  const killFailure = await killChild();
   // 关键：等在途启动流程彻底结束（含它自己的「已取消」失败分支，并清空 startPromise）。
   // 否则调用方随后的 startServer() 会复用那个注定失败的 promise，重启被静默吞掉。
   if (startPromise) await startPromise.catch(() => {});
   deliberateStop = false;
   restartCount = 0;
-  lastError = null;
+  // 只清「上一轮的启动失败」，killChild 刚写的「没杀掉」必须留着：
+  // 否则 getState()/窗口会显示「服务已停止」，而那个 Python 还在占着端口与显存。
+  lastError = killFailure || null;
 }
 
 function getState() {
@@ -937,6 +1100,10 @@ function statusText() {
   lines.push("模型目录：" + (cfg.modelDir ? shortenPath(cfg.modelDir) : "（未配置）"));
   lines.push("Python：" + (cfg.pythonPath ? shortenPath(cfg.pythonPath) : "（未配置）"));
   lines.push("引擎版本：" + (cfg.engineVersion === "v2_5" ? "v2_5（IndexTTS 2.5）" : "v2（IndexTTS 2.0）"));
+  lines.push("模型来源：" + (cfg.modelSource === "modelscope" ? "ModelScope / hf-mirror"
+    : cfg.modelSource === "official" ? "官方 HuggingFace" : "自动探测"));
+  const mirrorsOn = parseMirrors(cfg.githubMirror).length + parseMirrors(cfg.pypiMirror).length;
+  lines.push("下载镜像：" + (mirrorsOn ? "已配置（仅在官方源失败时回退）" : "未配置（只用官方源）"));
   if (s.lastError) lines.push("最近错误：" + redactPaths(s.lastError));
   lines.push("用法：在 Cyrene 的 TTS 设置中选择 GPT-SoVITS，把 API 地址填成上面的地址。");
   return lines.join("\n");
@@ -1076,6 +1243,7 @@ const plugin = {
         message: "未检测到可用的 IndexTTS，是否从 GitHub 下载并安装？",
         detail: "将下载 IndexTTS 仓库、uv、Python 与 torch 等依赖（数 GB）以及模型权重；"
           + "首次约 10–30 分钟，请确保网络通畅、磁盘空间充足。\n\n安装目录：" + dir
+          + "\n\n官方源下载失败时会自动改用镜像重试（见「高级选项 → 镜像」，清空即只用官方源）。"
           + (dirNonEmpty ? "\n\n⚠ 该目录不是空的，安装会把 IndexTTS 仓库文件写进这个目录。" : ""),
       };
       const choice = win ? await dialog.showMessageBox(win, confirmOpts) : await dialog.showMessageBox(confirmOpts);
