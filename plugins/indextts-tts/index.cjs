@@ -41,6 +41,23 @@ const STABLE_RESET_MS = 60000;
  */
 const HEALTH_NONCE = "cyrene-" + process.pid + "-" + Date.now().toString(36);
 
+// ---------------------------------------------------------------------------
+// 下载镜像：**只在官方源失败后启用**（fallback 语义），用户可在「高级选项 → 镜像」里
+// 改成自己的地址或清空（清空 = 只用官方）。
+//
+// GitHub 代理是「前缀式」的：把原始 URL 直接拼在镜像前缀后面。
+// 注意仓库 zip 与 uv 二进制下载下来是要执行的，走第三方代理等于信任它不塞私货；
+// 这一点在 README 的「网络访问」里如实披露，UI 上也给了提示。
+// ---------------------------------------------------------------------------
+const DEFAULT_GITHUB_MIRROR_TEXT = "https://gh-proxy.com/, https://ghfast.top/";
+const DEFAULT_PYPI_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple";
+/** 上游 network_detection / model_download 自己硬编码的回退点，强制走镜像时显式设置。 */
+const HF_MIRROR_ENDPOINT = "https://hf-mirror.com";
+/** uv 自己下载 CPython 的地址（GitHub Releases）；镜像前缀拼在它前面。 */
+const PYTHON_BUILD_STANDALONE_URL = "https://github.com/astral-sh/python-build-standalone/releases/download";
+/** 模型来源：auto = 交给上游探测（不设 USE_MODELSCOPE）。 */
+const MODEL_SOURCES = ["auto", "modelscope", "official"];
+
 const DEFAULT_CONFIG = {
   modelDir: "",
   pythonPath: "",
@@ -48,6 +65,10 @@ const DEFAULT_CONFIG = {
   engineVersion: "v2",
   autoStart: true,
   emotionGuidance: false,
+  disableFp16: false,
+  githubMirror: DEFAULT_GITHUB_MIRROR_TEXT,
+  pypiMirror: DEFAULT_PYPI_MIRROR,
+  modelSource: "auto",
 };
 
 // ---------------------------------------------------------------------------
@@ -84,6 +105,12 @@ let deliberateStop = false;
 /** 用户/宿主主动请求过停止：启动被这样打断时算「已取消」，不计入崩溃预算。 */
 let stopRequested = false;
 let lastError = null;
+/**
+ * 「上次停止没能终止进程」这一条单独存：它意味着端口/显存可能仍被占着，
+ * 不该被后续任何一次启动流程顺手清掉（lastError 会被 doStartServer 重置）。
+ * 只在「确实杀掉了」或「复查到那个 pid 已经不在了」时清除。
+ */
+let killFailure = null;
 /** 服务端最近输出（崩溃 / 启动失败时附在错误里，便于定位）。 */
 let serverLog = [];
 /** 进行中的启动 Promise：并发/重复调用共享同一次启动，避免重复 spawn。 */
@@ -102,6 +129,11 @@ function normalizeConfig(raw) {
     engineVersion: c.engineVersion === "v2_5" ? "v2_5" : "v2",
     autoStart: c.autoStart !== false,
     emotionGuidance: c.emotionGuidance === true,
+    disableFp16: c.disableFp16 === true,
+    // 镜像字段的语义：没存过 → 给默认镜像；存过空串 → 保持空（只用官方）。
+    githubMirror: typeof c.githubMirror === "string" ? c.githubMirror.trim() : DEFAULT_GITHUB_MIRROR_TEXT,
+    pypiMirror: typeof c.pypiMirror === "string" ? c.pypiMirror.trim() : DEFAULT_PYPI_MIRROR,
+    modelSource: MODEL_SOURCES.includes(c.modelSource) ? c.modelSource : "auto",
   };
 }
 
@@ -137,7 +169,7 @@ function saveInstallDir(dir) {
   } catch { /* ignore */ }
 }
 
-/** 配置指纹：模型目录 / Python 路径 / 端口 / 引擎版本 / 情感引导任一变化都需要重启服务。 */
+/** 配置指纹：模型目录 / Python 路径 / 端口 / 引擎版本 / 情感引导 / 模型来源任一变化都需要重启服务。 */
 function fingerprint(cfg) {
   return JSON.stringify({
     modelDir: cfg.modelDir,
@@ -145,6 +177,11 @@ function fingerprint(cfg) {
     port: cfg.port,
     engineVersion: cfg.engineVersion,
     emotionGuidance: cfg.emotionGuidance,
+    // FP16 是启动参数，改了要重启才生效。
+    disableFp16: cfg.disableFp16,
+    // 模型来源会变成服务进程的 USE_MODELSCOPE 环境变量，改了必须重启才生效；
+    // 镜像前缀只用于安装阶段，故意不进指纹（改它不该重启已在跑的服务）。
+    modelSource: cfg.modelSource,
   });
 }
 
@@ -371,6 +408,112 @@ function downloadFile(url, dest, onProgress, signal) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// 镜像回退（fallback）：先官方，官方失败才依次试镜像前缀
+// ---------------------------------------------------------------------------
+/** 解析镜像配置文本（逗号 / 分号 / 空白 / 换行分隔）；只接受 http(s) 前缀，非法项直接忽略。 */
+function parseMirrors(text) {
+  const out = [];
+  for (const raw of String(text || "").split(/[\s,;]+/)) {
+    const item = raw.trim();
+    if (!item) continue;
+    if (!/^https?:\/\//i.test(item)) continue; // 不把用户输入当任意协议拼进 URL
+    out.push(item.endsWith("/") ? item : item + "/");
+  }
+  return out;
+}
+
+/** 把原始 URL 拼到每个镜像前缀后面；只对 GitHub 域名生效，其它主机不改写。 */
+function mirrorUrls(url, mirrors) {
+  if (!/^https:\/\/(codeload\.)?github\.com\//i.test(url)) return [];
+  return mirrors.map((prefix) => prefix + url);
+}
+
+/**
+ * 先试官方 URL，失败后依次试镜像；任一成功即返回。
+ * onRetry(nextUrl, err) 用来把「正在换镜像」推进安装进度（可选）。
+ * 用户取消（signal aborted）不算下载失败，不会再去试镜像。
+ */
+async function downloadWithMirrors(url, dest, opts) {
+  const options = opts || {};
+  const attempts = [url].concat(mirrorUrls(url, options.mirrors || []));
+  const failures = [];
+  for (let i = 0; i < attempts.length; i += 1) {
+    if (options.signal && options.signal.aborted) throw new Error("已取消");
+    try {
+      return await downloadFile(attempts[i], dest, options.onProgress, options.signal);
+    } catch (err) {
+      if (options.signal && options.signal.aborted) throw err;
+      failures.push({ url: attempts[i], error: err && err.message ? err.message : String(err) });
+      if (i + 1 < attempts.length && options.onRetry) {
+        try { options.onRetry(attempts[i + 1], err); } catch { /* 进度回调出错不影响下载 */ }
+      }
+    }
+  }
+  // 只有一个源时保持原样；有多个源就把每个源的错误都列出来，
+  // 便于区分「官方被墙」还是「镜像也不通」——用户报障时这行信息最关键。
+  if (failures.length === 1) throw new Error(failures[0].error);
+  throw new Error(
+    "所有下载源都失败（共 " + failures.length + " 个）：\n"
+      + failures.map((f) => "  · " + f.url + "\n    " + f.error).join("\n"),
+  );
+}
+
+/** 在 process.env 之上叠加一组变量（spawn 传 env 会覆盖整个环境，必须自己合并）。 */
+function withEnv(extra) {
+  return Object.assign({}, process.env, extra || {});
+}
+
+/**
+ * 模型来源 → 上游认的环境变量。上游 indextts/utils/network_detection.py 里
+ * USE_MODELSCOPE=true 会强制走 ModelScope（失败再退 hf-mirror.com），false 强制走官方 HF；
+ * auto 什么都不设，让上游按 TCP 探测自己决定。
+ */
+function modelSourceEnv(source) {
+  if (source === "modelscope") return { USE_MODELSCOPE: "true", HF_ENDPOINT: HF_MIRROR_ENDPOINT };
+  if (source === "official") return { USE_MODELSCOPE: "false" };
+  return {};
+}
+
+/** uv sync 失败后重试用的镜像环境变量；没配镜像就返回空对象（不做无意义的重试）。 */
+function uvMirrorEnv(cfg) {
+  const env = {};
+  if (cfg.pypiMirror) {
+    // uv 新名 UV_DEFAULT_INDEX，旧名 UV_INDEX_URL：两个都设，兼容用户机器上可能存在的旧 uv。
+    env.UV_DEFAULT_INDEX = cfg.pypiMirror;
+    env.UV_INDEX_URL = cfg.pypiMirror;
+  }
+  const githubMirrors = parseMirrors(cfg.githubMirror);
+  if (githubMirrors.length) {
+    // uv 自己下载的 CPython 来自 GitHub Releases，用镜像前缀顶替。
+    env.UV_PYTHON_INSTALL_MIRROR = githubMirrors[0] + PYTHON_BUILD_STANDALONE_URL;
+  }
+  return env;
+}
+
+/**
+ * 服务端进程的工作目录。
+ * 上游 `infer_v2_5.py` / `infer.py` 在 import 时把 `HF_HUB_CACHE` 硬写成相对路径
+ * `./checkpoints/hf_cache`（直接覆盖我们设的环境变量），所以让 cwd 落在模型目录的父级，
+ * 那个相对路径就正好指回 `<模型目录>/hf_cache`；模型目录不叫 checkpoints 时退回插件目录。
+ */
+function serverCwd(modelDir) {
+  const base = path.basename(modelDir || "").toLowerCase();
+  return base === "checkpoints" ? path.dirname(modelDir) : __dirname;
+}
+
+/**
+ * 服务端（含 --download-only 那一步）要用的环境变量：
+ * 显式给出 HF 缓存目录（v2.0 直接生效；v2_5 会被上游的相对路径覆盖，因此还要靠 serverCwd 兜住），
+ * 再叠加用户选的模型来源（auto = 不设，交给上游自己探测）。
+ */
+function serverEnv(modelDir, source) {
+  return withEnv(Object.assign(
+    { HF_HUB_CACHE: path.join(modelDir, "hf_cache") },
+    modelSourceEnv(source),
+  ));
+}
+
 /** 运行子进程并把输出逐行回调；非 0 退出码时 reject。进程会登记到 auxChildren 以便统一清理。 */
 function runStreaming(cmd, args, options, onLine) {
   return new Promise((resolve, reject) => {
@@ -501,10 +644,13 @@ function venvPythonPath(installDir) {
  *   2) 下载 uv（单文件，自带 Python 下载能力，避免要求系统 Python）
  *   3) uv sync：自动下载 Python 3.10/3.11 与 torch 等依赖
  *   4) 用 venv 的 python 把模型下载到 installDir/checkpoints
- * 每步都推进度；失败抛出带步骤名的错误。
+ * 每步都推进度；失败抛出带步骤名的错误。网络失败时按配置的镜像回退（先官方，失败才走镜像）。
  */
 async function bootstrapInstall(installDir, signal) {
   bootstrapLog = [];
+  // 镜像与引擎版本只读一次：安装过程中改配置不该影响正在跑的流程。
+  const cfg = loadConfig();
+  const githubMirrors = parseMirrors(cfg.githubMirror);
   /** 每步之间检查是否已被取消（禁用插件 / 退出 Cyrene 时 ctx.signal 会 abort）。 */
   const ensureLive = () => {
     if (signal && signal.aborted) throw new Error("已取消安装");
@@ -521,14 +667,19 @@ async function bootstrapInstall(installDir, signal) {
   ensureLive();
   sendProgress("repo", "正在从 GitHub 下载 IndexTTS 仓库…");
   const repoZip = path.join(cacheDir, "index-tts.zip");
-  await downloadFile(REPO_ZIP_URL, repoZip, (got, total) => {
-    if (!total) return;
-    sendProgress(
-      "repo",
-      "下载 IndexTTS 仓库 " + Math.round((got / total) * 100) + "%（"
-        + (got / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + " MB）",
-    );
-  }, signal);
+  await downloadWithMirrors(REPO_ZIP_URL, repoZip, {
+    mirrors: githubMirrors,
+    signal: signal,
+    onProgress: (got, total) => {
+      if (!total) return;
+      sendProgress(
+        "repo",
+        "下载 IndexTTS 仓库 " + Math.round((got / total) * 100) + "%（"
+          + (got / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + " MB）",
+      );
+    },
+    onRetry: (next, err) => sendProgress("repo", "官方源下载失败（" + err.message + "），改用镜像重试…"),
+  });
   ensureLive();
   sendProgress("repo", "正在解压仓库…");
   const repoExtract = path.join(cacheDir, "repo");
@@ -550,7 +701,11 @@ async function bootstrapInstall(installDir, signal) {
   if (!uvPath) {
     sendProgress("uv", "正在下载 uv（约 30MB）…");
     const uvArchive = path.join(cacheDir, asset.kind === "tar.gz" ? "uv.tar.gz" : "uv.zip");
-    await downloadFile(asset.url, uvArchive, null, signal);
+    await downloadWithMirrors(asset.url, uvArchive, {
+      mirrors: githubMirrors,
+      signal: signal,
+      onRetry: (next, err) => sendProgress("uv", "官方源下载失败（" + err.message + "），改用镜像重试…"),
+    });
     ensureLive();
     sendProgress("uv", "正在解压 uv…");
     const uvDir = path.join(cacheDir, "uv");
@@ -561,19 +716,38 @@ async function bootstrapInstall(installDir, signal) {
     try { fs.chmodSync(uvPath, 0o755); } catch { /* Windows 不需要 */ }
   }
 
-  // 3) uv sync
+  // 3) uv sync（官方 PyPI / GitHub 拉 CPython；失败才换镜像重试）
   ensureLive();
   sendProgress("deps", "正在安装依赖（会下载 Python 与 torch，数 GB，请耐心等待）…");
+  const feedUv = (line) => {
+    pushLog(line);
+    sendProgress("deps", line.length > 200 ? line.slice(-200) : line);
+  };
+  const uvFailure = (err, retried) => new Error(
+    "依赖安装失败（uv sync" + (retried ? "，官方与镜像均失败" : "") + "）：" + err.message
+      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
+  );
   try {
-    await runStreaming(uvPath, ["sync"], { cwd: installDir, signal: signal }, (line) => {
-      pushLog(line);
-      sendProgress("deps", line.length > 200 ? line.slice(-200) : line);
-    });
+    await runStreaming(uvPath, ["sync"], { cwd: installDir, signal: signal }, feedUv);
   } catch (err) {
-    throw new Error(
-      "依赖安装失败（uv sync）：" + err.message
-        + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
-    );
+    const mirrorEnv = uvMirrorEnv(cfg);
+    // 没配镜像（或用户已取消）就没得回退，如实报错。
+    if (!Object.keys(mirrorEnv).length || (signal && signal.aborted)) throw uvFailure(err, false);
+    const via = [
+      mirrorEnv.UV_DEFAULT_INDEX ? "PyPI 镜像" : "",
+      mirrorEnv.UV_PYTHON_INSTALL_MIRROR ? "CPython 镜像" : "",
+    ].filter(Boolean).join(" + ");
+    sendProgress("deps", "官方源安装失败（" + err.message + "），改用 " + via + " 重试…");
+    try {
+      await runStreaming(
+        uvPath,
+        ["sync"],
+        { cwd: installDir, signal: signal, env: withEnv(mirrorEnv) },
+        feedUv,
+      );
+    } catch (err2) {
+      throw uvFailure(err2, true);
+    }
   }
 
   // 4) 模型（主权重 + 辅助模型）
@@ -584,27 +758,42 @@ async function bootstrapInstall(installDir, signal) {
     throw new Error("依赖安装完成但未找到虚拟环境 Python：" + pythonPath);
   }
   // 用当前配置的引擎版本下载对应模型，避免「代码/权重版本不一致」。
-  const engine = loadConfig().engineVersion;
+  const engine = cfg.engineVersion;
   sendProgress(
     "model",
     "正在下载模型权重与辅助模型（" + (engine === "v2_5" ? "IndexTTS 2.5" : "IndexTTS 2.0") + "，数 GB，请耐心等待）…",
   );
   const modelDir = path.join(installDir, "checkpoints");
+  const modelArgs = [SERVER_SCRIPT, "--download-only", "--download-aux", "--model-dir", modelDir, "--engine", engine];
+  const feedModel = (line) => {
+    pushLog(line);
+    sendProgress("model", line.length > 200 ? line.slice(-200) : line);
+  };
+  const modelFailure = (err, retried) => new Error(
+    "模型下载失败" + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
+      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
+  );
+  // 先按用户选的来源（auto = 交给上游探测）；失败就换另一条路再试一次（fallback 语义）。
+  const secondSource = cfg.modelSource === "modelscope" ? "official" : "modelscope";
+  const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
   try {
-    await runStreaming(
-      pythonPath,
-      [SERVER_SCRIPT, "--download-only", "--download-aux", "--model-dir", modelDir, "--engine", engine],
-      { cwd: __dirname, signal: signal },
-      (line) => {
-        pushLog(line);
-        sendProgress("model", line.length > 200 ? line.slice(-200) : line);
-      },
-    );
+    await runStreaming(pythonPath, modelArgs, {
+      cwd: serverCwd(modelDir),
+      signal: signal,
+      env: serverEnv(modelDir, cfg.modelSource),
+    }, feedModel);
   } catch (err) {
-    throw new Error(
-      "模型下载失败：" + err.message
-        + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
-    );
+    if (signal && signal.aborted) throw modelFailure(err, false);
+    sendProgress("model", "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
+    try {
+      await runStreaming(pythonPath, modelArgs, {
+        cwd: serverCwd(modelDir),
+        signal: signal,
+        env: serverEnv(modelDir, secondSource),
+      }, feedModel);
+    } catch (err2) {
+      throw modelFailure(err2, true);
+    }
   }
   if (!fs.existsSync(path.join(modelDir, "config.yaml"))) {
     throw new Error("模型下载完成但未找到 checkpoints/config.yaml");
@@ -671,47 +860,87 @@ function killChild() {
     if (process.platform === "win32" && proc.pid) {
       // Windows 上 proc.kill() 只终止直接子进程；用 taskkill /T 杀整棵进程树，
       // 避免 Python 派生的子进程残留（失控进程 / 内存不释放）。
-      const killer = spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      killer.on("error", () => { try { proc.kill(); } catch { /* ignore */ } });
-      // taskkill 运行了但失败（被安全软件拦截 / PID 复用 / 权限不足）时也要兜底。
-      killer.on("exit", (code) => {
-        if (code !== 0) { try { proc.kill(); } catch { /* ignore */ } }
-      });
+      // spawn 极少同步抛错，但真抛了也必须落到 proc.kill() 兜底，所以单独再包一层。
+      let killer = null;
+      try {
+        killer = spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+      } catch {
+        killer = null;
+      }
+      if (!killer) {
+        try { proc.kill(); } catch { /* ignore */ }
+      } else {
+        killer.on("error", () => { try { proc.kill(); } catch { /* ignore */ } });
+        // taskkill 运行了但失败（被安全软件拦截 / PID 复用 / 权限不足）时也要兜底。
+        killer.on("exit", (code) => {
+          if (code !== 0) { try { proc.kill(); } catch { /* ignore */ } }
+        });
+      }
     } else {
       proc.kill("SIGTERM");
     }
   } catch {
     try { proc.kill(); } catch { /* 进程可能已退出，忽略 */ }
   }
-  // 等待结束后复核：确实没杀掉就如实记 lastError，别谎报「已停止」。
+  // 等待结束后复核：确实没杀掉就记进 killFailure（独立字段，见声明处）+ 回给调用方，
+  // 别谎报「已停止」。
   return exited.then(() => {
     if (proc.exitCode === null && proc.signalCode === null) {
-      lastError = "无法终止 Python 进程（pid " + proc.pid + "），它可能仍在占用端口/显存，请手动结束";
+      const msg = "无法终止 Python 进程（pid " + proc.pid + "），它可能仍在占用端口/显存，请手动结束";
+      killFailure = { pid: proc.pid, message: msg };
+      lastError = msg;
+      return msg;
     }
+    killFailure = null; // 确实杀掉了才清除
+    return null;
   });
 }
 
-/** 轮询 /health，直到就绪或到达挂钟截止时间（最坏约 STARTUP_TIMEOUT_MS）。 */
+/** pid 是否还在（signal 0 探测）；EPERM 说明进程存在但没权限，同样算「还在」。 */
+function isProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return !!(err && err.code === "EPERM");
+  }
+}
+
+/** killFailure 的失效检查：那个进程若已被手动结束（或 PID 早就不在了），就把提示清掉。 */
+function currentKillFailure() {
+  if (killFailure && !isProcessAlive(killFailure.pid)) killFailure = null;
+  return killFailure ? killFailure.message : null;
+}
+
+/**
+ * 轮询 /health，直到就绪、子进程退出，或到达挂钟截止时间。
+ * 返回 { ok, reason }：reason = "exited"（进程没了，秒级失败）/ "stopped"（用户停的）/ "timeout"。
+ * 区分原因是为了给出准确文案——端口被占是秒级失败，不该一律说成「240s 未就绪」。
+ */
 async function waitReady(port) {
   const startedAt = Date.now();
   const deadline = startedAt + STARTUP_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (deliberateStop || !child) return false;
+    if (deliberateStop) return { ok: false, reason: "stopped" };
+    if (!child) return { ok: false, reason: "exited" }; // 进程启动即退出：立刻失败，不空等
     if (await probeHealth(port, HEALTH_NONCE)) {
       // 探测通过后再复核当前子进程仍存活，避免探测到别的服务 / 已退出的进程。
-      if (deliberateStop || !child) return false;
-      return true;
+      if (deliberateStop) return { ok: false, reason: "stopped" };
+      if (!child) return { ok: false, reason: "exited" };
+      return { ok: true, reason: "" };
     }
-    if (deliberateStop || !child) return false;
+    if (deliberateStop) return { ok: false, reason: "stopped" };
+    if (!child) return { ok: false, reason: "exited" };
     if (Date.now() >= deadline) break;
     // 头 10s 用 250ms 粒度（改端口重启后更快就绪），之后退回 2s 省资源。
     const fast = Date.now() - startedAt < POLL_FAST_WINDOW_MS;
     await sleep(fast ? POLL_INTERVAL_FAST_MS : POLL_INTERVAL_MS);
   }
-  return false;
+  return { ok: false, reason: "timeout" };
 }
 
 /** 子进程意外退出：仅在它曾就绪过时才按预算自动重启，避免崩溃循环。 */
@@ -734,11 +963,18 @@ function onGone() {
     return;
   }
   if (restartCount >= MAX_RESTARTS) {
-    if (ctxRef) ctxRef.log("IndexTTS 服务连续崩溃/启动失败 " + restartCount + " 次，已停止自动重启");
+    if (ctxRef) {
+      // restartCount 是「已经自动重启了多少次」，不是「崩了几次」；
+      // 前几次重启可能都成功过（起来又崩），所以文案不说「启动了 N 次都失败」。
+      ctxRef.log("IndexTTS 服务已自动重启 " + restartCount + " 次仍未稳定，停止自动重启"
+        + (lastError ? "（最近原因：" + lastError + "）" : "")
+        + "；修正配置后可手动启动");
+    }
     return;
   }
   if (restartTimer) return;
-  // 就绪后崩溃也要计数（否则「起来就崩」会无限重启）；稳定计时被这次崩溃打断。
+  // 崩溃预算的唯一计数点：一次崩溃 = 一次自动重启。
+  // 若在 doStartServer 里再计一次，「一次崩溃 + 一次重启失败」会吃掉两格预算。
   restartCount += 1;
   clearStableTimer();
   restartTimer = setTimeout(() => {
@@ -747,6 +983,65 @@ function onGone() {
       if (ctxRef) ctxRef.log("IndexTTS 自动重启失败：" + err.message);
     });
   }, RESTART_DELAY_MS);
+}
+
+/**
+ * 从服务端输出里认出最常见的失败原因，给出「原因 + 怎么办」两句话。
+ * 之前一律报「240s 内未就绪」：端口被占（WinError 10048）这种秒级失败也会被说成超时，
+ * 而这个字符串会被 AI 工具直接读进上下文，等于把排查方向带偏。
+ */
+function diagnoseServerLog(text, port) {
+  const t = String(text || "");
+  if (/WinError 10048|EADDRINUSE|bind failed|address already in use/i.test(t)) {
+    return {
+      cause: "端口 " + port + " 已被占用（可能是另一个服务，或上一轮没退干净的 Python）",
+      hint: "换个端口重启，或先结束占用该端口的进程（任务管理器里找 python.exe / 别的 TTS 服务）。",
+    };
+  }
+  if (/ModuleNotFoundError|ImportError|No module named/i.test(t)) {
+    return {
+      cause: "Python 环境缺少依赖（index-tts / torch 没装全）",
+      hint: "用「一键配置并启动」让插件把依赖装全，或让「Python 路径」指向的环境里先装好 index-tts。",
+    };
+  }
+  if (/CUDA out of memory|OutOfMemoryError|CUDA error|no kernel image/i.test(t)) {
+    return {
+      cause: "显存不足或 CUDA 初始化失败",
+      hint: "关掉占显存的程序；或关掉「文本情感引导」少加载一个模型。",
+    };
+  }
+  if (/Checkpoint not found|missing keys|size mismatch/i.test(t)) {
+    return {
+      cause: "模型与引擎版本不匹配",
+      hint: "确认「引擎版本」与模型目录 config.yaml 里的 version 一致（插件一般会自动校正）。",
+    };
+  }
+  return null;
+}
+
+/** 组装启动失败的错误文案：按真实原因分分支，而不是一律说「240s 超时」。 */
+function startupFailureMessage(info) {
+  const lines = [];
+  if (info.reason === "exited") {
+    const code = info.exitCode !== null && info.exitCode !== undefined
+      ? "exit code=" + info.exitCode
+      : info.signalCode ? "signal=" + info.signalCode : "退出码未知";
+    lines.push("IndexTTS 服务启动失败：Python 进程启动即退出（" + code + "，已清理残留进程）");
+  } else {
+    lines.push("IndexTTS 服务启动失败：" + Math.round(STARTUP_TIMEOUT_MS / 1000)
+      + "s 内未就绪（模型加载超时？已终止 Python 进程）");
+  }
+  // 进程退出时 lastError 只是「Python 进程退出，code=N」，与标题重复，不再抄一遍。
+  const redundant = info.reason === "exited" && /^Python 进程退出/.test(info.lastError || "");
+  if (info.cause) {
+    lines.push("原因：" + info.cause);
+    if (info.hint) lines.push("建议：" + info.hint);
+  } else if (info.lastError && !redundant) {
+    lines.push("原因：" + info.lastError);
+  }
+  if (info.killFailure) lines.push("注意：" + info.killFailure);
+  if (info.tail) lines.push("\n服务端输出：\n" + info.tail);
+  return lines.join("\n");
 }
 
 function startServer(options) {
@@ -792,10 +1087,9 @@ async function doStartServer(options) {
     deliberateStop = false;
   }
 
-  if (restartCount >= MAX_RESTARTS) {
-    throw new Error("服务连续启动失败 " + restartCount + " 次，已停止自动重启；修正配置后请手动启动");
-  }
-
+  // 崩溃预算的闸门只在 onGone 里（唯一计数点）。这里曾经也有一道 `>= MAX_RESTARTS` 的闸门，
+  // 但它读的是「已用次数」、而 onGone 是先判后加，两处一夹就把预算从 3 次缩成 2 次、
+  // 还会让报错说成「连续启动失败」。用户手动启动进来时预算本就被重置，这里无需再拦。
   deliberateStop = false;
   stopRequested = false; // 新的启动开始，清除上一次的停止请求
   ready = false;
@@ -810,13 +1104,23 @@ async function doStartServer(options) {
     "--nonce", HEALTH_NONCE, // /health 回显，用于确认应答来自本进程
   ];
   if (cfg.emotionGuidance) args.push("--emotion"); // 加载 QwenEmotion + 文本情感引导
+  if (cfg.disableFp16) args.push("--no-fp16"); // 关掉 FP16/BF16（老显卡、出现杂音时可试）
 
   serverLog = [];
-  const proc = spawn(cfg.pythonPath, args, {
-    cwd: __dirname,
-    windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  let proc;
+  try {
+    proc = spawn(cfg.pythonPath, args, {
+      cwd: serverCwd(cfg.modelDir),
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      // HF_HUB_CACHE：模型加载时若 hf_cache 不全，上游会按这个变量找/下载辅助模型；
+      // USE_MODELSCOPE / HF_ENDPOINT：决定走官方 HF 还是 ModelScope。
+      env: serverEnv(cfg.modelDir, cfg.modelSource),
+    });
+  } catch (err) {
+    // 同步抛错（解释器路径非法等）也要给一句人话，而不是把原始异常丢给 IPC。
+    throw new Error("无法启动 Python（" + cfg.pythonPath + "）：" + err.message);
+  }
   child = proc;
   const feedServer = (d) => {
     for (const line of d.toString().split(/\r\n|\r|\n/)) {
@@ -841,31 +1145,33 @@ async function doStartServer(options) {
     onGone();
   });
 
-  const ok = await waitReady(cfg.port);
-  if (!ok) {
-    // 启动失败（超时 / 进程退出 / 端口被占）：杀掉可能仍在加载模型的 Python 进程，
-    // 避免留下不受管的进程。错误里附上服务端最后若干行输出，便于定位（CUDA/OOM 等）。
+  const wait = await waitReady(cfg.port);
+  if (!wait.ok) {
+    // 启动失败（进程启动即退出 / 真超时）：杀掉可能仍在加载模型的 Python 进程，避免留下不受管的进程。
     // 若是用户/宿主主动停止（或插件正在停止）打断了启动，算「已取消」：不计入崩溃预算。
-    const cancelled = stopRequested || (ctxRef && ctxRef.signal.aborted);
+    // 退出码要在 killChild() 之前取——它会把 child 置空。
+    const exitCode = proc.exitCode;
+    const signalCode = proc.signalCode;
+    const cancelled = wait.reason === "stopped" || stopRequested || (ctxRef && ctxRef.signal.aborted);
     deliberateStop = true;
     await killChild();
     deliberateStop = false;
     if (cancelled) {
       throw new Error("已取消启动");
     }
-    restartCount += 1;
-    const tail = serverLog.slice(-25).join("\n");
-    const joined = serverLog.join("\n");
-    const hint = /Checkpoint not found|missing keys|size mismatch/i.test(joined)
-      ? "\n\n提示：模型与引擎版本可能不匹配——请确认「引擎版本」与模型目录 config.yaml 里的 version 一致"
-        + "（当前引擎：" + cfg.engineVersion + "）。"
-      : "";
-    throw new Error(
-      "IndexTTS 服务启动失败（" + Math.round(STARTUP_TIMEOUT_MS / 1000) + "s 内未就绪，已终止 Python 进程）"
-        + (lastError ? "\n原因：" + lastError : "")
-        + (tail ? "\n\n服务端输出：\n" + tail : "")
-        + hint,
-    );
+    // 这里不再 restartCount += 1：崩溃由 onGone 计一次，若在这也计，
+    // 「一次崩溃 + 一次重启失败」就会吃掉两格预算，实际能重启的次数比 README 说的少一半。
+    const diagnosis = diagnoseServerLog(serverLog.join("\n"), cfg.port);
+    throw new Error(startupFailureMessage({
+      reason: wait.reason,
+      exitCode: exitCode,
+      signalCode: signalCode,
+      cause: diagnosis ? diagnosis.cause : "",
+      hint: diagnosis ? diagnosis.hint : "",
+      lastError: lastError,
+      killFailure: currentKillFailure(),
+      tail: serverLog.slice(-25).join("\n"),
+    }));
   }
 
   running = true;
@@ -884,13 +1190,15 @@ async function stopServer() {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
-  await killChild();
+  const killMessage = await killChild();
   // 关键：等在途启动流程彻底结束（含它自己的「已取消」失败分支，并清空 startPromise）。
   // 否则调用方随后的 startServer() 会复用那个注定失败的 promise，重启被静默吞掉。
   if (startPromise) await startPromise.catch(() => {});
   deliberateStop = false;
   restartCount = 0;
-  lastError = null;
+  // 只清「上一轮的启动失败」，killChild 刚写的「没杀掉」必须留着：
+  // 否则 getState()/窗口会显示「服务已停止」，而那个 Python 还在占着端口与显存。
+  lastError = killMessage || null;
 }
 
 function getState() {
@@ -903,6 +1211,8 @@ function getState() {
     pid: child ? child.pid : null,
     baseUrl: baseUrl(cfg),
     lastError: lastError,
+    // 独立于 lastError：不会因为后续任何一次启动被清掉（只由「确实杀掉」或「pid 已消失」清除）。
+    killFailure: currentKillFailure(),
     restartCount: restartCount,
     maxRestarts: MAX_RESTARTS,
     bootstrap: bootstrapState,
@@ -937,7 +1247,12 @@ function statusText() {
   lines.push("模型目录：" + (cfg.modelDir ? shortenPath(cfg.modelDir) : "（未配置）"));
   lines.push("Python：" + (cfg.pythonPath ? shortenPath(cfg.pythonPath) : "（未配置）"));
   lines.push("引擎版本：" + (cfg.engineVersion === "v2_5" ? "v2_5（IndexTTS 2.5）" : "v2（IndexTTS 2.0）"));
-  if (s.lastError) lines.push("最近错误：" + redactPaths(s.lastError));
+  lines.push("模型来源：" + (cfg.modelSource === "modelscope" ? "ModelScope / hf-mirror"
+    : cfg.modelSource === "official" ? "官方 HuggingFace" : "自动探测"));
+  const mirrorsOn = parseMirrors(cfg.githubMirror).length + parseMirrors(cfg.pypiMirror).length;
+  lines.push("下载镜像：" + (mirrorsOn ? "已配置（仅在官方源失败时回退）" : "未配置（只用官方源）"));
+  if (s.killFailure) lines.push("上次停止未成功：" + redactPaths(s.killFailure));
+  else if (s.lastError) lines.push("最近错误：" + redactPaths(s.lastError));
   lines.push("用法：在 Cyrene 的 TTS 设置中选择 GPT-SoVITS，把 API 地址填成上面的地址。");
   return lines.join("\n");
 }
@@ -1076,6 +1391,7 @@ const plugin = {
         message: "未检测到可用的 IndexTTS，是否从 GitHub 下载并安装？",
         detail: "将下载 IndexTTS 仓库、uv、Python 与 torch 等依赖（数 GB）以及模型权重；"
           + "首次约 10–30 分钟，请确保网络通畅、磁盘空间充足。\n\n安装目录：" + dir
+          + "\n\n官方源下载失败时会自动改用镜像重试（见「高级选项 → 镜像」，清空即只用官方源）。"
           + (dirNonEmpty ? "\n\n⚠ 该目录不是空的，安装会把 IndexTTS 仓库文件写进这个目录。" : ""),
       };
       const choice = win ? await dialog.showMessageBox(win, confirmOpts) : await dialog.showMessageBox(confirmOpts);
