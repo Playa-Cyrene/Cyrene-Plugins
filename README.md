@@ -6,6 +6,8 @@
 
 Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插件，审核通过后收录进本仓库，供用户下载安装。
 
+> ⚠️ **临时公告（2026-09-13）**：GitHub 账号暂时被封禁，正在申诉。期间 GitHub 仓库与插件 ZIP 下载链接（Release 附件）暂时不可用，可在 [Gitee 镜像](https://gitee.com/playa0/cyrene-plugins) 浏览全部插件源码；GitHub 恢复后下载链接即可用。
+
 - 主程序：[Cyrene-Agent](https://github.com/Playa-0v0/Cyrene-Agent)
 - SDK：[@playa0v0/cyrene-plugin-sdk](https://www.npmjs.com/package/@playa0v0/cyrene-plugin-sdk)
 - 开发指南：[docs/plugins/plugin-dev-guide.md](https://github.com/Playa-0v0/Cyrene-Agent/blob/master/docs/plugins/plugin-dev-guide.md)
