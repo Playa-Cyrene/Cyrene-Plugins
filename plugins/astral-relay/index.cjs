@@ -154,18 +154,134 @@ function regionOf(config, providerId) {
   return config.providers[providerId]?.regionId;
 }
 
-// src/proxy/server.ts
-var import_node_http = require("node:http");
+// src/core/turn-binding.ts
+var import_node_crypto = require("node:crypto");
+var DEFAULT_BINDING_TTL_MS = 2 * 60 * 60 * 1e3;
+var DEFAULT_BINDING_MAX = 64;
+function fingerprint(text) {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  if (!normalized) return null;
+  return (0, import_node_crypto.createHash)("sha256").update(normalized).digest("hex");
+}
+function createTurnBinding(options = {}) {
+  const ttlMs = options.ttlMs ?? DEFAULT_BINDING_TTL_MS;
+  const max = options.max ?? DEFAULT_BINDING_MAX;
+  const now = options.now ?? (() => Date.now());
+  const entries = /* @__PURE__ */ new Map();
+  const sweep = () => {
+    const cutoff = now() - ttlMs;
+    for (const [hash, at] of entries) {
+      if (at < cutoff) entries.delete(hash);
+    }
+  };
+  return {
+    register(input) {
+      if (input.mode !== "code" || input.source !== "conversation") return false;
+      const hash = fingerprint(typeof input.userText === "string" ? input.userText : "");
+      if (!hash) return false;
+      sweep();
+      entries.delete(hash);
+      entries.set(hash, now());
+      while (entries.size > max) {
+        const oldest = entries.keys().next();
+        if (oldest.done) break;
+        entries.delete(oldest.value);
+      }
+      return true;
+    },
+    matchesAny(texts) {
+      sweep();
+      for (const text of texts) {
+        const hash = fingerprint(text);
+        if (hash && entries.has(hash)) return true;
+      }
+      return false;
+    },
+    size() {
+      sweep();
+      return entries.size;
+    },
+    clear() {
+      entries.clear();
+    }
+  };
+}
+function lastUserTexts(body) {
+  let parsed;
+  try {
+    parsed = JSON.parse(typeof body === "string" ? body : body.toString("utf8"));
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const messages = parsed.messages;
+  if (!Array.isArray(messages)) return [];
+  let content;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message && typeof message === "object" && message.role === "user") {
+      content = message.content;
+      break;
+    }
+  }
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  const parts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+      continue;
+    }
+    if (part && typeof part === "object") {
+      const text = part.text;
+      if (typeof text === "string") parts.push(text);
+    }
+  }
+  if (parts.length === 0) return [];
+  return [parts.join("\n"), parts.join("")];
+}
 
 // src/core/request-auth.ts
-var import_node_crypto = require("node:crypto");
+var import_node_crypto2 = require("node:crypto");
 var CONTEXT_MAX_AGE_MS = 24 * 60 * 60 * 1e3;
+var NONCE_USE_WINDOW_MS = 2 * 60 * 60 * 1e3;
+var NONCE_STORE_MAX = 512;
+function createNonceStore(options = {}) {
+  const windowMs = options.windowMs ?? NONCE_USE_WINDOW_MS;
+  const max = options.max ?? NONCE_STORE_MAX;
+  const now = options.now ?? (() => Date.now());
+  const seen = /* @__PURE__ */ new Map();
+  const sweep = () => {
+    const cutoff = now() - CONTEXT_MAX_AGE_MS;
+    for (const [nonce, at] of seen) {
+      if (at < cutoff) seen.delete(nonce);
+    }
+  };
+  return {
+    accept(nonce) {
+      sweep();
+      const firstSeen = seen.get(nonce);
+      if (firstSeen !== void 0) return now() - firstSeen <= windowMs;
+      seen.set(nonce, now());
+      while (seen.size > max) {
+        const oldest = seen.keys().next();
+        if (oldest.done) break;
+        seen.delete(oldest.value);
+      }
+      return true;
+    },
+    size() {
+      sweep();
+      return seen.size;
+    }
+  };
+}
 function readRelayContext(credential, secret, provider, now = Date.now()) {
   if (credential.length > 2048) return null;
   const parts = credential.split(".");
   if (parts.length !== 3 || parts[0] !== "ar1" || !/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[a-f0-9]{64}$/.test(parts[2])) return null;
-  const expected = (0, import_node_crypto.createHmac)("sha256", secret).update(`ar1.${parts[1]}`).digest();
-  if (!(0, import_node_crypto.timingSafeEqual)(expected, Buffer.from(parts[2], "hex"))) return null;
+  const expected = (0, import_node_crypto2.createHmac)("sha256", secret).update(`ar1.${parts[1]}`).digest();
+  if (!(0, import_node_crypto2.timingSafeEqual)(expected, Buffer.from(parts[2], "hex"))) return null;
   try {
     const value = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
     if (!value || value.provider !== provider || typeof value.mode !== "string" || typeof value.source !== "string" || typeof value.nonce !== "string" || !value.nonce || !Number.isSafeInteger(value.issuedAt) || value.issuedAt > now || now - value.issuedAt >= CONTEXT_MAX_AGE_MS) return null;
@@ -174,6 +290,9 @@ function readRelayContext(credential, secret, provider, now = Date.now()) {
     return null;
   }
 }
+
+// src/proxy/server.ts
+var import_node_http = require("node:http");
 
 // src/network.ts
 var electronFetch = (input, init) => {
@@ -205,7 +324,7 @@ var redirectUri = (spec) => `http://${spec.redirectHost}:${spec.port}${spec.path
 function oauthHeaders(_id, tokens) {
   return {
     authorization: `Bearer ${tokens.accessToken}`,
-    "user-agent": "astral-relay/0.4.0"
+    "user-agent": "astral-relay/0.5.0"
   };
 }
 async function fetchCatalog(id, tokens, signal, doFetch = electronFetch) {
@@ -308,12 +427,9 @@ async function handle(req, res, token, deps) {
     sendError(res, 401, credential.startsWith("ar1.") ? "星驿：本轮模式凭据无效或已过期。请确认模型档案使用当前面板的 Base URL 和 token，再开始新轮次。" : refusalMessage(provider, "bad_token"));
     return;
   }
-  if (requiresCodeMode(provider)) {
-    if (!context || context.mode !== "code" || context.source !== "conversation") {
-      log.warn(`模式检查拒绝 ${provider.id}`);
-      sendError(res, 403, context ? `星驿：${provider.label} 仅限 Code 交互式会话，当前模式 ${context.mode} / 来源 ${context.source} 不支持。请切换到 Code 模式，或选择通用套餐。` : `星驿：${provider.label} 仅限 Code 模式。宿主未提供本轮模式凭据，请使用支持 Astral Relay 模式验证的 Cyrene 构建；旧版宿主无法使用编程套餐。`);
-      return;
-    }
+  if (context && deps.nonces && !deps.nonces.accept(context.nonce)) {
+    sendError(res, 401, "星驿：本轮模式凭据已超出首次使用后的可用时限，请回到 Code 模式开始新一轮对话。");
+    return;
   }
   const upstreamBase = resolveUpstream(provider);
   if (!upstreamBase) {
@@ -331,6 +447,14 @@ async function handle(req, res, token, deps) {
   } catch (err) {
     sendError(res, 400, `请求体读取失败：${err instanceof Error ? err.message : String(err)}`);
     return;
+  }
+  if (requiresCodeMode(provider)) {
+    const allowed = context ? context.mode === "code" && context.source === "conversation" : deps.binding?.matchesAny(lastUserTexts(body)) === true;
+    if (!allowed) {
+      log.warn(`模式检查拒绝 ${provider.id}`);
+      sendError(res, 403, context ? `星驿：${provider.label} 仅限 Code 交互式会话，当前模式 ${context.mode} / 来源 ${context.source} 不支持。请切换到 Code 模式，或选择通用套餐。` : `星驿：${provider.label} 仅限 Code 模式的交互式对话。本轮请求没有匹配到任何 Code 模式的用户输入：定时任务、朋友圈发帖、模型档案的「连接测试」以及 Chat / Work / Learn 都会被拒绝。请切到 Code 模式直接发消息，或给这些场景换一个按量付费的模型档案。`);
+      return;
+    }
   }
   const suffix = route.rest.startsWith("/v1/") ? route.rest.slice(3) : route.rest;
   const upstreamUrl = upstreamBase.replace(/\/+$/, "") + suffix;
@@ -489,6 +613,8 @@ function registerUiIpc(ctx, deps) {
       providers,
       windowTtlMs: config.windowTtlMs,
       gate: gate.snapshot(),
+      // 只回传条目数量，不回传任何指纹或原文：面板不需要知道用户说了什么。
+      binding: { pending: deps.binding?.size() ?? 0, ttlMs: DEFAULT_BINDING_TTL_MS },
       proxy: proxy ? { port: proxy.port, token: proxy.token } : null
     };
   };
@@ -647,10 +773,10 @@ function createLogger(raw) {
 }
 
 // src/index.ts
-var import_node_crypto3 = require("node:crypto");
+var import_node_crypto4 = require("node:crypto");
 
 // src/oauth/manager.ts
-var import_node_crypto2 = require("node:crypto");
+var import_node_crypto3 = require("node:crypto");
 
 // src/oauth/callback.ts
 var import_node_http2 = require("node:http");
@@ -827,8 +953,8 @@ function createOAuthManager(deps) {
       let callback;
       try {
         const spec = OAUTH_SPECS[id];
-        const state = (0, import_node_crypto2.randomBytes)(24).toString("base64url");
-        const verifier = (0, import_node_crypto2.randomBytes)(32).toString("base64url");
+        const state = (0, import_node_crypto3.randomBytes)(24).toString("base64url");
+        const verifier = (0, import_node_crypto3.randomBytes)(32).toString("base64url");
         const url = new URL(spec.authorizeUrl);
         for (const [key, value] of Object.entries({
           response_type: "code",
@@ -836,7 +962,7 @@ function createOAuthManager(deps) {
           redirect_uri: redirectUri(spec),
           scope: spec.scopes.join(" "),
           state,
-          code_challenge: (0, import_node_crypto2.createHash)("sha256").update(verifier).digest("base64url"),
+          code_challenge: (0, import_node_crypto3.createHash)("sha256").update(verifier).digest("base64url"),
           code_challenge_method: "S256",
           ...spec.extra
         })) url.searchParams.set(key, value);
@@ -966,7 +1092,9 @@ var plugin = {
   async register(ctx) {
     const log = createLogger(ctx);
     const gate = createGate({ ttlMs: loadConfig(ctx.storage).windowTtlMs });
-    const token = "ar-secret-v1." + (0, import_node_crypto3.randomBytes)(24).toString("hex");
+    const binding = createTurnBinding();
+    const nonces = createNonceStore();
+    const token = "ar-secret-v1." + (0, import_node_crypto4.randomBytes)(24).toString("hex");
     const oauth = createOAuthManager({ secrets: ctx.deps.secrets, signal: ctx.signal });
     const resolveUpstream = (provider) => resolveBaseUrl(provider, regionOf(loadConfig(ctx.storage), provider.id));
     const getKey = async (providerId) => {
@@ -981,7 +1109,7 @@ var plugin = {
     };
     let proxy = null;
     try {
-      proxy = await startProxy({ gate, resolveUpstream, getKey, getOAuthTokens: (id) => oauth.getTokens(id), signal: ctx.signal, log }, token);
+      proxy = await startProxy({ gate, binding, nonces, resolveUpstream, getKey, getOAuthTokens: (id) => oauth.getTokens(id), signal: ctx.signal, log }, token);
       log.log(`代理已启动：127.0.0.1:${proxy.port}`);
     } catch (err) {
       log.error("代理启动失败：", err instanceof Error ? err.message : String(err));
@@ -991,17 +1119,21 @@ var plugin = {
       modes: ["code"],
       sources: ["conversation"],
       provide: (input) => {
-        if (!input.signal.aborted && input.mode === "code" && input.source === "conversation") gate.open();
+        if (!input.signal.aborted && input.mode === "code" && input.source === "conversation") {
+          gate.open();
+          binding.register({ mode: input.mode, source: input.source, userText: input.userText });
+        }
         return "";
       }
     });
     ctx.events.on("host:turn:finished", () => {
       gate.close();
     });
-    registerUiIpc(ctx, { gate, storage: ctx.storage, log, getProxy: () => proxy, oauth });
+    registerUiIpc(ctx, { gate, binding, storage: ctx.storage, log, getProxy: () => proxy, oauth });
     winManager = createWindowManager({ log });
     ctx.onDispose(async () => {
       gate.close();
+      binding.clear();
       winManager?.close();
       winManager = null;
       if (proxy) {
@@ -1014,7 +1146,7 @@ var plugin = {
       }
     });
     activeCtx = ctx;
-    log.log("已启用（编程套餐逐请求验证 Code 会话凭据；通用 BYOS 全模式可用）");
+    log.log("已启用（编程套餐按 Code 轮次绑定放行，无需宿主改动；通用 BYOS 全模式可用）");
   },
   async unregister() {
     winManager?.close();

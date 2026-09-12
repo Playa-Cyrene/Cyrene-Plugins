@@ -86,18 +86,21 @@
   <h1>星驿 · Astral Relay</h1>
   <div class="sub">
     用你自己的订阅额度驱动 Cyrene。按套餐和接入方式标明可用模式。
-    Codex / Grok 通过浏览器连接；其它套餐填写订阅 Key。
+    Grok 通过浏览器连接；其它套餐填写订阅 Key。
   </div>
 
   <section>
     <div class="head">
-      <h2>Code 活动状态（仅供参考）</h2>
+      <h2>Code 轮次状态</h2>
       <span id="gate-badge" class="badge">读取中…</span>
+      <span id="binding-badge" class="badge">读取中…</span>
     </div>
     <div class="note" id="gate-note">
-      编程套餐逐请求验证宿主签名的模式凭据，仅允许 Code 交互式会话。
-      Chat、Work、Learn、定时任务及无模式凭据的请求均被拒绝；通用套餐支持全模式。
-      上方活动状态不参与请求放行。
+      编程套餐只放行 Code 模式的交互式对话：插件在 Code 轮次登记本轮用户输入，
+      代理再核对请求里的用户消息是否匹配。Chat、Work、Learn、定时任务、朋友圈发帖
+      以及模型档案的「连接测试」都会被拒绝；通用套餐支持全模式，不受此限制。
+      左侧活动指示器仅供参考，不参与放行；右侧是当前生效的 Code 轮次登记数。
+      若宿主额外签名了本轮模式凭据，则以签名为准。
     </div>
   </section>
 
@@ -112,8 +115,8 @@
     <code id="token">—</code>
     <div class="note">端口和 token 每次启用都重新生成，重启或重新启用后请重新复制 Base URL 和 token。</div>
     <div class="warn-box" style="margin-top:10px">
-      编程套餐需要包含 Astral Relay 模式验证支持的 Cyrene 构建。
-      旧版宿主会收到 403 错误；通用套餐仍可使用。连接测试没有 Code 轮次凭据，也会被拒绝。
+      编程套餐请直接在 Code 模式发消息测试：模型档案的「连接测试」不属于 Code 轮次，
+      一定会被拒绝，这不是故障。通用套餐（Grok / MiniMax）任意模式均可测试。
     </div>
   </section>
 

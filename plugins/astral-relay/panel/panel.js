@@ -20,8 +20,16 @@ function badge(text, cls) {
 
 function renderGate(gate) {
   const node = $("gate-badge");
-  node.textContent = gate && gate.open ? "开窗中" : "已关闭";
+  node.textContent = gate && gate.open ? "活动中" : "空闲";
   node.className = "badge " + (gate && gate.open ? "on" : "off");
+}
+
+/** 生效中的 Code 轮次登记数。只有数量，面板拿不到也不需要用户输入本身。 */
+function renderBinding(binding) {
+  const node = $("binding-badge");
+  const pending = binding && typeof binding.pending === "number" ? binding.pending : 0;
+  node.textContent = "Code 轮次登记 " + pending;
+  node.className = "badge " + (pending > 0 ? "on" : "off");
 }
 
 /** 一张厂商卡片。所有文本走 textContent —— 面板不拼 HTML。 */
@@ -198,6 +206,7 @@ function providerCard(p) {
 
 function render(state, statusOnly = false) {
   renderGate(state.gate);
+  renderBinding(state.binding);
   for (const p of state.providers) {
     if (p.auth !== "oauth") continue;
     const node = document.getElementById("auth-status-" + p.id);
