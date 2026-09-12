@@ -22,12 +22,12 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [local-asr-contract](./plugins/local-asr-contract) | 0.1.0 | 本地语音识别契约示例：演示语音输入租约的获取、提交与释放 | —（示例，不分发） | Cyrene 示例 | — |
 | [system-status](./plugins/system-status) | 0.1.0 | 查询本机系统状态：CPU、内存、磁盘、电池与开机时长，附带可视化状态面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/system-status-0.1.0/system-status-0.1.0.zip) | Playa | — |
 | [subscription-oauth](./plugins/subscription-oauth) | 1.2.7 | 用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通；支持工具调用、多账号切换、模型目录与用量显示 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/subscription-oauth-1.2.7/subscription-oauth-1.2.7.zip) | 1971687396 | — |
-| [indextts-tts](./plugins/indextts-tts) | 1.1.2 | 在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用 | — | Downfallofthedownfall | — |
+| [indextts-tts](./plugins/indextts-tts) | 1.1.2 | 在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/indextts-tts-1.1.2/indextts-tts-1.1.2.zip) | Downfallofthedownfall | — |
 | [ripples-of-aion](./plugins/ripples-of-aion) | 0.6.0 | 结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴、autoDream 整合与五页可视化面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/ripples-of-aion-0.6.0/ripples-of-aion-0.6.0.zip) | modusensus | [Ripples-of-Aion](https://github.com/modusensus/Ripples-of-Aion) |
 | [chat-export](./plugins/chat-export) | 1.0.0 | 把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip) | Playa | — |
 | [minecraft-bot](./plugins/minecraft-bot) | 0.10.0-beta.1（Beta） | 把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/minecraft-bot-0.10.0-beta.1/minecraft-bot-0.10.0-beta.1.zip) | Cyrene | — |
 | [bili-music](./plugins/bili-music) | 0.3.2 | B 站听歌：视频分 P 当音源，搜索/下载转 M4A 用内置隐藏播放器出声，支持播放队列与扫码登录（凭据只存本机），匿名可用 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/bili-music-0.3.2/bili-music-0.3.2.zip) | boring9720 | — |
-| [astral-relay](./plugins/astral-relay) | 0.5.0 | BYOS 中转站：用自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——通义千问 / 腾讯 Coding Plan 仅限 Code 交互会话（由插件自行判定，不需要改动宿主），MiniMax 全模式，xAI Grok 为实验性 OAuth 接入 | — | Unknownuserfrommars | [astral-relay](https://github.com/Unknownuserfrommars/astral-relay) |
+| [astral-relay](./plugins/astral-relay) | 0.5.0 | BYOS 中转站：用自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——通义千问 / 腾讯 Coding Plan 仅限 Code 交互会话（由插件自行判定，不需要改动宿主），MiniMax 全模式，xAI Grok 为实验性 OAuth 接入 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/astral-relay-0.5.0/astral-relay-0.5.0.zip) | Unknownuserfrommars | [astral-relay](https://github.com/Unknownuserfrommars/astral-relay) |
 
 ---
 
