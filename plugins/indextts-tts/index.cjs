@@ -65,6 +65,7 @@ const DEFAULT_CONFIG = {
   engineVersion: "v2",
   autoStart: true,
   emotionGuidance: false,
+  disableFp16: false,
   githubMirror: DEFAULT_GITHUB_MIRROR_TEXT,
   pypiMirror: DEFAULT_PYPI_MIRROR,
   modelSource: "auto",
@@ -128,6 +129,7 @@ function normalizeConfig(raw) {
     engineVersion: c.engineVersion === "v2_5" ? "v2_5" : "v2",
     autoStart: c.autoStart !== false,
     emotionGuidance: c.emotionGuidance === true,
+    disableFp16: c.disableFp16 === true,
     // 镜像字段的语义：没存过 → 给默认镜像；存过空串 → 保持空（只用官方）。
     githubMirror: typeof c.githubMirror === "string" ? c.githubMirror.trim() : DEFAULT_GITHUB_MIRROR_TEXT,
     pypiMirror: typeof c.pypiMirror === "string" ? c.pypiMirror.trim() : DEFAULT_PYPI_MIRROR,
@@ -175,6 +177,8 @@ function fingerprint(cfg) {
     port: cfg.port,
     engineVersion: cfg.engineVersion,
     emotionGuidance: cfg.emotionGuidance,
+    // FP16 是启动参数，改了要重启才生效。
+    disableFp16: cfg.disableFp16,
     // 模型来源会变成服务进程的 USE_MODELSCOPE 环境变量，改了必须重启才生效；
     // 镜像前缀只用于安装阶段，故意不进指纹（改它不该重启已在跑的服务）。
     modelSource: cfg.modelSource,
@@ -487,6 +491,29 @@ function uvMirrorEnv(cfg) {
   return env;
 }
 
+/**
+ * 服务端进程的工作目录。
+ * 上游 `infer_v2_5.py` / `infer.py` 在 import 时把 `HF_HUB_CACHE` 硬写成相对路径
+ * `./checkpoints/hf_cache`（直接覆盖我们设的环境变量），所以让 cwd 落在模型目录的父级，
+ * 那个相对路径就正好指回 `<模型目录>/hf_cache`；模型目录不叫 checkpoints 时退回插件目录。
+ */
+function serverCwd(modelDir) {
+  const base = path.basename(modelDir || "").toLowerCase();
+  return base === "checkpoints" ? path.dirname(modelDir) : __dirname;
+}
+
+/**
+ * 服务端（含 --download-only 那一步）要用的环境变量：
+ * 显式给出 HF 缓存目录（v2.0 直接生效；v2_5 会被上游的相对路径覆盖，因此还要靠 serverCwd 兜住），
+ * 再叠加用户选的模型来源（auto = 不设，交给上游自己探测）。
+ */
+function serverEnv(modelDir, source) {
+  return withEnv(Object.assign(
+    { HF_HUB_CACHE: path.join(modelDir, "hf_cache") },
+    modelSourceEnv(source),
+  ));
+}
+
 /** 运行子进程并把输出逐行回调；非 0 退出码时 reject。进程会登记到 auxChildren 以便统一清理。 */
 function runStreaming(cmd, args, options, onLine) {
   return new Promise((resolve, reject) => {
@@ -751,18 +778,18 @@ async function bootstrapInstall(installDir, signal) {
   const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
   try {
     await runStreaming(pythonPath, modelArgs, {
-      cwd: __dirname,
+      cwd: serverCwd(modelDir),
       signal: signal,
-      env: withEnv(modelSourceEnv(cfg.modelSource)),
+      env: serverEnv(modelDir, cfg.modelSource),
     }, feedModel);
   } catch (err) {
     if (signal && signal.aborted) throw modelFailure(err, false);
     sendProgress("model", "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
     try {
       await runStreaming(pythonPath, modelArgs, {
-        cwd: __dirname,
+        cwd: serverCwd(modelDir),
         signal: signal,
-        env: withEnv(modelSourceEnv(secondSource)),
+        env: serverEnv(modelDir, secondSource),
       }, feedModel);
     } catch (err2) {
       throw modelFailure(err2, true);
@@ -937,15 +964,17 @@ function onGone() {
   }
   if (restartCount >= MAX_RESTARTS) {
     if (ctxRef) {
-      // 文案要如实：前几次可能是「成功重启后又崩」，不能写「启动了 N 次都失败」。
-      ctxRef.log("IndexTTS 服务已连续 " + restartCount + " 次崩溃/启动失败，停止自动重启"
+      // restartCount 是「已经自动重启了多少次」，不是「崩了几次」；
+      // 前几次重启可能都成功过（起来又崩），所以文案不说「启动了 N 次都失败」。
+      ctxRef.log("IndexTTS 服务已自动重启 " + restartCount + " 次仍未稳定，停止自动重启"
         + (lastError ? "（最近原因：" + lastError + "）" : "")
         + "；修正配置后可手动启动");
     }
     return;
   }
   if (restartTimer) return;
-  // 就绪后崩溃也要计数（否则「起来就崩」会无限重启）；稳定计时被这次崩溃打断。
+  // 崩溃预算的唯一计数点：一次崩溃 = 一次自动重启。
+  // 若在 doStartServer 里再计一次，「一次崩溃 + 一次重启失败」会吃掉两格预算。
   restartCount += 1;
   clearStableTimer();
   restartTimer = setTimeout(() => {
@@ -1058,12 +1087,9 @@ async function doStartServer(options) {
     deliberateStop = false;
   }
 
-  if (restartCount >= MAX_RESTARTS) {
-    throw new Error("已连续 " + restartCount + " 次崩溃/启动失败，停止自动重启"
-      + (lastError ? "（最近原因：" + lastError + "）" : "")
-      + "；修正配置后请手动点「启动」");
-  }
-
+  // 崩溃预算的闸门只在 onGone 里（唯一计数点）。这里曾经也有一道 `>= MAX_RESTARTS` 的闸门，
+  // 但它读的是「已用次数」、而 onGone 是先判后加，两处一夹就把预算从 3 次缩成 2 次、
+  // 还会让报错说成「连续启动失败」。用户手动启动进来时预算本就被重置，这里无需再拦。
   deliberateStop = false;
   stopRequested = false; // 新的启动开始，清除上一次的停止请求
   ready = false;
@@ -1078,16 +1104,18 @@ async function doStartServer(options) {
     "--nonce", HEALTH_NONCE, // /health 回显，用于确认应答来自本进程
   ];
   if (cfg.emotionGuidance) args.push("--emotion"); // 加载 QwenEmotion + 文本情感引导
+  if (cfg.disableFp16) args.push("--no-fp16"); // 关掉 FP16/BF16（老显卡、出现杂音时可试）
 
   serverLog = [];
   let proc;
   try {
     proc = spawn(cfg.pythonPath, args, {
-      cwd: __dirname,
+      cwd: serverCwd(cfg.modelDir),
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
-      // USE_MODELSCOPE / HF_ENDPOINT：构造模型时若 hf_cache 不全，上游会按这个变量决定走哪条下载路径。
-      env: withEnv(modelSourceEnv(cfg.modelSource)),
+      // HF_HUB_CACHE：模型加载时若 hf_cache 不全，上游会按这个变量找/下载辅助模型；
+      // USE_MODELSCOPE / HF_ENDPOINT：决定走官方 HF 还是 ModelScope。
+      env: serverEnv(cfg.modelDir, cfg.modelSource),
     });
   } catch (err) {
     // 同步抛错（解释器路径非法等）也要给一句人话，而不是把原始异常丢给 IPC。
@@ -1131,7 +1159,8 @@ async function doStartServer(options) {
     if (cancelled) {
       throw new Error("已取消启动");
     }
-    restartCount += 1;
+    // 这里不再 restartCount += 1：崩溃由 onGone 计一次，若在这也计，
+    // 「一次崩溃 + 一次重启失败」就会吃掉两格预算，实际能重启的次数比 README 说的少一半。
     const diagnosis = diagnoseServerLog(serverLog.join("\n"), cfg.port);
     throw new Error(startupFailureMessage({
       reason: wait.reason,
