@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>星驿 · Astral Relay</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #5c4650;
+      --ink-soft: #8a6b76;
+      --pink: #e05a85;
+      --line: #f6dce6;
+      --warn: #b8860b;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: linear-gradient(175deg, #fff8fb 0%, #fdeef5 100%);
+      color: var(--ink);
+      min-height: 100vh;
+      font-size: 13px;
+    }
+    h1 { font-size: 17px; margin: 0 0 4px; color: var(--pink); }
+    .sub { color: var(--ink-soft); margin-bottom: 16px; font-size: 12px; line-height: 1.7; }
+    section {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    section.disabled { opacity: 0.55; }
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    h2 { font-size: 13px; margin: 0; }
+    label { display: block; margin: 8px 0 4px; color: var(--ink-soft); font-size: 12px; }
+    select, input[type="password"], input[type="number"] {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    button {
+      padding: 6px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--pink);
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    button.ghost { background: #fff; color: var(--ink); }
+    .row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      background: #f3f3f3;
+      color: var(--ink-soft);
+    }
+    .badge.on { background: #e6f6ea; color: #2e7d32; }
+    .badge.off { background: #fdecea; color: #c62828; }
+    .badge.warn { background: #fff6e0; color: var(--warn); }
+    code {
+      white-space: pre-wrap;
+      display: block;
+      background: #faf3f7;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 12px;
+      word-break: break-all;
+    }
+    .note { color: var(--ink-soft); font-size: 11px; line-height: 1.7; margin: 4px 0; }
+    .warn-box { color: var(--warn); font-size: 11px; line-height: 1.7; }
+    a { color: var(--pink); }
+  </style>
+</head>
+<body>
+  <h1>星驿 · Astral Relay</h1>
+  <div class="sub">
+    用你自己的订阅额度驱动 Cyrene。按套餐和接入方式标明可用模式。
+    Codex / Grok 通过浏览器连接；其它套餐填写订阅 Key。
+  </div>
+
+  <section>
+    <div class="head">
+      <h2>Code 活动状态（仅供参考）</h2>
+      <span id="gate-badge" class="badge">读取中…</span>
+    </div>
+    <div class="note" id="gate-note">
+      编程套餐逐请求验证宿主签名的模式凭据，仅允许 Code 交互式会话。
+      Chat、Work、Learn、定时任务及无模式凭据的请求均被拒绝；通用套餐支持全模式。
+      上方活动状态不参与请求放行。
+    </div>
+  </section>
+
+  <div id="providers"></div>
+
+  <section>
+    <div class="head"><h2>通用设置</h2></div>
+    <label for="ttl">活动指示器保留时间（毫秒；重新启用插件后生效，不影响授权）</label>
+    <input type="number" id="ttl" min="10000" max="600000" step="1000" />
+    <div class="row"><button id="save-ttl">保存</button></div>
+    <label>模型档案 API Key（所有厂商共用这一个 token，不是你的订阅 Key）</label>
+    <code id="token">—</code>
+    <div class="note">端口和 token 每次启用都重新生成，重启或重新启用后请重新复制 Base URL 和 token。</div>
+    <div class="warn-box" style="margin-top:10px">
+      编程套餐需要包含 Astral Relay 模式验证支持的 Cyrene 构建。
+      旧版宿主会收到 403 错误；通用套餐仍可使用。连接测试没有 Code 轮次凭据，也会被拒绝。
+    </div>
+  </section>
+
+  <script src="panel.js"></script>
+</body>
+</html>

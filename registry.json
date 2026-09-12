@@ -74,6 +74,14 @@
       "description": "语音听歌：B 站视频分 P 当音源，搜索/定位/下载转 M4A 后用内置隐藏播放器直接出声。支持播放队列与暂停/继续/下一首/音量控制，支持 B 站扫码登录（解锁高码率音源，凭据只存本机）。匿名也可用",
       "author": "boring9720",
       "homepage": "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/bili-music"
+    },
+    {
+      "id": "astral-relay",
+      "name": "星驿 · Astral Relay BYOS",
+      "version": "0.4.0",
+      "description": "BYOS 中转站：用你自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——编程套餐仅限 Code 交互会话，通用套餐全模式可用",
+      "author": "Unknownuserfrommars",
+      "homepage": "https://github.com/Unknownuserfrommars/astral-relay"
     }
   ]
 }
