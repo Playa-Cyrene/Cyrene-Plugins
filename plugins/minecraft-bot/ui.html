@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Minecraft 设置</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #fff9fc;
+    --card: #ffffff;
+    --text: #3d2b33;
+    --sub: #9b7f8a;
+    --line: #f3e2e9;
+    --accent: #d4587e;
+    --accent-soft: #fceef2;
+    --ok: #2e9e6b;
+    --warn: #c77700;
+    --err: #c94f4f;
+    --radius: 10px;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif;
+    padding: 18px;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  h1 {
+    font-size: 15px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  h1 .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #ccc; flex: none;
+  }
+  h1 .dot.on { background: var(--ok); }
+  h1 .dot.connecting { background: var(--warn); }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .card h2 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--sub);
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+  }
+  .field { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { width: 64px; flex: none; color: var(--sub); font-size: 12px; }
+  .field input {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 9px;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .field input:disabled { opacity: 0.55; }
+  .field input.short { flex: 0 0 90px; }
+  .row { display: flex; gap: 8px; }
+  .row > .field { flex: 1; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:not(:disabled):hover { background: #c24b70; }
+  .btn-ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  .btn-ghost:not(:disabled):hover { background: var(--accent-soft); }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .actions .spacer { flex: 1; }
+  .stat { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12.5px; }
+  .stat .k { color: var(--sub); }
+  .stat .v { text-align: right; word-break: break-all; max-width: 65%; }
+  .badge {
+    display: inline-block; padding: 1px 9px; border-radius: 20px;
+    font-size: 11.5px; font-weight: 500;
+  }
+  .badge.on { background: #e5f5ec; color: var(--ok); }
+  .badge.off { background: #f0eff0; color: #888; }
+  .badge.connecting { background: #fdf3e0; color: var(--warn); }
+  .msg {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    display: none;
+  }
+  .msg.err { background: #fbeaea; color: var(--err); }
+  .msg.ok { background: #e9f6ef; color: var(--ok); }
+  .chat { font-size: 12px; color: var(--sub); }
+  .chat div { padding: 2px 0; border-bottom: 1px dashed var(--line); }
+  .chat div:last-child { border-bottom: none; }
+  .chat b { color: var(--text); font-weight: 500; }
+  .empty { color: var(--sub); font-size: 12px; text-align: center; padding: 6px 0; }
+  .pref { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pref-title { font-size: 12.5px; font-weight: 500; }
+  .pref-desc { font-size: 11.5px; color: var(--sub); margin-top: 1px; }
+  .switch { position: relative; flex: none; width: 34px; height: 20px; display: inline-block; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch .slider {
+    position: absolute; inset: 0;
+    background: #e3d5db;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.18s;
+  }
+  .switch .slider::before {
+    content: "";
+    position: absolute;
+    width: 14px; height: 14px;
+    left: 3px; top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.18s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  }
+  .switch input:checked + .slider { background: var(--accent); }
+  .switch input:checked + .slider::before { transform: translateX(14px); }
+</style>
+</head>
+<body>
+  <h1><span class="dot" id="dot"></span>Minecraft <span id="stateBadge" class="badge off">未连接</span></h1>
+
+  <div class="card">
+    <h2>服务器</h2>
+    <div class="field">
+      <label>地址</label>
+      <input id="host" placeholder="如 localhost 或 192.168.1.100" spellcheck="false">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>端口</label>
+        <input id="port" class="short" placeholder="25565" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>角色名</label>
+        <input id="username" placeholder="Cyrene" maxlength="16" spellcheck="false">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-primary" id="btnConnect">连接</button>
+      <button class="btn-ghost" id="btnDisconnect" disabled>断开</button>
+      <span class="spacer"></span>
+      <button class="btn-ghost" id="btnStop" disabled>停下动作</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>行为偏好</h2>
+    <div class="pref">
+      <div class="pref-text">
+        <div class="pref-title">胆小模式</div>
+        <div class="pref-desc">开启后见到敌对生物就逃跑、不再反击；关闭后被攻击会反击。未连接时设置会在下次进入服务器后生效。</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="cowardice"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>游戏状态</h2>
+    <div class="stat"><span class="k">角色</span><span class="v" id="stName">—</span></div>
+    <div class="stat"><span class="k">坐标</span><span class="v" id="stPos">—</span></div>
+    <div class="stat"><span class="k">生命 / 饥饿</span><span class="v" id="stHealth">—</span></div>
+    <div class="stat"><span class="k">正在做</span><span class="v" id="stTask">—</span></div>
+    <div class="stat"><span class="k">自主任务</span><span class="v" id="stGoal">—</span></div>
+  </div>
+
+  <div class="card">
+    <h2>最近游戏聊天</h2>
+    <div class="chat" id="chat"><div class="empty">暂无消息</div></div>
+  </div>
+
+<script>
+  "use strict";
+  const { ipcRenderer } = require("electron");
+  const invoke = (ch, payload) => ipcRenderer.invoke("plugin:minecraft-bot:" + ch, payload);
+  const $ = (id) => document.getElementById(id);
+
+  const els = {
+    dot: $("dot"), badge: $("stateBadge"),
+    host: $("host"), port: $("port"), username: $("username"),
+    btnConnect: $("btnConnect"), btnDisconnect: $("btnDisconnect"), btnStop: $("btnStop"),
+    msg: $("msg"),
+    stName: $("stName"), stPos: $("stPos"), stHealth: $("stHealth"), stTask: $("stTask"), stGoal: $("stGoal"),
+    chat: $("chat"),
+    cowardice: $("cowardice"),
+  };
+
+  function showMessage(kind, text) {
+    els.msg.className = "msg " + kind;
+    els.msg.textContent = text;
+    els.msg.style.display = "block";
+    if (kind === "ok") setTimeout(() => { els.msg.style.display = "none"; }, 4000);
+  }
+
+  function fmtPos(p) {
+    return p ? "(" + p.map((n) => n.toFixed(1)).join(", ") + ")" : "—";
+  }
+
+  function setUi(state, busy) {
+    const inputs = [els.host, els.port, els.username];
+    inputs.forEach((el) => { el.disabled = state === "connected" || busy; });
+    els.btnConnect.disabled = state === "connected" || busy;
+    els.btnDisconnect.disabled = state !== "connected" || busy;
+    els.btnStop.disabled = state !== "connected";
+    els.dot.className = "dot" + (state === "connected" ? " on" : state === "connecting" ? " connecting" : "");
+    els.badge.className = "badge " + state;
+    els.badge.textContent = state === "connected" ? "已连接" : state === "connecting" ? "连接中" : "未连接";
+    els.btnConnect.textContent = busy ? "连接中…" : "连接";
+  }
+
+  async function refresh() {
+    try {
+      const { status, goal } = await invoke("status");
+      const state = status.state ?? "disconnected";
+      const busy = els.btnConnect.textContent === "连接中…";
+      setUi(state, busy);
+      els.stName.textContent = status.username ?? "—";
+      els.stPos.textContent = state === "connected" ? fmtPos(status.position) : "—";
+      els.stHealth.textContent = state === "connected" && status.health != null
+        ? status.health + " / 20　·　" + (status.food ?? "?") + " / 20" : "—";
+      els.stTask.textContent = status.currentTask ?? "—";
+      if (goal && goal.running) {
+        els.stGoal.textContent = "「" + goal.goal + "」· 第 " + goal.round + " 轮";
+      } else if (goal && goal.lastSummary) {
+        els.stGoal.textContent = goal.lastSummary;
+      } else {
+        els.stGoal.textContent = "—";
+      }
+      const chat = (status.recentChat ?? []).slice(-5);
+      els.chat.innerHTML = chat.length
+        ? chat.map((c) => "<div><b>" + c.player + "：</b>" + c.message.replace(/[<>&]/g, (s) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[s]) + "</div>").join("")
+        : '<div class="empty">暂无消息</div>';
+    } catch { /* 主进程不可达时静默，下次轮询再试 */ }
+  }
+
+  async function connect() {
+    const host = els.host.value.trim();
+    const port = parseInt(els.port.value.trim(), 10);
+    const username = els.username.value.trim();
+    if (!host) { showMessage("err", "请填写服务器地址"); return; }
+    els.btnConnect.disabled = true;
+    els.btnConnect.textContent = "连接中…";
+    els.msg.style.display = "none";
+    try {
+      await invoke("connect", {
+        host,
+        port: Number.isFinite(port) ? port : 25565,
+        username: username || "Cyrene",
+      });
+      showMessage("ok", "连接成功，已在游戏里上线");
+    } catch (err) {
+      showMessage("err", String(err && err.message ? err.message : err));
+    } finally {
+      els.btnConnect.textContent = "连接";
+      refresh();
+    }
+  }
+
+  async function disconnect() {
+    els.btnDisconnect.disabled = true;
+    try {
+      await invoke("disconnect");
+      showMessage("ok", "已断开连接");
+    } catch (err) {
+      showMessage("err", String(err && err.message ? err.message : err));
+    } finally {
+      refresh();
+    }
+  }
+
+  async function stopActions() {
+    try {
+      const r = await invoke("stopActions");
+      showMessage("ok", r);
+    } catch (err) {
+      showMessage("err", String(err && err.message ? err.message : err));
+    }
+    refresh();
+  }
+
+  async function init() {
+    try {
+      const cfg = await invoke("getConfig");
+      if (cfg) {
+        els.host.value = cfg.host ?? "";
+        els.port.value = cfg.port ?? "";
+        els.username.value = cfg.username ?? "Cyrene";
+      } else {
+        els.username.value = "Cyrene";
+      }
+    } catch { /* 读取配置失败用默认值 */ }
+    try { els.cowardice.checked = (await invoke("getCowardice")) === true; } catch { /* 读取失败保持默认 */ }
+    els.cowardice.addEventListener("change", async () => {
+      try {
+        await invoke("setCowardice", els.cowardice.checked);
+        showMessage("ok", els.cowardice.checked ? "胆小模式已开启" : "胆小模式已关闭");
+      } catch (err) {
+        showMessage("err", String(err && err.message ? err.message : err));
+        // 设置失败时回读实际状态，避免开关与真实值脱节
+        try { els.cowardice.checked = (await invoke("getCowardice")) === true; } catch { /* 忽略 */ }
+      }
+    });
+    els.btnConnect.addEventListener("click", connect);
+    els.btnDisconnect.addEventListener("click", disconnect);
+    els.btnStop.addEventListener("click", stopActions);
+    els.host.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+    els.port.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+    els.username.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+    refresh();
+    setInterval(refresh, 2000);
+  }
+
+  init();
+</script>
+</body>
+</html>

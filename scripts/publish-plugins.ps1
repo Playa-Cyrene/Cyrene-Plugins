@@ -2,6 +2,7 @@
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts/publish-plugins.ps1                        发布全部有新版本的插件
 #   powershell -ExecutionPolicy Bypass -File scripts/publish-plugins.ps1 -PluginId weather-tool 只发布指定插件
+#   powershell -ExecutionPolicy Bypass -File scripts/publish-plugins.ps1 -PluginId minecraft-bot -Prerelease 发布指定插件为预发布
 # 前置：已安装 gh CLI 并完成 gh auth login；合并插件 PR 后运行本脚本
 # 规则：每个版本一个独立 Release（tag = <插件id>-<版本>），附件下载量由 GitHub 自动计数；
 #       tag 已存在时跳过，绝不覆盖旧 Release（保留历史版本下载计数）。
@@ -9,7 +10,9 @@
 
 param(
     # 只发布指定插件 id；缺省遍历全部插件目录
-    [string]$PluginId
+    [string]$PluginId,
+    # 创建 GitHub 预发布（适合 Beta / RC）
+    [switch]$Prerelease
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,7 +75,11 @@ Get-ChildItem $pluginsDir -Directory | Where-Object { -not $PluginId -or $_.Name
     Write-Host ("发布 {0}  ({1:N1} kB)  sha256={2}" -f $zipName, ((Get-Item $zipPath).Length / 1KB), $sha256)
 
     if (-not $releaseExists) {
-        gh release create $tag $zipPath --title $tag --notes $manifest.description --repo $Repo
+        $releaseArgs = @("release", "create", $tag, $zipPath, "--title", $tag, "--notes", $manifest.description, "--repo", $Repo)
+        if ($Prerelease) {
+            $releaseArgs += "--prerelease"
+        }
+        & gh @releaseArgs
         if ($LASTEXITCODE -ne 0) {
             throw "gh release create ${tag} 失败"
         }

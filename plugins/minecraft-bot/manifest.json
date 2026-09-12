@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "minecraft-bot",
+  "name": "Minecraft 机器人",
+  "version": "0.10.0-beta.1",
+  "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射",
+  "author": "Cyrene",
+  "entry": "index.cjs",
+  "defaultEnabled": false,
+  "deps": [
+    "llm"
+  ]
+}

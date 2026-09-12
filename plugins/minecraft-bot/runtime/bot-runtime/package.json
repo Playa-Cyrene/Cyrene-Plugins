@@ -1,0 +1,13 @@
+{
+  "name": "cyrene-minecraft-bot-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "description": "minecraft-bot 插件的机器人子进程：mineflayer 连接 + stdio JSON 行协议",
+  "type": "module",
+  "main": "src/index.mjs",
+  "dependencies": {
+    "mineflayer": "^4.39.0",
+    "mineflayer-collectblock": "^1.6.0",
+    "mineflayer-pathfinder": "^2.4.5"
+  }
+}
