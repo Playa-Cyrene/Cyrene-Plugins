@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "local-asr",
+  "name": "本地语音识别（外置引擎）",
+  "version": "0.4.9",
+  "description": "接管语音通话/聊天输入，通话开始自动接管（可在面板关闭）。零环境小白可用：启用后自动体检，无 ASR 环境时在面板一键下载轻量引擎（sherpa-onnx CPU，约 250MB，国内源，SHA-256 哈希校验，断点续传）。有 FunASR 外置服务(8328)时优先用 GPU。纯 SDK 接口实现，不依赖宿主内部模块。",
+  "author": "boring9720",
+  "entry": "index.cjs",
+  "defaultEnabled": false,
+  "deps": [
+    "speech-input"
+  ]
+}

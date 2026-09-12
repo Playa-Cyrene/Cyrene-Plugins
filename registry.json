@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-09-11",
+  "updatedAt": "2026-09-12",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -56,6 +56,14 @@
       "version": "1.0.0",
       "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip",
       "sha256": "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
+    },
+    {
+      "id": "local-asr",
+      "name": "本地语音识别（外置引擎）",
+      "version": "0.4.9",
+      "description": "接管语音通话/聊天输入，通话开始自动接管（可在面板关闭）。零环境小白可用：无 ASR 环境时面板一键下载轻量引擎（sherpa-onnx CPU，约 250MB，国内源，SHA-256 校验，断点续传）。有 FunASR 外置服务(8328)时优先用 GPU。纯 SDK 接口实现，不依赖宿主内部模块",
+      "author": "boring9720",
+      "homepage": "https://github.com/boring9720/cyrene-local-asr"
     }
   ]
 }
