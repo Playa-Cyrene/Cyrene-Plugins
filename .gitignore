@@ -3,4 +3,14 @@ node_modules/
 *.log
 .DS_Store
 
-zips/
+# zips/ 默认不入库，仅放行 registry 当前分发的发行包（发新版时同步维护这份白名单）
+zips/*
+!zips/astral-relay-0.5.0.zip
+!zips/bili-music-0.3.2.zip
+!zips/chat-export-1.0.0.zip
+!zips/indextts-tts-1.1.2.zip
+!zips/local-asr-0.4.9.zip
+!zips/minecraft-bot-0.10.0-beta.1.zip
+!zips/ripples-of-aion-0.6.0.zip
+!zips/subscription-oauth-1.2.7.zip
+!zips/system-status-0.1.0.zip

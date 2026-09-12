@@ -6,11 +6,11 @@
 
 Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插件，审核通过后收录进本仓库，供用户下载安装。
 
-> ⚠️ **临时公告（2026-09-13）**：GitHub 账号暂时被封禁，正在申诉。期间 GitHub 仓库与插件 ZIP 下载链接（Release 附件）暂时不可用，可在 [Gitee 镜像](https://gitee.com/playa0/cyrene-plugins) 浏览全部插件源码；GitHub 恢复后下载链接即可用。
+> ⚠️ **临时公告（2026-09-13）**：GitHub 账号暂时被封禁，正在申诉。期间本仓库与插件 ZIP 下载均已切换到 [Gitee 镜像](https://gitee.com/playa0/cyrene-plugins) 分发，源码与安装包均可正常获取；GitHub 恢复后同步回去。
 
-- 主程序：[Cyrene-Agent](https://github.com/Playa-0v0/Cyrene-Agent)
+- 主程序：[Cyrene-Agent](https://gitee.com/playa0/cyrene-agent)
 - SDK：[@playa0v0/cyrene-plugin-sdk](https://www.npmjs.com/package/@playa0v0/cyrene-plugin-sdk)
-- 开发指南：[docs/plugins/plugin-dev-guide.md](https://github.com/Playa-0v0/Cyrene-Agent/blob/master/docs/plugins/plugin-dev-guide.md)
+- 开发指南：[docs/plugins/plugin-dev-guide.md](https://gitee.com/playa0/cyrene-agent/blob/master/docs/plugins/plugin-dev-guide.md)
 
 ---
 
@@ -22,27 +22,27 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [long-term-memory](./plugins/long-term-memory) | 0.1.0 | 监听轮次结束事件，自动摘要对话并存档，把长期记忆注入下一轮上下文 | —（示例，不分发） | Cyrene 示例 | — |
 | [scheduled-automation](./plugins/scheduled-automation) | 0.1.0 | 通过对话创建、管理自己的定时任务（创建后需在宿主界面确认启用） | —（示例，不分发） | Cyrene 示例 | — |
 | [local-asr-contract](./plugins/local-asr-contract) | 0.1.0 | 本地语音识别契约示例：演示语音输入租约的获取、提交与释放 | —（示例，不分发） | Cyrene 示例 | — |
-| [system-status](./plugins/system-status) | 0.1.0 | 查询本机系统状态：CPU、内存、磁盘、电池与开机时长，附带可视化状态面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/system-status-0.1.0/system-status-0.1.0.zip) | Playa | — |
-| [subscription-oauth](./plugins/subscription-oauth) | 1.2.7 | 用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通；支持工具调用、多账号切换、模型目录与用量显示 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/subscription-oauth-1.2.7/subscription-oauth-1.2.7.zip) | 1971687396 | — |
-| [indextts-tts](./plugins/indextts-tts) | 1.1.2 | 在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/indextts-tts-1.1.2/indextts-tts-1.1.2.zip) | Downfallofthedownfall | — |
-| [ripples-of-aion](./plugins/ripples-of-aion) | 0.6.0 | 结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴、autoDream 整合与五页可视化面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/ripples-of-aion-0.6.0/ripples-of-aion-0.6.0.zip) | modusensus | [Ripples-of-Aion](https://github.com/modusensus/Ripples-of-Aion) |
-| [chat-export](./plugins/chat-export) | 1.0.0 | 把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip) | Playa | — |
-| [minecraft-bot](./plugins/minecraft-bot) | 0.10.0-beta.1（Beta） | 把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/minecraft-bot-0.10.0-beta.1/minecraft-bot-0.10.0-beta.1.zip) | Cyrene | — |
-| [bili-music](./plugins/bili-music) | 0.3.2 | B 站听歌：视频分 P 当音源，搜索/下载转 M4A 用内置隐藏播放器出声，支持播放队列与扫码登录（凭据只存本机），匿名可用 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/bili-music-0.3.2/bili-music-0.3.2.zip) | boring9720 | — |
-| [astral-relay](./plugins/astral-relay) | 0.5.0 | BYOS 中转站：用自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——通义千问 / 腾讯 Coding Plan 仅限 Code 交互会话（由插件自行判定，不需要改动宿主），MiniMax 全模式，xAI Grok 为实验性 OAuth 接入 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/astral-relay-0.5.0/astral-relay-0.5.0.zip) | Unknownuserfrommars | [astral-relay](https://github.com/Unknownuserfrommars/astral-relay) |
-| [local-asr](./plugins/local-asr) | 0.4.9 | 本地语音识别：麦克风语音转文字自动进输入框，通话开始自动接管（纯 SDK 接口实现）；零环境小白可用（无引擎时面板一键下载轻量 CPU 引擎，SHA-256 校验，断点续传） | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/local-asr-0.4.9/local-asr-0.4.9.zip) | boring9720 | [boring9720/cyrene-local-asr](https://github.com/boring9720/cyrene-local-asr) |
+| [system-status](./plugins/system-status) | 0.1.0 | 查询本机系统状态：CPU、内存、磁盘、电池与开机时长，附带可视化状态面板 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip) | Playa | — |
+| [subscription-oauth](./plugins/subscription-oauth) | 1.2.7 | 用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通；支持工具调用、多账号切换、模型目录与用量显示 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/subscription-oauth-1.2.7.zip) | 1971687396 | — |
+| [indextts-tts](./plugins/indextts-tts) | 1.1.2 | 在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip) | Downfallofthedownfall | — |
+| [ripples-of-aion](./plugins/ripples-of-aion) | 0.6.0 | 结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴、autoDream 整合与五页可视化面板 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip) | modusensus | [Ripples-of-Aion](https://github.com/modusensus/Ripples-of-Aion) |
+| [chat-export](./plugins/chat-export) | 1.0.0 | 把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip) | Playa | — |
+| [minecraft-bot](./plugins/minecraft-bot) | 0.10.0-beta.1（Beta） | 把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip) | Cyrene | — |
+| [bili-music](./plugins/bili-music) | 0.3.2 | B 站听歌：视频分 P 当音源，搜索/下载转 M4A 用内置隐藏播放器出声，支持播放队列与扫码登录（凭据只存本机），匿名可用 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip) | boring9720 | — |
+| [astral-relay](./plugins/astral-relay) | 0.5.0 | BYOS 中转站：用自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——通义千问 / 腾讯 Coding Plan 仅限 Code 交互会话（由插件自行判定，不需要改动宿主），MiniMax 全模式，xAI Grok 为实验性 OAuth 接入 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/astral-relay-0.5.0.zip) | Unknownuserfrommars | [astral-relay](https://github.com/Unknownuserfrommars/astral-relay) |
+| [local-asr](./plugins/local-asr) | 0.4.9 | 本地语音识别：麦克风语音转文字自动进输入框，通话开始自动接管（纯 SDK 接口实现）；零环境小白可用（无引擎时面板一键下载轻量 CPU 引擎，SHA-256 校验，断点续传） | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/local-asr-0.4.9.zip) | boring9720 | [boring9720/cyrene-local-asr](https://github.com/boring9720/cyrene-local-asr) |
 
 ---
 
 ## 用户：如何安装插件
 
-1. 在上方表格点击插件对应的 **ZIP** 链接直接下载（安装包以 GitHub Release 附件形式分发）
+1. 在上方表格点击插件对应的 **ZIP** 链接直接下载（安装包托管在本仓库 `zips/` 目录，经 Gitee 分发）
 2. 在 Cyrene 中打开 **设置 → 插件 → 导入 ZIP**，选择下载的压缩包
 3. 安装完成后在插件列表中**手动启用**
 
 说明：
 
-- 安装包由维护者从审核过的 `plugins/` 源码统一打包，以 GitHub Release 附件形式分发，与源码目录一一对应
+- 安装包由维护者从审核过的 `plugins/` 源码统一打包，随 `zips/` 目录入库分发，与源码目录一一对应
 - 想查看插件源码：进入对应 `plugins/<插件id>/` 目录
 - 官方示例插件仅作开发参考，不通过市场分发，无下载链接
 - 用户插件首次安装后默认停用，启用后才会生效
