@@ -17,7 +17,7 @@
     {
       "id": "indextts-tts",
       "name": "IndexTTS 本地语音",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "description": "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
       "author": "Downfallofthedownfall",
       "deps": [],

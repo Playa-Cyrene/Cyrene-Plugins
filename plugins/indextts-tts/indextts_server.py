@@ -47,7 +47,7 @@ import sys
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 # ---------------------------------------------------------------------------
 # Engine state: loaded once, guarded by a lock because IndexTTS2 is not
@@ -215,6 +215,38 @@ def _load_engine(force: bool = False):
     return _TTS
 
 
+# v2_5 的 infer 必填 lang（v2.0 的 infer 没有该参数，下面的判定对它等同死代码，仅作兼容保留）。
+SUPPORTED_LANGS = ("zh", "en", "ja", "es", "ar", "yue")
+
+
+def _detect_decisive_script(text: str) -> str:
+    """只认「一眼可辨」的非中文脚本：假名 → ja、阿拉伯文 → ar；其余返回空串。
+
+    不能只查 CJK 表意文字：日文正文通常混着汉字，但纯假名（ひらがな／カタカナ）不带汉字，
+    旧实现会把「纯假名 + text_lang=ja」改判成 en。
+    """
+    if re.search(r"[\u3040-\u30ff]", text):  # 平假名 + 片假名
+        return "ja"
+    if re.search(r"[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]", text):  # 阿拉伯文（含补充区）
+        return "ar"
+    return ""
+
+
+def _resolve_lang(text: str, host_lang: str) -> str:
+    """决定合成用的 lang：只在正文脚本一眼可辨时压过宿主，否则尊重宿主的 text_lang。
+
+    宿主（Cyrene）目前把 text_lang 硬编码成 "zh"，所以「正文完全没有 CJK」时才按英文兜底。
+    """
+    decisive = _detect_decisive_script(text)
+    if decisive and decisive != host_lang:
+        return decisive
+    if host_lang in SUPPORTED_LANGS:
+        if host_lang == "zh" and not re.search(r"[\u4e00-\u9fff]", text):
+            return "en"
+        return host_lang
+    return "zh" if re.search(r"[\u4e00-\u9fff]", text) else "en"
+
+
 def _synthesize(payload: dict, as_json: bool):
     """Synthesize audio from a payload dict; returns (status, raw-wav-bytes-or-json-dict)."""
     text = (payload.get("text") or "").strip()
@@ -240,14 +272,9 @@ def _synthesize(payload: dict, as_json: bool):
             tts = _load_engine()
             # lang 只对 v2_5 真正生效（infer_v2_5.infer 必填 lang）；
             # v2（2.0）的 infer 没有 lang 参数，下面的判定对它等同死代码，仅作兼容保留。
-            # 仅当 infer 签名里有 lang 参数才传，避免 TypeError；缺省按文本 CJK→zh / 否则 en。
-            lang = (payload.get("text_lang") or payload.get("prompt_lang") or "").strip().lower()
-            has_cjk = bool(re.search(r"[\u4e00-\u9fff]", text))
-            if lang not in ("zh", "en", "ja", "es", "ar", "yue"):
-                lang = "zh" if has_cjk else "en"
-            elif lang == "zh" and not has_cjk:
-                # 宿主把 text_lang 硬编码成 "zh"；正文没有中日韩字符时按英文合成更合适。
-                lang = "en"
+            # 仅当 infer 签名里有 lang 参数才传，避免 TypeError。
+            host_lang = (payload.get("text_lang") or payload.get("prompt_lang") or "").strip().lower()
+            lang = _resolve_lang(text, host_lang)
             infer_kwargs = dict(spk_audio_prompt=ref_audio, text=text, output_path=wav_path, verbose=False)
             if "lang" in inspect.signature(tts.infer).parameters:
                 infer_kwargs["lang"] = lang
@@ -346,7 +373,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         """Handle POST /tts requests: synthesize audio and return JSON or raw wav bytes."""
         parsed = urlparse(self.path)
-        if not parsed.path.rstrip("/").endswith("/tts"):
+        # 路径精确匹配：旧实现用 endswith("/tts")，/foo/tts 也会被当成合法端点。
+        if parsed.path.rstrip("/") != "/tts":
             self._send_json(404, {"error": "not found"})
             return
         try:
@@ -361,7 +389,10 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._send_json(400, {"error": f"invalid JSON: {exc}"})
             return
-        as_json = "json=1" in parsed.query or self.headers.get("X-Json-Audio") == "1"
+        # ?json=1 按 query 参数解析：旧实现用子串匹配，?x=json=1 也会被当成 JSON 模式。
+        params = parse_qs(parsed.query)
+        as_json = params.get("json", [""])[0].strip().lower() in ("1", "true", "yes") \
+            or self.headers.get("X-Json-Audio") == "1"
         try:
             status, result = _synthesize(payload, as_json)
             if isinstance(result, bytes):
@@ -371,6 +402,21 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             sys.stderr.write("[indextts] /tts error: %s\n" % exc)
             self._send_json(500, {"error": str(exc)})
+
+    def do_HEAD(self) -> None:
+        """HEAD：只回状态行与头、不回正文（给 curl -I / 探活用）。"""
+        parsed = urlparse(self.path)
+        status = 200 if parsed.path.rstrip("/") == "/health" else 404
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _unsupported_method(self) -> None:
+        """其余方法统一回 JSON 501：否则会漏出 BaseHTTPRequestHandler 默认的 HTML 501。"""
+        self._send_json(501, {"error": "unsupported method: " + (self.command or "?")})
+
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = _unsupported_method
 
 
 def _download_model(model_dir: str, engine: str) -> None:

@@ -204,7 +204,9 @@
     }
 
     function renderStatus(state) {
-      const dotClass = state.ready ? "on" : state.starting ? "pending" : "off";
+      // 有「停止未成功」或最近错误时用红点（.dot.err）：这两种情况下点「已停止」是有误导性的。
+      const hasIssue = !!(state.killFailure || state.lastError);
+      const dotClass = hasIssue ? "err" : state.ready ? "on" : state.starting ? "pending" : "off";
       const label = state.ready ? "运行中" : state.starting ? "启动中" : "已停止";
       el("status").innerHTML = [
         '<span class="dot ' + dotClass + '"></span>' + label,
@@ -212,7 +214,10 @@
         "进程 PID：" + (state.pid == null ? "—" : state.pid),
       ].join("<br>");
       // 错误文本来自 Python 输出，用 textContent 避免 < / & 破坏排版。
-      el("status-error").textContent = state.lastError ? "最近错误：" + state.lastError : "";
+      // 停止未成功优先显示：它意味着那个进程可能还占着端口/显存。
+      el("status-error").textContent = state.killFailure
+        ? "上次停止未成功：" + state.killFailure
+        : (state.lastError ? "最近错误：" + state.lastError : "");
 
       // 启动中也能点「停止」取消（模型加载最长 240s）。
       const busy = state.starting || state.running;

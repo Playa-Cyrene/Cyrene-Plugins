@@ -104,6 +104,12 @@ let deliberateStop = false;
 /** 用户/宿主主动请求过停止：启动被这样打断时算「已取消」，不计入崩溃预算。 */
 let stopRequested = false;
 let lastError = null;
+/**
+ * 「上次停止没能终止进程」这一条单独存：它意味着端口/显存可能仍被占着，
+ * 不该被后续任何一次启动流程顺手清掉（lastError 会被 doStartServer 重置）。
+ * 只在「确实杀掉了」或「复查到那个 pid 已经不在了」时清除。
+ */
+let killFailure = null;
 /** 服务端最近输出（崩溃 / 启动失败时附在错误里，便于定位）。 */
 let serverLog = [];
 /** 进行中的启动 Promise：并发/重复调用共享同一次启动，避免重复 spawn。 */
@@ -827,50 +833,87 @@ function killChild() {
     if (process.platform === "win32" && proc.pid) {
       // Windows 上 proc.kill() 只终止直接子进程；用 taskkill /T 杀整棵进程树，
       // 避免 Python 派生的子进程残留（失控进程 / 内存不释放）。
-      const killer = spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
-        windowsHide: true,
-        stdio: "ignore",
-      });
-      killer.on("error", () => { try { proc.kill(); } catch { /* ignore */ } });
-      // taskkill 运行了但失败（被安全软件拦截 / PID 复用 / 权限不足）时也要兜底。
-      killer.on("exit", (code) => {
-        if (code !== 0) { try { proc.kill(); } catch { /* ignore */ } }
-      });
+      // spawn 极少同步抛错，但真抛了也必须落到 proc.kill() 兜底，所以单独再包一层。
+      let killer = null;
+      try {
+        killer = spawn("taskkill", ["/PID", String(proc.pid), "/T", "/F"], {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+      } catch {
+        killer = null;
+      }
+      if (!killer) {
+        try { proc.kill(); } catch { /* ignore */ }
+      } else {
+        killer.on("error", () => { try { proc.kill(); } catch { /* ignore */ } });
+        // taskkill 运行了但失败（被安全软件拦截 / PID 复用 / 权限不足）时也要兜底。
+        killer.on("exit", (code) => {
+          if (code !== 0) { try { proc.kill(); } catch { /* ignore */ } }
+        });
+      }
     } else {
       proc.kill("SIGTERM");
     }
   } catch {
     try { proc.kill(); } catch { /* 进程可能已退出，忽略 */ }
   }
-  // 等待结束后复核：确实没杀掉就把失败信息回给调用方，别谎报「已停止」。
+  // 等待结束后复核：确实没杀掉就记进 killFailure（独立字段，见声明处）+ 回给调用方，
+  // 别谎报「已停止」。
   return exited.then(() => {
     if (proc.exitCode === null && proc.signalCode === null) {
       const msg = "无法终止 Python 进程（pid " + proc.pid + "），它可能仍在占用端口/显存，请手动结束";
+      killFailure = { pid: proc.pid, message: msg };
       lastError = msg;
       return msg;
     }
+    killFailure = null; // 确实杀掉了才清除
     return null;
   });
 }
 
-/** 轮询 /health，直到就绪或到达挂钟截止时间（最坏约 STARTUP_TIMEOUT_MS）。 */
+/** pid 是否还在（signal 0 探测）；EPERM 说明进程存在但没权限，同样算「还在」。 */
+function isProcessAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return !!(err && err.code === "EPERM");
+  }
+}
+
+/** killFailure 的失效检查：那个进程若已被手动结束（或 PID 早就不在了），就把提示清掉。 */
+function currentKillFailure() {
+  if (killFailure && !isProcessAlive(killFailure.pid)) killFailure = null;
+  return killFailure ? killFailure.message : null;
+}
+
+/**
+ * 轮询 /health，直到就绪、子进程退出，或到达挂钟截止时间。
+ * 返回 { ok, reason }：reason = "exited"（进程没了，秒级失败）/ "stopped"（用户停的）/ "timeout"。
+ * 区分原因是为了给出准确文案——端口被占是秒级失败，不该一律说成「240s 未就绪」。
+ */
 async function waitReady(port) {
   const startedAt = Date.now();
   const deadline = startedAt + STARTUP_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (deliberateStop || !child) return false;
+    if (deliberateStop) return { ok: false, reason: "stopped" };
+    if (!child) return { ok: false, reason: "exited" }; // 进程启动即退出：立刻失败，不空等
     if (await probeHealth(port, HEALTH_NONCE)) {
       // 探测通过后再复核当前子进程仍存活，避免探测到别的服务 / 已退出的进程。
-      if (deliberateStop || !child) return false;
-      return true;
+      if (deliberateStop) return { ok: false, reason: "stopped" };
+      if (!child) return { ok: false, reason: "exited" };
+      return { ok: true, reason: "" };
     }
-    if (deliberateStop || !child) return false;
+    if (deliberateStop) return { ok: false, reason: "stopped" };
+    if (!child) return { ok: false, reason: "exited" };
     if (Date.now() >= deadline) break;
     // 头 10s 用 250ms 粒度（改端口重启后更快就绪），之后退回 2s 省资源。
     const fast = Date.now() - startedAt < POLL_FAST_WINDOW_MS;
     await sleep(fast ? POLL_INTERVAL_FAST_MS : POLL_INTERVAL_MS);
   }
-  return false;
+  return { ok: false, reason: "timeout" };
 }
 
 /** 子进程意外退出：仅在它曾就绪过时才按预算自动重启，避免崩溃循环。 */
@@ -893,7 +936,12 @@ function onGone() {
     return;
   }
   if (restartCount >= MAX_RESTARTS) {
-    if (ctxRef) ctxRef.log("IndexTTS 服务连续崩溃/启动失败 " + restartCount + " 次，已停止自动重启");
+    if (ctxRef) {
+      // 文案要如实：前几次可能是「成功重启后又崩」，不能写「启动了 N 次都失败」。
+      ctxRef.log("IndexTTS 服务已连续 " + restartCount + " 次崩溃/启动失败，停止自动重启"
+        + (lastError ? "（最近原因：" + lastError + "）" : "")
+        + "；修正配置后可手动启动");
+    }
     return;
   }
   if (restartTimer) return;
@@ -906,6 +954,65 @@ function onGone() {
       if (ctxRef) ctxRef.log("IndexTTS 自动重启失败：" + err.message);
     });
   }, RESTART_DELAY_MS);
+}
+
+/**
+ * 从服务端输出里认出最常见的失败原因，给出「原因 + 怎么办」两句话。
+ * 之前一律报「240s 内未就绪」：端口被占（WinError 10048）这种秒级失败也会被说成超时，
+ * 而这个字符串会被 AI 工具直接读进上下文，等于把排查方向带偏。
+ */
+function diagnoseServerLog(text, port) {
+  const t = String(text || "");
+  if (/WinError 10048|EADDRINUSE|bind failed|address already in use/i.test(t)) {
+    return {
+      cause: "端口 " + port + " 已被占用（可能是另一个服务，或上一轮没退干净的 Python）",
+      hint: "换个端口重启，或先结束占用该端口的进程（任务管理器里找 python.exe / 别的 TTS 服务）。",
+    };
+  }
+  if (/ModuleNotFoundError|ImportError|No module named/i.test(t)) {
+    return {
+      cause: "Python 环境缺少依赖（index-tts / torch 没装全）",
+      hint: "用「一键配置并启动」让插件把依赖装全，或让「Python 路径」指向的环境里先装好 index-tts。",
+    };
+  }
+  if (/CUDA out of memory|OutOfMemoryError|CUDA error|no kernel image/i.test(t)) {
+    return {
+      cause: "显存不足或 CUDA 初始化失败",
+      hint: "关掉占显存的程序；或关掉「文本情感引导」少加载一个模型。",
+    };
+  }
+  if (/Checkpoint not found|missing keys|size mismatch/i.test(t)) {
+    return {
+      cause: "模型与引擎版本不匹配",
+      hint: "确认「引擎版本」与模型目录 config.yaml 里的 version 一致（插件一般会自动校正）。",
+    };
+  }
+  return null;
+}
+
+/** 组装启动失败的错误文案：按真实原因分分支，而不是一律说「240s 超时」。 */
+function startupFailureMessage(info) {
+  const lines = [];
+  if (info.reason === "exited") {
+    const code = info.exitCode !== null && info.exitCode !== undefined
+      ? "exit code=" + info.exitCode
+      : info.signalCode ? "signal=" + info.signalCode : "退出码未知";
+    lines.push("IndexTTS 服务启动失败：Python 进程启动即退出（" + code + "，已清理残留进程）");
+  } else {
+    lines.push("IndexTTS 服务启动失败：" + Math.round(STARTUP_TIMEOUT_MS / 1000)
+      + "s 内未就绪（模型加载超时？已终止 Python 进程）");
+  }
+  // 进程退出时 lastError 只是「Python 进程退出，code=N」，与标题重复，不再抄一遍。
+  const redundant = info.reason === "exited" && /^Python 进程退出/.test(info.lastError || "");
+  if (info.cause) {
+    lines.push("原因：" + info.cause);
+    if (info.hint) lines.push("建议：" + info.hint);
+  } else if (info.lastError && !redundant) {
+    lines.push("原因：" + info.lastError);
+  }
+  if (info.killFailure) lines.push("注意：" + info.killFailure);
+  if (info.tail) lines.push("\n服务端输出：\n" + info.tail);
+  return lines.join("\n");
 }
 
 function startServer(options) {
@@ -952,7 +1059,9 @@ async function doStartServer(options) {
   }
 
   if (restartCount >= MAX_RESTARTS) {
-    throw new Error("服务连续启动失败 " + restartCount + " 次，已停止自动重启；修正配置后请手动启动");
+    throw new Error("已连续 " + restartCount + " 次崩溃/启动失败，停止自动重启"
+      + (lastError ? "（最近原因：" + lastError + "）" : "")
+      + "；修正配置后请手动点「启动」");
   }
 
   deliberateStop = false;
@@ -971,13 +1080,19 @@ async function doStartServer(options) {
   if (cfg.emotionGuidance) args.push("--emotion"); // 加载 QwenEmotion + 文本情感引导
 
   serverLog = [];
-  const proc = spawn(cfg.pythonPath, args, {
-    cwd: __dirname,
-    windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
-    // USE_MODELSCOPE / HF_ENDPOINT：构造模型时若 hf_cache 不全，上游会按这个变量决定走哪条下载路径。
-    env: withEnv(modelSourceEnv(cfg.modelSource)),
-  });
+  let proc;
+  try {
+    proc = spawn(cfg.pythonPath, args, {
+      cwd: __dirname,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      // USE_MODELSCOPE / HF_ENDPOINT：构造模型时若 hf_cache 不全，上游会按这个变量决定走哪条下载路径。
+      env: withEnv(modelSourceEnv(cfg.modelSource)),
+    });
+  } catch (err) {
+    // 同步抛错（解释器路径非法等）也要给一句人话，而不是把原始异常丢给 IPC。
+    throw new Error("无法启动 Python（" + cfg.pythonPath + "）：" + err.message);
+  }
   child = proc;
   const feedServer = (d) => {
     for (const line of d.toString().split(/\r\n|\r|\n/)) {
@@ -1002,12 +1117,14 @@ async function doStartServer(options) {
     onGone();
   });
 
-  const ok = await waitReady(cfg.port);
-  if (!ok) {
-    // 启动失败（超时 / 进程退出 / 端口被占）：杀掉可能仍在加载模型的 Python 进程，
-    // 避免留下不受管的进程。错误里附上服务端最后若干行输出，便于定位（CUDA/OOM 等）。
+  const wait = await waitReady(cfg.port);
+  if (!wait.ok) {
+    // 启动失败（进程启动即退出 / 真超时）：杀掉可能仍在加载模型的 Python 进程，避免留下不受管的进程。
     // 若是用户/宿主主动停止（或插件正在停止）打断了启动，算「已取消」：不计入崩溃预算。
-    const cancelled = stopRequested || (ctxRef && ctxRef.signal.aborted);
+    // 退出码要在 killChild() 之前取——它会把 child 置空。
+    const exitCode = proc.exitCode;
+    const signalCode = proc.signalCode;
+    const cancelled = wait.reason === "stopped" || stopRequested || (ctxRef && ctxRef.signal.aborted);
     deliberateStop = true;
     await killChild();
     deliberateStop = false;
@@ -1015,18 +1132,17 @@ async function doStartServer(options) {
       throw new Error("已取消启动");
     }
     restartCount += 1;
-    const tail = serverLog.slice(-25).join("\n");
-    const joined = serverLog.join("\n");
-    const hint = /Checkpoint not found|missing keys|size mismatch/i.test(joined)
-      ? "\n\n提示：模型与引擎版本可能不匹配——请确认「引擎版本」与模型目录 config.yaml 里的 version 一致"
-        + "（当前引擎：" + cfg.engineVersion + "）。"
-      : "";
-    throw new Error(
-      "IndexTTS 服务启动失败（" + Math.round(STARTUP_TIMEOUT_MS / 1000) + "s 内未就绪，已终止 Python 进程）"
-        + (lastError ? "\n原因：" + lastError : "")
-        + (tail ? "\n\n服务端输出：\n" + tail : "")
-        + hint,
-    );
+    const diagnosis = diagnoseServerLog(serverLog.join("\n"), cfg.port);
+    throw new Error(startupFailureMessage({
+      reason: wait.reason,
+      exitCode: exitCode,
+      signalCode: signalCode,
+      cause: diagnosis ? diagnosis.cause : "",
+      hint: diagnosis ? diagnosis.hint : "",
+      lastError: lastError,
+      killFailure: currentKillFailure(),
+      tail: serverLog.slice(-25).join("\n"),
+    }));
   }
 
   running = true;
@@ -1045,7 +1161,7 @@ async function stopServer() {
     clearTimeout(restartTimer);
     restartTimer = null;
   }
-  const killFailure = await killChild();
+  const killMessage = await killChild();
   // 关键：等在途启动流程彻底结束（含它自己的「已取消」失败分支，并清空 startPromise）。
   // 否则调用方随后的 startServer() 会复用那个注定失败的 promise，重启被静默吞掉。
   if (startPromise) await startPromise.catch(() => {});
@@ -1053,7 +1169,7 @@ async function stopServer() {
   restartCount = 0;
   // 只清「上一轮的启动失败」，killChild 刚写的「没杀掉」必须留着：
   // 否则 getState()/窗口会显示「服务已停止」，而那个 Python 还在占着端口与显存。
-  lastError = killFailure || null;
+  lastError = killMessage || null;
 }
 
 function getState() {
@@ -1066,6 +1182,8 @@ function getState() {
     pid: child ? child.pid : null,
     baseUrl: baseUrl(cfg),
     lastError: lastError,
+    // 独立于 lastError：不会因为后续任何一次启动被清掉（只由「确实杀掉」或「pid 已消失」清除）。
+    killFailure: currentKillFailure(),
     restartCount: restartCount,
     maxRestarts: MAX_RESTARTS,
     bootstrap: bootstrapState,
@@ -1104,7 +1222,8 @@ function statusText() {
     : cfg.modelSource === "official" ? "官方 HuggingFace" : "自动探测"));
   const mirrorsOn = parseMirrors(cfg.githubMirror).length + parseMirrors(cfg.pypiMirror).length;
   lines.push("下载镜像：" + (mirrorsOn ? "已配置（仅在官方源失败时回退）" : "未配置（只用官方源）"));
-  if (s.lastError) lines.push("最近错误：" + redactPaths(s.lastError));
+  if (s.killFailure) lines.push("上次停止未成功：" + redactPaths(s.killFailure));
+  else if (s.lastError) lines.push("最近错误：" + redactPaths(s.lastError));
   lines.push("用法：在 Cyrene 的 TTS 设置中选择 GPT-SoVITS，把 API 地址填成上面的地址。");
   return lines.join("\n");
 }
