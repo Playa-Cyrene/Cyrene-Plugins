@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>本地语音识别</title>
+<style>
+  :root { color-scheme: light; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    background: linear-gradient(160deg, #fdf0f4 0%, #fbe3ec 45%, #f8d9e4 100%);
+    background-attachment: fixed;
+    color: #7a5566; min-height: 100vh;
+    display: flex; flex-direction: column; padding: 16px; gap: 12px;
+    user-select: none; overflow-y: auto;
+  }
+  header { display: flex; align-items: center; gap: 10px; }
+  .dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #e8c3d2; transition: background .2s; flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(236,124,162,.12);
+  }
+  .dot.speaking { background: #ec6a8c; animation: pulse .6s infinite alternate; }
+  .dot.recording { background: #7cc69a; }
+  .dot.waiting { background: #efb96e; }
+  .dot.ok { background: #7cc69a; }
+  .dot.warn { background: #efb96e; }
+  .dot.bad { background: #ec6a8c; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: .4; } }
+  h1 { font-size: 19px; font-weight: 700; flex: 1; color: #b4557b; letter-spacing: .5px; }
+  .status { font-size: 14px; color: #c78ba4; text-align: right;
+    background: rgba(255,255,255,.7); padding: 4px 12px; border-radius: 999px; }
+
+  .card {
+    background: rgba(255,255,255,.88); border: 1px solid #f6d3e0; border-radius: 16px;
+    padding: 14px; display: flex; flex-direction: column; gap: 9px;
+    box-shadow: 0 4px 16px rgba(214,124,160,.10);
+  }
+  .card h2 {
+    font-size: 15px; font-weight: 700; color: #c0698e;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card h2 .link-btn {
+    font-size: 13px; color: #ec7ba2; cursor: pointer; font-weight: 500;
+    background: #fde8f0; padding: 3px 10px; border-radius: 999px;
+  }
+  .card h2 .link-btn:hover { background: #fbd4e3; }
+
+  .check-row {
+    display: flex; align-items: center; gap: 8px; font-size: 14px;
+    padding: 8px 10px; background: #fdf4f7; border-radius: 10px;
+  }
+  .check-row .name { width: 96px; flex-shrink: 0; color: #9b6b7e; font-weight: 600; }
+  .check-row .msg { flex: 1; color: #a97e90; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .check-row button {
+    flex: none; width: auto; padding: 5px 14px; font-size: 13px; margin: 0;
+  }
+  .banner {
+    font-size: 13px; line-height: 1.6; padding: 9px 12px; border-radius: 10px;
+    display: none;
+  }
+  .banner.show { display: block; }
+  .banner.info { background: #fdf0f5; color: #c05a85; border: 1px solid #f5cfdd; }
+  .banner.err { background: #fdeef0; color: #c0525f; border: 1px solid #f2cdd2; }
+
+  .install-bar {
+    display: none; align-items: center; gap: 8px; font-size: 13px; color: #a97e90;
+    font-variant-numeric: tabular-nums;
+  }
+  .install-bar.show { display: flex; }
+  .install-track {
+    flex: 1; height: 7px; border-radius: 999px; background: #f6d9e3; overflow: hidden;
+  }
+  .install-fill {
+    height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, #f5a0bd, #ec7ba2); transition: width .25s;
+  }
+  .install-bar button {
+    flex: none; width: auto; padding: 4px 12px; font-size: 13px;
+  }
+  #installLabel {
+    flex-shrink: 0; max-width: 140px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  #installPct { flex-shrink: 0; color: #d16a92; font-weight: 600; }
+
+  .stats {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .stats span {
+    font-size: 13px; color: #a97e90;
+    background: rgba(255,255,255,.8); border: 1px solid #f6d3e0;
+    padding: 4px 12px; border-radius: 999px;
+  }
+  .stats b { color: #d16a92; font-weight: 700; }
+
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button {
+    flex: 1; padding: 11px 10px; border: 1px solid #f0c3d4; border-radius: 12px;
+    background: #ffffff; color: #b4557b; font-size: 15px; font-weight: 600; cursor: pointer;
+    transition: background .15s, border-color .15s, transform .06s;
+  }
+  button:hover { background: #fdf0f5; border-color: #eaa8c1; }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary {
+    background: linear-gradient(135deg, #f191b1, #ec6a94); border-color: #ec6a94; color: #fff;
+    box-shadow: 0 3px 10px rgba(236,106,148,.30);
+  }
+  button.primary:hover { background: linear-gradient(135deg, #ee84a6, #e85b87); }
+  button.danger { background: #fff; border-color: #f0b9bd; color: #d05a64; }
+  button.danger:hover { background: #fdeeef; }
+
+  #vadbar { height: 8px; border-radius: 999px; background: #f6d9e3; overflow: hidden; }
+  #vadbar > div { height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, #f5a0bd, #ec6a94); transition: width .1s; }
+
+  .logbox {
+    flex: 1; min-height: 120px; background: rgba(255,255,255,.92); border: 1px solid #f6d3e0; border-radius: 14px;
+    padding: 12px; overflow-y: auto; font-size: 13px; line-height: 1.7;
+    font-family: Consolas, "Microsoft YaHei", monospace; user-select: text; color: #9b6b7e;
+  }
+  .logbox .t { color: #dcb8c6; margin-right: 6px; }
+  .logbox .err { color: #d0526a; }
+
+  details { font-size: 14px; background: rgba(255,255,255,.72);
+    border: 1px solid #f6d3e0; border-radius: 14px; padding: 8px 12px; }
+  details summary {
+    cursor: pointer; color: #c0698e; padding: 5px 2px; font-size: 14px; font-weight: 600;
+    list-style: none; user-select: none;
+  }
+  details summary::before { content: "▸ "; }
+  details[open] summary::before { content: "▾ "; }
+  .cfg-row {
+    display: flex; align-items: center; gap: 6px; padding: 5px 0; font-size: 13px; color: #9b6b7e;
+  }
+  .cfg-row .path {
+    flex: 1; color: #c495a7; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; direction: rtl; text-align: left;
+  }
+  .cfg-row button { flex: none; width: auto; padding: 4px 12px; font-size: 13px; }
+  .cfg-row select, .cfg-row input[type="text"] {
+    flex: 1; min-width: 0; padding: 7px 10px; font-size: 13px;
+    background: #fff; color: #7a5566; border: 1px solid #f0c3d4; border-radius: 10px;
+    outline: none;
+  }
+  .cfg-row select:focus, .cfg-row input[type="text"]:focus { border-color: #ec7ba2; }
+
+  .hint { font-size: 13px; color: #c495a7; line-height: 1.6; }
+  input[type="checkbox"] { accent-color: #ec6a94; width: 15px; height: 15px; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: #f0c3d4; border-radius: 999px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="dot" id="dot"></div>
+  <h1>本地语音识别 <span style="font-size:13px;color:#d7a0b4;font-weight:500">v0.4.9</span></h1>
+    <div class="status" id="statusText">未启动</div>
+  </header>
+
+  <!-- ============ 环境体检（v0.2.0） ============ -->
+  <div class="card">
+    <h2>环境体检
+      <span class="link-btn" id="btnRecheck">重新体检</span>
+    </h2>
+    <div class="check-row">
+      <div class="dot" id="asrDot"></div>
+      <div class="name">ASR 引擎</div>
+      <div class="msg" id="asrMsg">检测中…</div>
+      <button id="asrStartBtn" style="display:none">启动服务</button>
+    </div>
+    <div class="check-row">
+      <div class="dot" id="ttsDot"></div>
+      <div class="name">TTS 服务</div>
+      <div class="msg" id="ttsMsg">检测中…</div>
+      <button id="ttsStartBtn" style="display:none">启动</button>
+    </div>
+    <div class="check-row">
+      <div class="dot" id="setDot"></div>
+      <div class="name">通话设置</div>
+      <div class="msg" id="setMsg">检测中…</div>
+      <button id="btnFixSettings" style="display:none">一键修复</button>
+    </div>
+    <div class="banner" id="setBanner"></div>
+  </div>
+
+  <!-- ============ 内置引擎（v0.3.0） ============ -->
+  <div class="card">
+    <h2>内置轻量引擎（无需 Python）</h2>
+    <div class="check-row">
+      <div class="dot" id="engDot"></div>
+      <div class="name">CPU 引擎</div>
+      <div class="msg" id="engMsg">检测中…</div>
+      <button id="btnInstallEngine" style="display:none">安装 (约250MB)</button>
+    </div>
+    <div class="install-bar" id="installBar">
+      <span id="installLabel">下载中…</span>
+      <div class="install-track"><div class="install-fill" id="installFill"></div></div>
+      <span id="installPct">0%</span>
+      <button id="btnCancelInstall">取消</button>
+    </div>
+    <div class="hint" id="engHint">外置 FunASR 服务可用时自动用 GPU；不可用时自动切本引擎（CPU 实时率约 4%）。首次安装后零依赖，离线可用。</div>
+  </div>
+
+  <!-- ============ 采集控制 ============ -->
+  <div class="stats">
+    <span>提交 <b id="stCommit">0</b> 句</span>
+    <span>识别 <b id="stRecog">0</b> 次</span>
+    <span>失败 <b id="stErr">0</b> 次</span>
+    <span>拦截 <b id="stGated">0</b> 句</span>
+  </div>
+  <div class="controls">
+    <button class="primary" id="btnCall">接管通话</button>
+    <button id="btnChat">接管聊天</button>
+    <button class="danger" id="btnStop" disabled>停止</button>
+    <label style="display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;cursor:pointer;">
+      <input type="checkbox" id="chkAutoCall" checked /> 通话开始自动接管
+    </label>
+  </div>
+  <div id="vadbar"><div id="vadfill"></div></div>
+  <div class="logbox" id="logbox"></div>
+
+  <details>
+    <summary>外置服务配置（可选，GPU 提速）</summary>
+    <div class="cfg-row">
+      <span>ASR:</span>
+      <span class="path" id="cfgAsrPath">-</span>
+      <button id="btnPickAsr">浏览…</button>
+    </div>
+    <div class="cfg-row">
+      <span>TTS:</span>
+      <span class="path" id="cfgTtsPath">-</span>
+      <button id="btnPickTts">浏览…</button>
+    </div>
+  </details>
+
+  <details open>
+    <summary>唤醒词门控（小爱模式 · 改字即存）</summary>
+    <div class="cfg-row">
+      <span>模式:</span>
+      <select id="wakeMode" onchange="window.__saveWake()" style="flex:1">
+        <option value="off">关闭</option>
+        <option value="music">仅音乐播放时（推荐）</option>
+        <option value="always">总是需要唤醒词</option>
+      </select>
+    </div>
+    <div class="cfg-row">
+      <span>唤醒词:</span>
+      <input id="wakeWords" type="text" oninput="window.__saveWake()" style="flex:1" placeholder="逗号分隔，最多 6 个">
+      <button id="btnSaveWake" onclick="window.__saveWake()">保存</button>
+    </div>
+    <div id="wakeStatus" style="font-size:13px;padding:4px 0;color:#9da5b4">…等待启动</div>
+  </details>
+
+  <div class="hint">
+    流程：体检绿灯（ASR 引擎或内置引擎任一就绪）→ 一键修复通话设置 → 重启 Cyrene →
+    开始语音通话 → 点「接管通话」→ 说话。
+  </div>
+
+<script>
+"use strict";
+const { ipcRenderer } = require("electron");
+const CH = "plugin:local-asr";
+
+const $ = (id) => document.getElementById(id);
+let audioCtx = null, mediaStream = null, workletNode = null;
+let running = false;
+let enginePollTimer = null;
+
+/* ---------- 唤醒词设置（v0.4.9：走主进程 IPC，持久化在宿主 storage） ---------- */
+let wakeSyncing = false;
+window.__saveWake = async () => {
+  if (wakeSyncing) return;
+  const mode = ($("wakeMode") || {}).value || "off";
+  const words = (($("wakeWords") || {}).value || "").trim();
+  const st = $("wakeStatus");
+  try {
+    const r = await ipcRenderer.invoke(CH + ":set-wake", { mode, words });
+    if (st) {
+      if (r && r.ok) {
+        st.textContent = "✓ 已保存（" + new Date().toLocaleTimeString() + "）";
+        st.style.color = "#98c379";
+      } else {
+        st.textContent = "⚠ 保存失败: " + ((r && r.error) || "未知错误");
+        st.style.color = "#e06c75";
+      }
+    }
+  } catch (e) {
+    if (st) { st.textContent = "⚠ 保存失败: " + e.message; st.style.color = "#e06c75"; }
+  }
+};
+/** 主进程状态 → 唤醒设置 UI（不覆盖用户正在编辑的控件） */
+function syncWakeUi(s) {
+  const sel = $("wakeMode"), inp = $("wakeWords"), st = $("wakeStatus");
+  if (!sel) return;
+  wakeSyncing = true;
+  try {
+    if (document.activeElement !== sel) sel.value = s.wakeGate || "off";
+    if (inp && document.activeElement !== inp) {
+      inp.value = Array.isArray(s.wakeWords) ? s.wakeWords.join("，") : "";
+    }
+    if (st && !st.textContent.startsWith("✓")) {
+      st.textContent = "已从主进程加载（模式：" + (s.wakeGate || "off") + "）";
+    }
+  } finally { wakeSyncing = false; }
+}
+
+/* ---------- 日志 ---------- */
+function addLog(text, isErr) {
+  const line = document.createElement("div");
+  if (isErr) line.className = "err";
+  const t = document.createElement("span");
+  t.className = "t";
+  t.textContent = new Date().toTimeString().slice(0, 8);
+  line.appendChild(t);
+  line.appendChild(document.createTextNode(text));
+  const box = $("logbox");
+  box.appendChild(line);
+  while (box.children.length > 80) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+/* ---------- 状态渲染（采集侧） ---------- */
+function renderState(s) {
+  if (!s) return;
+  syncWakeUi(s);
+  const stCommit = $("stCommit"), stRecog = $("stRecog"), stErr = $("stErr"), stGated = $("stGated");
+  if (!stCommit) return;
+  stCommit.textContent = s.stats.committed;
+  stRecog.textContent = s.stats.recognized;
+  stErr.textContent = s.stats.errors;
+  if (stGated) stGated.textContent = s.gatedCount || 0;
+  const dot = $("dot");
+  dot.className = "dot";
+  let txt = "未启动";
+  if (s.recording) {
+    if (s.waitingTurn) { dot.classList.add("waiting"); txt = "等待回复中…"; }
+    else {
+      dot.classList.add("recording");
+      txt = "采集中 · " + (s.target === "active-call" ? "通话" : "聊天");
+    }
+  }
+  // v0.4.0 唤醒门控指示
+  const gateActive = s.wakeGate === "always" || (s.wakeGate === "music" && s.musicPlaying);
+  if (gateActive) {
+    txt += " · 🎵门控中（说“" + (s.wakeWords && s.wakeWords[0] ? s.wakeWords[0] : "昔涟") + "”唤醒）";
+    if (s.wakeGate === "music" && s.musicStatusSupported === false) {
+      txt = "⚠ 此 Cyrene 版本无音乐状态通道，音乐模式退化为不拦截";
+    }
+  }
+  $("statusText").textContent = txt;
+  $("btnCall").disabled = s.recording;
+  $("btnChat").disabled = s.recording;
+  $("btnStop").disabled = !s.recording;
+}
+function renderVad(state, level) {
+  if (state === "speaking") { $("dot").classList.add("speaking"); }
+  const fill = $("vadfill");
+  if (fill) fill.style.width = Math.min(100, (level || 0) * 400) + "%";
+}
+
+/* ---------- 环境体检渲染（v0.2.0） ---------- */
+const SETTING_ISSUE_TEXT = {
+  "asr-engine-local-placeholder": "asrEngine=local 是占位值（无法通话），需改为 mossland",
+  "asr-engine-wrong": "asrEngine 配置错误",
+  "mossland-key-empty": "ttsMosslandKey 为空（mossland 引擎无法启动）",
+  "no-settings-file": "找不到 app-settings.json",
+};
+
+// 显式 "检测中" 状态（区分默认文本和"调用失败"）
+function setRowLoading(prefix, label) {
+  const dot = $(prefix + "Dot"), msg = $(prefix + "Msg");
+  if (dot) { dot.className = "dot warn"; }
+  if (msg) { msg.textContent = label || "检测中…"; }
+}
+function setRowError(prefix, label) {
+  const dot = $(prefix + "Dot"), msg = $(prefix + "Msg");
+  if (dot) { dot.className = "dot bad"; }
+  if (msg) { msg.textContent = label || "检测失败"; }
+}
+
+function renderServiceRow(prefix, probe) {
+  const dot = $(prefix + "Dot"), msg = $(prefix + "Msg"), btn = $(prefix + "StartBtn");
+  if (!dot || !msg) { addLog(`插件 UI 元素缺失: #${prefix}Dot/#${prefix}Msg`, true); return; }
+  dot.className = "dot";
+  if (btn) btn.style.display = "none";
+  if (!probe) {
+    setRowError(prefix, "检测无数据");
+    return;
+  }
+  if (probe.state === "ready") {
+    dot.classList.add("ok");
+    msg.textContent = probe.detail || "就绪";
+  } else if (probe.state === "loading") {
+    dot.classList.add("warn");
+    msg.textContent = probe.detail || "模型加载中…";
+  } else if (probe.state === "error") {
+    dot.classList.add("warn");
+    msg.textContent = probe.detail || "服务异常";
+  } else {
+    dot.classList.add("bad");
+    msg.textContent = "未启动（127.0.0.1 未监听）";
+    if (btn) btn.style.display = "";
+  }
+}
+
+function fmtMB(bytes) {
+  return (bytes / 1048576).toFixed(1) + "MB";
+}
+
+/* 内置引擎行渲染（v0.3.0），返回是否正在安装 */
+let installSpeed = { at: 0, received: 0, bps: 0 }; // UI 端速度估算（轮询间隔差分）
+function renderEngineRow(d) {
+  const dot = $("engDot"), msg = $("engMsg"), btn = $("btnInstallEngine");
+  if (!dot || !msg) { addLog("插件 UI 元素缺失: #engDot/#engMsg", true); return; }
+  const bar = $("installBar");
+  dot.className = "dot";
+  if (btn) btn.style.display = "none";
+  const eng = d.engine || { state: "missing" };
+  if (eng.state === "ready") {
+    dot.classList.add("ok");
+    msg.textContent = eng.detail || "就绪";
+    if (bar) bar.className = "install-bar";
+  } else if (eng.state === "installed") {
+    dot.classList.add("ok");
+    msg.textContent = eng.detail || "已安装";
+  } else if (eng.state === "installing") {
+    dot.classList.add("warn");
+    msg.textContent = eng.phase === "extract" ? "解包中…" : "下载中…";
+    if (bar) bar.className = "install-bar show";
+    /* 速度估算：两次轮询的 received 差分 */
+    const now = Date.now();
+    if (installSpeed.at && eng.received >= installSpeed.received && now > installSpeed.at) {
+      const dt = (now - installSpeed.at) / 1000;
+      if (dt >= 0.4) {
+        const bps = (eng.received - installSpeed.received) / dt;
+        if (bps > 0) installSpeed.bps = installSpeed.bps ? installSpeed.bps * 0.6 + bps * 0.4 : bps; // 平滑
+      }
+    }
+    installSpeed.at = now;
+    installSpeed.received = eng.received;
+    const pct = eng.total ? Math.min(100, Math.floor(eng.received / eng.total * 100)) : 0;
+    const doneMB = (eng.received / 1048576).toFixed(0);
+    const totalMB = (eng.total / 1048576).toFixed(0);
+    $("installLabel").textContent = eng.label || "";
+    const fill = $("installFill");
+    if (fill) fill.style.width = pct + "%";
+    $("installPct").textContent = eng.phase === "extract"
+      ? "解包中…"
+      : `${doneMB}/${totalMB}MB · ${pct}% · ${(installSpeed.bps / 1048576).toFixed(1)}MB/s`;
+    startEnginePoll();
+  } else if (eng.state === "error") {
+    dot.classList.add("bad");
+    msg.textContent = eng.detail || "错误";
+    if (btn) btn.style.display = "";
+    if (bar) bar.className = "install-bar";
+  } else {
+    dot.classList.add("bad");
+    msg.textContent = eng.detail || "未安装（不影响外置服务用户）";
+    if (btn) btn.style.display = "";
+    if (bar) bar.className = "install-bar";
+  }
+}
+
+function renderDiagnostics(d) {
+  // ASR 行：外置 down 时若内置引擎就绪则显示"将使用内置引擎"
+  const asrProbe = { ...d.asr };
+  if (asrProbe.state === "down" && d.engine && (d.engine.state === "ready" || d.engine.state === "installed")) {
+    asrProbe.state = "ready";
+    asrProbe.detail = "外置服务未启动，将使用内置 CPU 引擎";
+  }
+  renderServiceRow("asr", asrProbe);
+  renderServiceRow("tts", d.tts);
+  if (d.config && d.config.asr) $("cfgAsrPath").textContent = d.config.asr.exe || "-";
+  if (d.config && d.config.tts) $("cfgTtsPath").textContent = d.config.tts.exe || "-";
+
+  const setDot = $("setDot"), setMsg = $("setMsg"), fixBtn = $("btnFixSettings");
+  setDot.className = "dot";
+  fixBtn.style.display = "none";
+  const banner = $("setBanner");
+  banner.className = "banner";
+  const st = d.settings;
+  if (st && st.ok) {
+    setDot.classList.add("ok");
+    setMsg.textContent = "正确（asrEngine=mossland，语音通话可建立）"
+      + (st.ttsEngine && st.ttsEngine !== "off" ? "" : "，TTS 未配置（说话无声）");
+  } else if (st) {
+    setDot.classList.add("bad");
+    const texts = (st.issues || []).map((i) => SETTING_ISSUE_TEXT[i.code] || i.code);
+    setMsg.textContent = texts.join("；") || "异常";
+    const fixable = (st.issues || []).some((i) => i.fixable);
+    fixBtn.style.display = fixable ? "" : "none";
+  } else {
+    setDot.classList.add("bad");
+    setMsg.textContent = "读取设置失败";
+  }
+  renderEngineRow(d);
+}
+
+function showBanner(kind, html) {
+  const banner = $("setBanner");
+  banner.className = "banner show " + kind;
+  banner.innerHTML = html;
+}
+
+async function runCheck(auto) {
+  // 体检前先显式标 loading
+  setRowLoading("asr", "检测中…");
+  setRowLoading("tts", "检测中…");
+  setRowLoading("set", "检测中…");
+  $("engMsg") && (($("engDot") || {}).className = "dot warn");
+  const _t0 = Date.now();
+  addLog("[体检] 调 diagnose IPC…");
+  try {
+    const d = await ipcRenderer.invoke(CH + ":diagnose");
+    addLog(`[体检] diagnose 返回 ${Date.now() - _t0}ms asr=${d && d.asr && d.asr.state} tts=${d && d.tts && d.tts.state} settings=${d && d.settings && d.settings.ok}`);
+    if (!d) { addLog("体检返回空数据", true); return null; }
+    renderDiagnostics(d);
+    return d;
+  } catch (e) {
+    addLog("体检失败: " + (e && e.message || e) + " (用了 " + (Date.now() - _t0) + "ms)", true);
+    setRowError("asr", "调用失败");
+    setRowError("tts", "调用失败");
+    setRowError("set", "调用失败");
+    return null;
+  }
+}
+
+/* 安装期间轮询进度 */
+function startEnginePoll() {
+  if (enginePollTimer) return;
+  enginePollTimer = setInterval(async () => {
+    try {
+      const eng = await ipcRenderer.invoke(CH + ":get-engine-state");
+      const d = { engine: eng };
+      renderEngineRow(d);
+      if (eng.state !== "installing") {
+        clearInterval(enginePollTimer);
+        enginePollTimer = null;
+        await runCheck();
+      }
+    } catch { /* 轮询失败忽略 */ }
+  }, 800);
+}
+
+/* ---------- 主进程事件 ---------- */
+ipcRenderer.on(CH + ":ui", (_e, { event, payload }) => {
+  if (event === "log") addLog(payload.text, /失败|错误/.test(payload.text));
+  else if (event === "state") renderState(payload);
+  else if (event === "vad") renderVad(payload.state);
+  else if (event === "install-state") {
+    // 主进程推送的安装状态（open 着窗口时实时刷新）
+    renderEngineRow({ engine: payload });
+    if (payload.state === "installing") startEnginePoll();
+  }
+});
+
+/* ---------- 采集 ---------- */
+const WORKLET_SRC = `
+class PCMSender extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._buf = new Float32Array(2048);
+    this._off = 0;
+  }
+  process(inputs) {
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) {
+      // 顺便算能量给 UI
+      let sum = 0;
+      for (let i = 0; i < ch.length; i++) {
+        this._buf[this._off++] = ch[i];
+        sum += ch[i] * ch[i];
+        if (this._off === this._buf.length) {
+          this.port.postMessage({ pcm: this._buf.slice(0), rms: Math.sqrt(sum / ch.length / 16) });
+          this._off = 0;
+          sum = 0;
+        }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("pcm-sender", PCMSender);
+`;
+
+async function startCapture() {
+  audioCtx = new AudioContext({ sampleRate: 16000 });
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      channelCount: 1,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+  const src = audioCtx.createMediaStreamSource(mediaStream);
+  const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript" }));
+  await audioCtx.audioWorklet.addModule(url);
+  URL.revokeObjectURL(url);
+  workletNode = new AudioWorkletNode(audioCtx, "pcm-sender");
+  workletNode.port.onmessage = (e) => {
+    const { pcm, rms } = e.data;
+    renderVad("", rms);
+    ipcRenderer.invoke(CH + ":pcm-chunk", pcm).catch(() => {});
+  };
+  src.connect(workletNode);
+  // 不连 destination：避免本地监听回放
+}
+
+async function stopCapture() {
+  running = false;
+  try { workletNode && workletNode.port && (workletNode.port.onmessage = null); } catch {}
+  try { mediaStream && mediaStream.getTracks().forEach((t) => t.stop()); } catch {}
+  try { audioCtx && audioCtx.close(); } catch {}
+  workletNode = null; mediaStream = null; audioCtx = null;
+}
+
+/* ---------- 按钮 ---------- */
+async function start(target) {
+  addLog("请求接管 " + (target === "active-call" ? "通话" : "聊天") + "…");
+  const r = await ipcRenderer.invoke(CH + ":start", target);
+  if (!r.ok) { addLog("接管失败: " + r.error, true); renderState(await ipcRenderer.invoke(CH + ":get-state")); return; }
+  try {
+    await startCapture();
+    running = true;
+    addLog("麦克风采集已启动 (16kHz)");
+  } catch (e) {
+    addLog("麦克风启动失败: " + e.message, true);
+    await ipcRenderer.invoke(CH + ":stop");
+    return;
+  }
+  renderState(await ipcRenderer.invoke(CH + ":get-state"));
+}
+
+$("btnCall").onclick = () => start("active-call").catch((e) => addLog(String(e), true));
+$("btnChat").onclick = () => start("active-chat").catch((e) => addLog(String(e), true));
+$("btnStop").onclick = async () => {
+  await ipcRenderer.invoke(CH + ":stop");
+  await stopCapture();
+  renderState(await ipcRenderer.invoke(CH + ":get-state"));
+  addLog("麦克风已关闭");
+};
+
+/* v0.4.8：主进程自动接管时的开麦/停麦指令（autocap 隐藏窗或面板都可收令） */
+const IS_AUTOCAP = new URLSearchParams(location.search).get("autocap") === "1";
+ipcRenderer.on("plugin:local-asr:capture-cmd", async (_e, msg) => {
+  try {
+    if (msg && msg.cmd === "start") {
+      if (running) return; // 已在采集
+      await startCapture();
+      running = true;
+      addLog("（自动接管）麦克风采集已启动");
+    } else if (msg && msg.cmd === "stop") {
+      await stopCapture();
+      addLog("（自动接管）麦克风已关闭");
+      if (IS_AUTOCAP) setTimeout(() => window.close(), 150);
+    }
+  } catch (e) {
+    addLog("采集指令执行失败: " + e.message, true);
+    if (IS_AUTOCAP) setTimeout(() => window.close(), 400);
+  }
+});
+
+/* 自动接管开关（v0.4.7） */
+$("chkAutoCall").onchange = async () => {
+  const on = $("chkAutoCall").checked;
+  const r = await ipcRenderer.invoke(CH + ":set-auto-settings", { autoTakeoverCall: on });
+  addLog(r && r.ok ? ("通话自动接管已" + (on ? "开启" : "关闭")) : ("保存失败: " + (r && r.error)));
+};
+(async () => {
+  const r = await ipcRenderer.invoke(CH + ":get-auto-settings");
+  if (r && r.ok) $("chkAutoCall").checked = !!r.autoTakeoverCall;
+})();
+
+/* 体检按钮 */
+$("btnRecheck").onclick = async () => {
+  addLog("重新体检…");
+  await runCheck();
+};
+$("btnAsrStart").onclick = async () => {
+  const r = await ipcRenderer.invoke(CH + ":start-service", "asr");
+  if (r.ok) {
+    addLog("ASR 启动命令已发出，模型加载约 15 秒，稍后自动重检…");
+    setTimeout(runCheck, 8000);
+    setTimeout(runCheck, 20000);
+  } else addLog("ASR 启动失败: " + r.error, true);
+};
+$("btnTtsStart").onclick = async () => {
+  const r = await ipcRenderer.invoke(CH + ":start-service", "tts");
+  if (r.ok) {
+    addLog("TTS 启动命令已发出，稍后自动重检…");
+    setTimeout(runCheck, 4000);
+  } else addLog("TTS 启动失败: " + r.error, true);
+};
+$("btnFixSettings").onclick = async () => {
+  const r = await ipcRenderer.invoke(CH + ":fix-settings");
+  if (r.ok && r.needRestart) {
+    showBanner("info",
+      "✅ 已写入通话设置（原文件已备份为 app-settings.json.local-asr-backup）。<br>" +
+      "<b>请完全退出并重启 Cyrene</b>后生效。重启前请勿在设置页修改其他选项（会覆盖本次修复）；" +
+      "如被覆盖，重新打开本面板点一次修复即可。");
+    addLog("已写入通话设置 → 需重启 Cyrene 生效");
+  } else if (r.ok) {
+    showBanner("info", "设置已是正确状态，无需修复。");
+  } else {
+    showBanner("err", "修复失败: " + (r.error || "未知错误"));
+  }
+  await runCheck();
+};
+$("btnPickAsr").onclick = async () => {
+  const r = await ipcRenderer.invoke(CH + ":pick-service-exe", "asr");
+  if (r.ok) { $("cfgAsrPath").textContent = r.config.exe; addLog("已更新 ASR 启动命令"); }
+};
+$("btnPickTts").onclick = async () => {
+  const r = await ipcRenderer.invoke(CH + ":pick-service-exe", "tts");
+  if (r.ok) { $("cfgTtsPath").textContent = r.config.exe; addLog("已更新 TTS 启动命令"); }
+};
+
+/* 内置引擎按钮 */
+$("btnInstallEngine").onclick = async () => {
+  addLog("开始安装内置轻量引擎（约 250MB，国内源，支持断点续传）…");
+  installSpeed = { at: 0, received: 0, bps: 0 };
+  const r = await ipcRenderer.invoke(CH + ":install-engine");
+  if (!r.ok && !r.cancelled) addLog("安装失败: " + (r.error || "未知"), true);
+  if (r.cancelled) addLog("安装已取消（已下载部分保留，再次点击可从断点续传）");
+  startEnginePoll();
+};
+$("btnCancelInstall").onclick = async () => {
+  await ipcRenderer.invoke(CH + ":cancel-install");
+};
+
+/* ---------- v0.4.3 唤醒词门控：最最简单版（inline oninput + sync fs 写盘） ---------- */
+// 全部逻辑已挪到文件顶部的 _DATA IIFE，这里没有需要做的事
+// 保留这个注释只是历史
+
+/* 音乐状态轮询：宿主 v1.2.2+ 内置 music:get-status 通道（本窗口有 nodeIntegration） */
+let musicPollTimer = null;
+async function pollMusicOnce() {
+  try {
+    const d = await ipcRenderer.invoke("music:get-status");
+    const p = d && d.player;
+    const playing = !!(p && p.loaded && !p.paused);
+    await ipcRenderer.invoke(CH + ":music-status", { playing, supported: true });
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (/no handler/i.test(msg)) {
+      // 老版本宿主无此通道 → 通知主进程并停止轮询（music 模式自动退化为不拦截）
+      await ipcRenderer.invoke(CH + ":music-status", { playing: false, supported: false }).catch(() => {});
+      if (musicPollTimer) { clearInterval(musicPollTimer); musicPollTimer = null; }
+      addLog("此 Cyrene 版本无音乐状态通道（v1.2.2+ 支持），音乐模式退化为不拦截", true);
+    }
+    /* 其他错误（服务暂不可用）→ 下轮再试 */
+  }
+}
+
+/* ---------- 初始化 ---------- */
+(async function init() {
+  addLog("===== v0.4.3 ultra-simple 启动 =====");
+  addLog("插件窗口就绪。");
+  renderState(await ipcRenderer.invoke(CH + ":get-state"));
+  // 启动音乐轮询（3s）
+  pollMusicOnce();
+  musicPollTimer = setInterval(pollMusicOnce, 3000);
+  const d = await runCheck();
+  if (d && d.engine && d.engine.state === "installing") startEnginePoll();
+  // 启动后 30s 内持续复查（ASR 模型可能还在加载，唤醒词保存后重启也需时生效）
+  [4, 10, 20, 35].forEach((sec) => setTimeout(runCheck, sec * 1000));
+  window.addEventListener("beforeunload", () => {
+    if (enginePollTimer) clearInterval(enginePollTimer);
+    if (musicPollTimer) clearInterval(musicPollTimer);
+    // 关闭窗口前最后同步一次写盘（不依赖任何异步机制）
+    try { window.__saveWake && window.__saveWake(); } catch {}
+    ipcRenderer.invoke(CH + ":stop").catch(() => {});
+  });
+})();
+</script>
+</body>
+</html>
