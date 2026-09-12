@@ -25,6 +25,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [indextts-tts](./plugins/indextts-tts) | 1.0.0 | 在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/indextts-tts-1.0.0/indextts-tts-1.0.0.zip) | Downfallofthedownfall | — |
 | [ripples-of-aion](./plugins/ripples-of-aion) | 0.6.0 | 结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴、autoDream 整合与五页可视化面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/ripples-of-aion-0.6.0/ripples-of-aion-0.6.0.zip) | modusensus | [Ripples-of-Aion](https://github.com/modusensus/Ripples-of-Aion) |
 | [chat-export](./plugins/chat-export) | 1.0.0 | 把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip) | Playa | — |
+| [astral-relay](./plugins/astral-relay) | 0.4.0 | BYOS 中转站：用自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——通义千问 / 腾讯 Coding Plan 仅限 Code 交互会话，MiniMax 全模式，xAI Grok 为实验性 OAuth 接入 | — | Unknownuserfrommars | [astral-relay](https://github.com/Unknownuserfrommars/astral-relay) |
 
 ---
 
