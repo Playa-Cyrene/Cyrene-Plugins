@@ -1,71 +1,71 @@
 {
-  "apiVersion": 1,
-  "updatedAt": "2026-09-11",
-  "plugins": [
-    {
-      "id": "ripples-of-aion",
-      "name": "岁月涟漪",
-      "description": "结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴与可视化记忆面板",
-      "author": "modusensus",
-      "homepage": "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/ripples-of-aion",
-      "version": "0.6.0",
-      "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/ripples-of-aion-0.6.0/ripples-of-aion-0.6.0.zip",
-      "sha256": "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
-      "downloads": 17
-    },
-    {
-      "id": "system-status",
-      "name": "系统状态",
-      "version": "0.1.0",
-      "description": "查询本机系统状态：CPU、内存、磁盘、电池与开机时长",
-      "author": "Playa",
-      "homepage": "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/system-status",
-      "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/system-status-0.1.0/system-status-0.1.0.zip",
-      "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-      "downloads": 43
-    },
-    {
-      "id": "subscription-oauth",
-      "name": "订阅 OAuth（ChatGPT / Claude / Grok）",
-      "description": "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通，支持多账号切换、模型目录与用量显示",
-      "author": "1971687396",
-      "homepage": "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/subscription-oauth",
-      "version": "1.2.7",
-      "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/subscription-oauth-1.2.7/subscription-oauth-1.2.7.zip",
-      "sha256": "c39040191cf8dcb2e6339615f58119cfa4ebd0c00ff7fa682fc59d4ee5f1e807",
-      "downloads": 8
-    },
-    {
-      "id": "indextts-tts",
-      "name": "IndexTTS 本地语音",
-      "description": "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
-      "author": "Downfallofthedownfall",
-      "homepage": "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/indextts-tts",
-      "version": "1.0.0",
-      "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/indextts-tts-1.0.0/indextts-tts-1.0.0.zip",
-      "sha256": "5fb7cbbb9e10079fb9b199e1fb022b1d1df9d079a13f9b61f8863309239153ba",
-      "downloads": 30
-    },
-    {
-      "id": "chat-export",
-      "name": "聊天记录导出",
-      "description": "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
-      "author": "Playa",
-      "homepage": "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/chat-export",
-      "downloads": 5,
-      "version": "1.0.0",
-      "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip",
-      "sha256": "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
-    },
-    {
-      "id": "minecraft-bot",
-      "name": "Minecraft 机器人",
-      "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射",
-      "author": "Cyrene",
-      "version": "0.10.0-beta.1",
-      "zip": "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/minecraft-bot-0.10.0-beta.1/minecraft-bot-0.10.0-beta.1.zip",
-      "sha256": "",
-      "downloads": 0
-    }
-  ]
+    "apiVersion":  1,
+    "updatedAt":  "2026-09-12",
+    "plugins":  [
+                    {
+                        "id":  "ripples-of-aion",
+                        "name":  "岁月涟漪",
+                        "description":  "结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴与可视化记忆面板",
+                        "author":  "modusensus",
+                        "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/ripples-of-aion",
+                        "version":  "0.6.0",
+                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/ripples-of-aion-0.6.0/ripples-of-aion-0.6.0.zip",
+                        "sha256":  "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
+                        "downloads":  17
+                    },
+                    {
+                        "id":  "system-status",
+                        "name":  "系统状态",
+                        "version":  "0.1.0",
+                        "description":  "查询本机系统状态：CPU、内存、磁盘、电池与开机时长",
+                        "author":  "Playa",
+                        "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/system-status",
+                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/system-status-0.1.0/system-status-0.1.0.zip",
+                        "sha256":  "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
+                        "downloads":  43
+                    },
+                    {
+                        "id":  "subscription-oauth",
+                        "name":  "订阅 OAuth（ChatGPT / Claude / Grok）",
+                        "description":  "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通，支持多账号切换、模型目录与用量显示",
+                        "author":  "1971687396",
+                        "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/subscription-oauth",
+                        "version":  "1.2.7",
+                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/subscription-oauth-1.2.7/subscription-oauth-1.2.7.zip",
+                        "sha256":  "c39040191cf8dcb2e6339615f58119cfa4ebd0c00ff7fa682fc59d4ee5f1e807",
+                        "downloads":  8
+                    },
+                    {
+                        "id":  "indextts-tts",
+                        "name":  "IndexTTS 本地语音",
+                        "description":  "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
+                        "author":  "Downfallofthedownfall",
+                        "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/indextts-tts",
+                        "version":  "1.0.0",
+                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/indextts-tts-1.0.0/indextts-tts-1.0.0.zip",
+                        "sha256":  "5fb7cbbb9e10079fb9b199e1fb022b1d1df9d079a13f9b61f8863309239153ba",
+                        "downloads":  30
+                    },
+                    {
+                        "id":  "chat-export",
+                        "name":  "聊天记录导出",
+                        "description":  "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
+                        "author":  "Playa",
+                        "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/chat-export",
+                        "downloads":  5,
+                        "version":  "1.0.0",
+                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip",
+                        "sha256":  "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
+                    },
+                    {
+                        "id":  "minecraft-bot",
+                        "name":  "Minecraft 机器人",
+                        "description":  "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射",
+                        "author":  "Cyrene",
+                        "downloads":  0,
+                        "version":  "0.10.0-beta.1",
+                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/minecraft-bot-0.10.0-beta.1/minecraft-bot-0.10.0-beta.1.zip",
+                        "sha256":  "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
+                    }
+                ]
 }
