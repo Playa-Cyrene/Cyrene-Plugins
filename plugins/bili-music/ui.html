@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="zh-CN" data-page-node-id="HEg05mRIaENIzz6Blxtb0z">
+<head data-page-node-id="T6FRukxGps8p91EtC7ckZu">
+  <meta charset="utf-8" data-page-node-id="ozpGxSSLa7rWNgO5KkuPMZ" />
+  <title>B 站听歌</title>
+  <style>
+    :root { --bg:#f7f9fc; --card:#fff; --border:#e3e8ef; --accent:#3a72e0; --muted:#7a8a9a; --ok:#2e9e6b; --bad:#d64545; --warn:#d68b2e; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: #2b3a4a; }
+    .app { height: 100vh; display: flex; flex-direction: column; }
+    .titlebar { height: 44px; flex: 0 0 44px; display: flex; align-items: center; gap: 9px; padding-left: 14px; background: #fff; border-bottom: 1px solid var(--border); -webkit-app-region: drag; user-select: none; position: relative; z-index: 5; }
+    .titlebar h1 { font-size: 14px; margin: 0; flex: 1; font-weight: 600; }
+    .pill { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: #eef3fb; color: var(--accent); -webkit-app-region: no-drag; }
+    .pill.bad { background: #fde9e9; color: var(--bad); }
+    .pill.warn { background: #fff2e0; color: var(--warn); }
+    .pill.ok { background: #e3f6ec; color: var(--ok); }
+    .window-controls { align-self: stretch; display: flex; -webkit-app-region: no-drag; }
+    .titlebar button { border: 0; background: transparent; width: 46px; height: 43px; padding: 0; border-radius: 0; cursor: pointer; color: var(--muted); display: grid; place-items: center; }
+    .titlebar button svg { width: 14px; height: 14px; pointer-events: none; }
+    .titlebar button:hover { background: #eef3fb; }
+    .titlebar button.close:hover { background: #fde9e9; color: var(--bad); }
+    .content-scroll { flex: 1; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+    .wrap { padding: 16px; display: grid; gap: 14px; max-width: 880px; margin: 0 auto; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+    .card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 600; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .hint code { background: #eef3fb; padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+    .search-row { display: flex; gap: 8px; }
+    .search-row input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+    .search-row input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+    button { border: 1px solid var(--border); background: #fff; color: #2b3a4a; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    .candidates { display: grid; gap: 8px; max-height: 320px; overflow-y: auto; margin-top: 12px; }
+    .candidate { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; cursor: pointer; transition: all 0.1s; }
+    .candidate:hover { background: #f4f8fe; border-color: var(--accent); }
+    .candidate.selected { border-color: var(--accent); background: #eef3fb; }
+    .candidate-title { font-weight: 600; font-size: 13px; }
+    .candidate-meta { font-size: 12px; color: var(--muted); margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .video-info-block { padding: 10px 12px; background: #f4f8fe; border-radius: 10px; }
+    .video-info-block b { font-size: 14px; }
+    .video-info-block .hint { margin-top: 4px; }
+    .pages { display: grid; gap: 8px; margin-top: 10px; }
+    .page-row { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; }
+    .page-row .idx { font-weight: 700; color: var(--accent); width: 32px; flex: 0 0 32px; }
+    .page-row .part { flex: 1; font-size: 13px; }
+    .page-row .duration { font-size: 12px; color: var(--muted); }
+    .downloaded { display: grid; gap: 8px; }
+    .dl-row { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .dl-row .name { flex: 1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 200px; }
+    .dl-row .meta { font-size: 12px; color: var(--muted); flex: 0 0 auto; }
+    .dl-row .btns { display: flex; gap: 6px; flex: 0 0 auto; }
+    .dl-row .btns button { padding: 4px 10px; font-size: 12px; }
+    .status { font-size: 12px; color: var(--muted); margin: 4px 0; min-height: 16px; padding: 0 4px; }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--bad); }
+    .empty { font-size: 13px; color: var(--muted); padding: 14px; text-align: center; }
+    .busy { opacity: .55; pointer-events: none; }
+    .login-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .user-chip { display: flex; align-items: center; gap: 8px; font-size: 13px; background: #eef3fb; border-radius: 20px; padding: 4px 14px 4px 4px; }
+    .user-chip img { width: 30px; height: 30px; border-radius: 50%; background: #fff; }
+    .user-chip .vip { color: #d68b2e; font-size: 11px; font-weight: 600; }
+    .qr-panel { display: none; margin-top: 12px; text-align: center; }
+    .qr-panel.show { display: block; }
+    .qr-box { display: inline-block; background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+    .qr-box img { display: block; }
+    .qr-status { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .qr-status.warn { color: var(--warn); }
+    .qr-status.err { color: var(--bad); }
+    .qr-status.ok { color: var(--ok); }
+    @media (max-width: 620px) {
+      .wrap { padding: 12px; }
+      .search-row { flex-direction: column; }
+      .dl-row { flex-direction: column; align-items: stretch; }
+      .dl-row .name { min-width: 0; }
+    }
+  </style>
+</head>
+<body data-page-node-id="PQ7n5QoqGw0h4hHAKV5hql">
+  <div class="app" data-page-node-id="nwD2T3xJy6oKFLJmzaZ9wp">
+    <header class="titlebar" data-page-node-id="4OT43toDrQyNuBUEFMAhrt">
+      <h1 data-page-node-id="kNDn6ztbBEFHhlyOEtGISW">B 站听歌</h1>
+      <span class="pill" id="ffmpeg-pill" data-page-node-id="jKDTb1qRybc8Zq0IWYJa70">检测 ffmpeg...</span>
+      <div class="window-controls" data-page-node-id="KrjdOAV9bVkvjgBZgANug8">
+        <button id="btn-min" type="button" aria-label="最小化" data-page-node-id="ovsJMJf22bHNwJRTbRk31b"><svg viewBox="0 0 16 16" data-page-node-id="jwTM975m4t6zFuCgAC0B6f"><path d="M3 8.5h10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" data-page-node-id="FYlUldPK6njzOCAsOZLk7F"/></svg></button>
+        <button id="btn-close" class="close" type="button" aria-label="关闭" data-page-node-id="Ndqbp1O2iwFPgdChdZEexQ"><svg viewBox="0 0 16 16" data-page-node-id="CSAGypCfJdxjquFORhGWmW"><path d="m4 4 8 8m0-8-8 8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" data-page-node-id="RFme7Y6BKOEHjiMJuWg6E1"/></svg></button>
+      </div>
+    </header>
+    <main class="content-scroll" data-page-node-id="RDvRNEmwTdMomwo6a6qLeO">
+      <div class="wrap" data-page-node-id="fcGbCFo8IVoobGEwD6zc1f">
+        <div class="card" data-page-node-id="Acct0LoginCardXYZ123">
+          <h2 data-page-node-id="Acct0LoginTitleAbcDe">
+            <span data-page-node-id="Acct0LoginTitleTextZxyWv">B 站账号</span>
+            <span class="pill" id="login-pill" data-page-node-id="Acct0LoginPillAbcDe" style="display:none">未登录</span>
+          </h2>
+          <div class="login-row" id="login-idle" data-page-node-id="Acct0LoginIdleF0o1n">
+            <button class="primary" id="btn-login" data-page-node-id="Acct0BtnLogin0Abc1">扫码登录（解锁高码率音源）</button>
+            <button id="btn-relogin" data-page-node-id="Acct0BtnReLogin01Abc" style="display:none">重新生成二维码</button>
+            <span class="hint" data-page-node-id="Acct0LoginHint01Abc">登录后可下载 200 MiB 内的分 P，并拿到 DASH 高码率音频档。</span>
+          </div>
+          <div class="login-row" id="login-user" data-page-node-id="Acct0LoginUserC0l7v" style="display:none">
+            <span class="user-chip" data-page-node-id="Acct0UserChipCc0l7v">
+              <img id="user-face" alt="" data-page-node-id="Acct0UserFaceCc0l7v" style="display:none" />
+              <span data-page-node-id="Acct0UserNameWrap01Abc"><span id="user-name" data-page-node-id="Acct0UserName0Abc1">B 站用户</span> <span class="vip" id="user-vip" data-page-node-id="Acct0UserVip0Abc1"></span></span>
+            </span>
+            <button id="btn-logout" data-page-node-id="Acct0BtnLogout0Abc1">退出登录</button>
+          </div>
+          <div class="qr-panel" id="qr-panel" data-page-node-id="Acct0QrPanel01AbcX">
+            <div class="qr-box" id="qr-box" data-page-node-id="Acct0QrBox0AbcD1"></div>
+            <div class="qr-status" id="qr-status" data-page-node-id="Acct0QrStatus0AbcE2">等待生成...</div>
+          </div>
+        </div>
+
+        <div class="card" data-page-node-id="LWVlahhFqYMwDZN4RuGDhD">
+          <h2 data-page-node-id="chIpTjokCNnzGPk9iudoFu">1. 搜索</h2>
+          <div class="search-row" data-page-node-id="y482OBrLvouEyWtJPBeLAy">
+            <input id="kw" type="text" placeholder="输入关键词（歌名 / UP主）" maxlength="100" data-page-node-id="gqlkpywc3gLoCskFozCKGZ" />
+            <button class="primary" id="btn-search" data-page-node-id="PFkBbYU9EB3KRxu3N30zFI">搜索</button>
+          </div>
+          <div class="hint" data-page-node-id="Jvy7hgkXv4l3zeIw5XFE2W">B 站公开搜索 API，上限 10 条。点选一条后看分 P。</div>
+          <div id="candidates" class="candidates" data-page-node-id="ojjXmByaU5E7eavYt8i2Ci"></div>
+        </div>
+
+        <div class="card" data-page-node-id="8NhF4xRqJ78bofeqZdgpE2">
+          <h2 data-page-node-id="8xZXdg1BpNrceaAsIIf3uU">3. 分 P 与下载</h2>
+          <div id="video-info" class="empty" data-page-node-id="8D8GZ7n5D2bv7Iwd6K7Quc">先在上方选一条候选。</div>
+          <div id="pages" class="pages" data-page-node-id="dePzVNF1AFBPPTfhBmJLr8"></div>
+        </div>
+
+        <div class="card" data-page-node-id="0iuEjIyltPPDKtkzkjEPOJ">
+          <h2 data-page-node-id="Vb7wCeswWOnIN9QrJBpc63">4. 已下载音频</h2>
+          <div id="downloaded" class="downloaded" data-page-node-id="keiyFx7SJ6ZXVhWPk9c0CU"></div>
+          <div class="hint" data-page-node-id="Z9dyLnBUR6L4SEbH5NWkZw">当前下载目录：<code id="audio-dir-hint" data-page-node-id="IKV7xjh6TUet3ZkcTvgIRF">加载中...</code></div>
+        </div>
+
+        <div class="card" data-page-node-id="SettingsCardBiliMus01">
+          <h2 data-page-node-id="SettingsTitleBiliMus01">5. 设置</h2>
+          <div class="field" style="margin-bottom:10px;">
+            <div class="hint" style="margin-bottom:4px;">ffmpeg.exe 路径（音频转码必需，留空 = 自动查找）</div>
+            <div style="display:flex;gap:6px;">
+              <input id="set-ffmpeg" type="text" placeholder="留空自动查找 PATH / 常见位置"
+                     style="flex:1;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:12px;" />
+              <button id="btn-pick-ffmpeg" style="flex:0 0 auto;">浏览…</button>
+            </div>
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <div class="hint" style="margin-bottom:4px;">下载目录（点「浏览…」弹出我的电脑选文件夹，留空 = 默认目录）</div>
+            <div style="display:flex;gap:6px;">
+              <input id="set-dldir" type="text" placeholder="留空用默认目录"
+                     style="flex:1;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:12px;" />
+              <button id="btn-pick-dldir" style="flex:0 0 auto;">浏览…</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="btn-save-settings" class="primary">保存设置</button>
+            <span id="settings-status" class="hint"></span>
+          </div>
+          <div id="ffmpeg-install-box" style="margin-top:12px;padding:10px 12px;border:1px dashed var(--border);border-radius:10px;display:none;">
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px;">ffmpeg 未就绪</div>
+            <div class="hint" style="margin-bottom:8px;">音频转码必需。点下面按钮自动从国内镜像下载（约 78 MB，静态单文件免安装），下载完自动配置并生效。</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button id="btn-install-ffmpeg" class="primary">一键下载并安装 ffmpeg</button>
+              <span id="install-status" class="hint"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="status" id="status-msg" data-page-node-id="qdZS1IcDiQyY1aBVsF5gum"></div>
+      </div>
+    </main>
+  </div>
+  <script>
+    const { ipcRenderer } = require("electron");
+    const $ = (id) => document.getElementById(id);
+
+    function setStatus(text, kind) {
+      const el = $("status-msg");
+      el.textContent = text || "";
+      el.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function fmtDur(s) {
+      s = Math.round(Number(s) || 0);
+      if (s >= 3600) return Math.floor(s/3600) + ":" + String(Math.floor(s/60)%60).padStart(2,"0") + ":" + String(s%60).padStart(2,"0");
+      return Math.floor(s/60) + ":" + String(s%60).padStart(2,"0");
+    }
+    function fmtSize(b) {
+      if (!b) return "0 B";
+      if (b >= 1048576) return (b/1048576).toFixed(1) + " MiB";
+      if (b >= 1024) return (b/1024).toFixed(1) + " KiB";
+      return b + " B";
+    }
+    function fmtPlay(n) {
+      n = Number(n) || 0;
+      if (n >= 10000) return (n/10000).toFixed(1) + "w";
+      return String(n);
+    }
+
+    let candidates = [];
+    let selectedBvid = null;
+
+    async function refreshFfmpeg() {
+      try {
+        const res = await ipcRenderer.invoke("plugin:bili-music:probeFfmpeg");
+        const pill = $("ffmpeg-pill");
+        if (res.available) {
+          pill.textContent = "ffmpeg " + (res.version || "OK");
+          pill.className = "pill ok";
+          pill.title = res.path || "";
+          $("ffmpeg-install-box").style.display = "none";
+        } else {
+          pill.textContent = "ffmpeg 未安装";
+          pill.className = "pill bad";
+          pill.title = res.hint || "请安装 ffmpeg 并加入 PATH";
+          $("ffmpeg-install-box").style.display = "block";
+        }
+      } catch (e) {
+        const pill = $("ffmpeg-pill");
+        pill.textContent = "ffmpeg 探针失败";
+        pill.className = "pill bad";
+        $("ffmpeg-install-box").style.display = "block";
+      }
+    }
+
+    // 一键安装 ffmpeg：镜像下载 → 验证 → 自动配置 → 刷新状态
+    $("btn-install-ffmpeg").onclick = async () => {
+      const btn = $("btn-install-ffmpeg");
+      if (!confirm("自动下载 ffmpeg（约 78 MB，国内镜像）到插件数据目录并配置？")) return;
+      btn.disabled = true;
+      $("install-status").textContent = "下载中，约 78 MB，视网速 1~3 分钟…";
+      try {
+        const r = await ipcRenderer.invoke("plugin:bili-music:installFfmpeg");
+        if (!r || !r.ok) throw new Error((r && r.error) || "未知错误");
+        $("install-status").textContent = "安装成功 ✓ " + (r.version || "");
+        await Promise.all([refreshFfmpeg(), refreshSettings()]);
+        setStatus("ffmpeg 已就绪：" + r.path, "ok");
+      } catch (e) {
+        $("install-status").textContent = "安装失败：" + (e && e.message || e);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    async function refreshDownloaded() {
+      try {
+        const res = await ipcRenderer.invoke("plugin:bili-music:listDownloaded");
+        const box = $("downloaded");
+        box.innerHTML = "";
+        const list = (res && res.files) || [];
+        if (!list.length) {
+          box.innerHTML = '<div class="empty">还没有下载。下完会出现在这里。</div>';
+          return;
+        }
+        for (const f of list) {
+          const row = document.createElement("div");
+          row.className = "dl-row";
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = f.name;
+          name.title = f.path;
+          const meta = document.createElement("div");
+          meta.className = "meta";
+          meta.textContent = fmtSize(f.size) + (f.durationSec ? " · " + fmtDur(f.durationSec) : "");
+          const btns = document.createElement("div");
+          btns.className = "btns";
+          const playBtn = document.createElement("button");
+          playBtn.textContent = "播放";
+          playBtn.onclick = async () => {
+            const r = await ipcRenderer.invoke("plugin:bili-music:playLocalFile", f.path);
+            if (r && r.ok) setStatus(r.playing ? "内置播放器播放中：" + f.name : "已加入队列（第 " + r.queueLength + " 位）", "ok");
+            else setStatus("播放失败：" + (r && r.error || "未知"), "err");
+          };
+          const revealBtn = document.createElement("button");
+          revealBtn.textContent = "打开位置";
+          revealBtn.onclick = async () => {
+            const r = await ipcRenderer.invoke("plugin:bili-music:revealFile", f.path);
+            if (!r || !r.ok) setStatus("打开失败：" + (r && r.error || "未知"), "err");
+          };
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "删除";
+          delBtn.onclick = async () => {
+            if (!confirm("删除 " + f.name + " ?")) return;
+            const r = await ipcRenderer.invoke("plugin:bili-music:deleteFile", f.path);
+            if (r && r.ok) { setStatus("已删除", "ok"); refreshDownloaded(); }
+            else setStatus("删除失败：" + (r && r.error || "未知"), "err");
+          };
+          btns.append(playBtn, revealBtn, delBtn);
+          row.append(name, meta, btns);
+          box.appendChild(row);
+        }
+      } catch (e) {
+        $("downloaded").innerHTML = '<div class="empty">列表加载失败：' + (e && e.message || e) + '</div>';
+      }
+    }
+
+    async function doSearch() {
+      const kw = $("kw").value.trim();
+      if (!kw) { setStatus("请输入关键词", "err"); return; }
+      const btn = $("btn-search");
+      btn.disabled = true;
+      setStatus("搜索中...");
+      try {
+        const res = await ipcRenderer.invoke("plugin:bili-music:search", kw, 10);
+        candidates = (res && res.items) || [];
+        const box = $("candidates");
+        box.innerHTML = "";
+        if (!candidates.length) { box.innerHTML = '<div class="empty">没有结果，换个关键词试试。</div>'; setStatus(""); return; }
+        for (const v of candidates) {
+          const row = document.createElement("div");
+          row.className = "candidate" + (v.bvid === selectedBvid ? " selected" : "");
+          const t = document.createElement("div");
+          t.className = "candidate-title";
+          t.textContent = v.title;
+          const m = document.createElement("div");
+          m.className = "candidate-meta";
+          const parts = [v.author || "?", fmtDur(v.durationSec)];
+          if (v.playCount) parts.push("播放 " + fmtPlay(v.playCount));
+          if (v.over15min) parts.push("超过15分钟");
+          m.textContent = parts.join(" · ");
+          row.append(t, m);
+          row.onclick = () => selectCandidate(v);
+          box.appendChild(row);
+        }
+        setStatus("找到 " + candidates.length + " 条", "ok");
+      } catch (e) {
+        setStatus("搜索失败：" + (e && e.message || e), "err");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function selectCandidate(v) {
+      selectedBvid = v.bvid;
+      const rows = document.querySelectorAll(".candidate");
+      rows.forEach((r, i) => r.classList.toggle("selected", candidates[i] && candidates[i].bvid === v.bvid));
+      setStatus("加载视频信息...");
+      try {
+        const info = await ipcRenderer.invoke("plugin:bili-music:videoInfo", v.bvid);
+        const box = $("video-info");
+        box.className = "video-info-block";
+        box.innerHTML = "";
+        const t = document.createElement("b");
+        t.textContent = info.title || "(无标题)";
+        const h = document.createElement("div");
+        h.className = "hint";
+        h.textContent = (info.author || "?") + " · BV " + info.bvid;
+        box.append(t, h);
+        const pages = $("pages");
+        pages.innerHTML = "";
+        if (!info.pages || !info.pages.length) {
+          pages.innerHTML = '<div class="empty">没有可下载的分 P。</div>';
+          setStatus("");
+          return;
+        }
+        for (const p of info.pages) {
+          const row = document.createElement("div");
+          row.className = "page-row";
+          const idx = document.createElement("div");
+          idx.className = "idx";
+          idx.textContent = "p" + p.page;
+          const part = document.createElement("div");
+          part.className = "part";
+          part.textContent = p.part || "(无标题)";
+          const dur = document.createElement("div");
+          dur.className = "duration";
+          dur.textContent = fmtDur(p.durationSec);
+          const dl = document.createElement("button");
+          dl.className = "primary";
+          dl.textContent = "下载";
+          dl.onclick = async () => {
+            dl.disabled = true;
+            dl.textContent = "下载中...";
+            setStatus("下载 " + (info.title || info.bvid) + " - p" + p.page + " ...");
+            try {
+              const r = await ipcRenderer.invoke("plugin:bili-music:play", info.bvid, p.page);
+              if (!r || r.ok === false) throw new Error((r && r.error) || "未知错误");
+              setStatus("已保存：" + r.audioPath, "ok");
+              refreshDownloaded();
+            } catch (e) {
+              setStatus("下载失败：" + (e && e.message || e), "err");
+            } finally {
+              dl.disabled = false;
+              dl.textContent = "下载";
+            }
+          };
+          row.append(idx, part, dur, dl);
+          pages.appendChild(row);
+        }
+        setStatus("加载完成，" + info.pages.length + " 个分 P", "ok");
+      } catch (e) {
+        setStatus("加载失败：" + (e && e.message || e), "err");
+      }
+    }
+
+    $("btn-search").onclick = doSearch;
+    $("kw").addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
+    $("btn-min").onclick = () => ipcRenderer.send("plugin:bili-music:win-minimize");
+    $("btn-close").onclick = () => ipcRenderer.send("plugin:bili-music:win-close");
+
+    // ---------------------------------------------------------------------------
+    // 扫码登录（v0.3.0）
+    // ---------------------------------------------------------------------------
+    let qrcodeLib = null;
+    try { qrcodeLib = require("./qrcode.js"); } catch (e) { qrcodeLib = null; }
+
+    let loginPollTimer = null;
+    function stopLoginPoll() { if (loginPollTimer) { clearInterval(loginPollTimer); loginPollTimer = null; } }
+
+    function setQrStatus(t, k) {
+      const el = $("qr-status");
+      el.textContent = t;
+      el.className = "qr-status" + (k ? " " + k : "");
+    }
+
+    function drawQr(text) {
+      const box = $("qr-box");
+      box.innerHTML = "";
+      if (!qrcodeLib) { box.innerHTML = '<div class="empty">二维码库加载失败</div>'; return; }
+      const qr = qrcodeLib(0, "M");
+      qr.addData(text);
+      qr.make();
+      box.innerHTML = qr.createImgTag(4, 8);
+    }
+
+    async function refreshLogin() {
+      try {
+        const r = await ipcRenderer.invoke("plugin:bili-music:loginState");
+        const idle = $("login-idle"), user = $("login-user"), pill = $("login-pill");
+        if (r && r.phase === "logged_in") {
+          idle.style.display = "none";
+          user.style.display = "flex";
+          $("user-name").textContent = r.user.uname || ("UID " + r.user.mid);
+          $("user-vip").textContent = r.user.vip ? "大会员" : "";
+          if (r.user.face) { $("user-face").src = r.user.face; $("user-face").style.display = ""; }
+          else $("user-face").style.display = "none";
+          pill.textContent = "已登录"; pill.className = "pill ok"; pill.style.display = "";
+          $("qr-panel").classList.remove("show");
+          stopLoginPoll();
+        } else {
+          user.style.display = "none";
+          idle.style.display = "flex";
+          if (r && r.phase === "expired") {
+            pill.textContent = "登录已过期"; pill.className = "pill warn"; pill.style.display = "";
+          } else {
+            pill.style.display = "none";
+          }
+        }
+      } catch (e) { /* 状态刷新失败静默 */ }
+    }
+
+    async function startLogin() {
+      setStatus("正在生成二维码...");
+      const r = await ipcRenderer.invoke("plugin:bili-music:loginStart");
+      if (!r || !r.ok) { setStatus("发起扫码失败：" + (r && r.error || "未知"), "err"); return; }
+      drawQr(r.qrContent);
+      $("qr-panel").classList.add("show");
+      $("btn-relogin").style.display = "none";
+      setQrStatus("用手机 B 站 App 扫一扫", "");
+      setStatus("等待扫码（180 秒内有效）");
+      stopLoginPoll();
+      loginPollTimer = setInterval(async () => {
+        const s = await ipcRenderer.invoke("plugin:bili-music:loginState");
+        if (!s || !s.ok) return;
+        if (s.phase === "waiting_confirm") setQrStatus("已扫码，请在手机上确认登录", "warn");
+        else if (s.phase === "success" || s.phase === "logged_in") {
+          stopLoginPoll();
+          setQrStatus("登录成功 ✓", "ok");
+          setStatus("B 站登录成功，已解锁高码率音源", "ok");
+          setTimeout(() => { $("qr-panel").classList.remove("show"); refreshLogin(); }, 800);
+        } else if (s.phase === "expired") {
+          stopLoginPoll();
+          setQrStatus("二维码已失效，请重新生成", "err");
+          $("btn-relogin").style.display = "";
+        }
+      }, 1500);
+    }
+
+    $("btn-login").onclick = startLogin;
+    $("btn-relogin").onclick = startLogin;
+    $("btn-logout").onclick = async () => {
+      if (!confirm("退出 B 站登录？")) return;
+      const r = await ipcRenderer.invoke("plugin:bili-music:loginLogout");
+      refreshLogin();
+      setStatus(r && r.ok ? "已退出登录" : "退出失败：" + (r && r.error || "未知"), r && r.ok ? "ok" : "err");
+    };
+
+    // ---- 设置：ffmpeg 路径 / 下载目录 ----
+    async function refreshSettings() {
+      const r = await ipcRenderer.invoke("plugin:bili-music:getSettings");
+      if (r && r.ok) {
+        $("set-ffmpeg").value = r.ffmpegPath || "";
+        $("set-dldir").value = r.downloadDir || "";
+        $("audio-dir-hint").textContent = r.downloadDir || r.defaultAudioDir || "(未知)";
+      }
+    }
+    // 浏览：选下载目录（我的电脑）
+    $("btn-pick-dldir").onclick = async () => {
+      const r = await ipcRenderer.invoke("plugin:bili-music:pickDirectory");
+      if (r && r.ok) { $("set-dldir").value = r.path; $("settings-status").textContent = "已选择目录，记得点「保存设置」"; }
+    };
+    // 浏览：选 ffmpeg.exe
+    $("btn-pick-ffmpeg").onclick = async () => {
+      const r = await ipcRenderer.invoke("plugin:bili-music:pickFfmpeg");
+      if (r && r.ok) { $("set-ffmpeg").value = r.path; $("settings-status").textContent = "已选择 ffmpeg，记得点「保存设置」"; }
+    };
+    $("btn-save-settings").onclick = async () => {
+      const btn = $("btn-save-settings");
+      btn.disabled = true;
+      $("settings-status").textContent = "保存中...";
+      try {
+        const r = await ipcRenderer.invoke("plugin:bili-music:saveSettings", {
+          ffmpegPath: $("set-ffmpeg").value,
+          downloadDir: $("set-dldir").value,
+        });
+        if (!r || !r.ok) throw new Error((r && r.error) || "未知错误");
+        $("settings-status").textContent = "已保存 ✓（立即生效）";
+        await Promise.all([refreshSettings(), refreshFfmpeg(), refreshDownloaded()]);
+      } catch (e) {
+        $("settings-status").textContent = "保存失败：" + (e && e.message || e);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    refreshFfmpeg();
+    refreshDownloaded();
+    refreshLogin();
+    refreshSettings();
+    setStatus("输入关键词开始搜索");
+  </script>
+</body>
+</html>

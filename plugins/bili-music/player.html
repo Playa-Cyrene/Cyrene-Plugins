@@ -1,0 +1,59 @@
+<!doctype html>
+<html data-page-node-id="eFlT9IvgTRAzxPSPpw9Ded">
+<head data-page-node-id="A6jmkBiPJPxJAz9JEsulGu"><meta charset="utf-8" data-page-node-id="I6H5NjjY6zUrBU4Orqp0SE"><title>bili-music player</title></head>
+<body data-page-node-id="QyxV5NkmlKpC4i0kJJE8tB">
+<audio id="a" data-page-node-id="FJ96RTujYVHHLTIFkUcfE0"></audio>
+<script>
+/* bili-music 内置播放器页面（隐藏窗口）
+ * 主进程指令：bili-music:player-cmd { action: load|pause|resume|stop|volume }
+ * 上报事件：  bili-music:player-ended（播完，主进程切队列下一首）
+ *             bili-music:player-event { type:"error", message }（出错上报）
+ * 状态查询：  主进程 executeJavaScript("playerStatus()") 直读，不走 IPC */
+const { ipcRenderer } = require("electron");
+const a = document.getElementById("a");
+
+ipcRenderer.on("plugin:bili-music:player-cmd", (_e, cmd) => {
+  try {
+    if (!cmd || typeof cmd.action !== "string") return;
+    switch (cmd.action) {
+      case "load":
+        a.src = cmd.url;
+        a.play().catch((e) => ipcRenderer.send("plugin:bili-music:player-event", { type: "error", message: "autoplay: " + (e && e.message || e) }));
+        break;
+      case "pause":
+        a.pause();
+        break;
+      case "resume":
+        a.play().catch((e) => ipcRenderer.send("plugin:bili-music:player-event", { type: "error", message: "resume: " + (e && e.message || e) }));
+        break;
+      case "stop":
+        a.pause();
+        a.removeAttribute("src");
+        a.load(); // 重置 media element，清掉 ended 状态
+        break;
+      case "volume":
+        a.volume = Math.min(1, Math.max(0, Number(cmd.value) || 0));
+        break;
+    }
+  } catch (e) {
+    ipcRenderer.send("plugin:bili-music:player-event", { type: "error", message: String(e && e.message || e) });
+  }
+});
+
+a.addEventListener("ended", () => ipcRenderer.send("plugin:bili-music:player-ended"));
+a.addEventListener("error", () => {
+  if (a.error) ipcRenderer.send("plugin:bili-music:player-event", { type: "error", message: "audio error code=" + a.error.code });
+});
+
+function playerStatus() {
+  return {
+    hasSrc: !!a.currentSrc || !!a.src,
+    paused: a.paused,
+    currentTime: a.currentTime || 0,
+    duration: isFinite(a.duration) ? a.duration : 0,
+    volume: a.volume,
+  };
+}
+</script>
+</body>
+</html>

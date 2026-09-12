@@ -26,6 +26,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [ripples-of-aion](./plugins/ripples-of-aion) | 0.6.0 | 结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴、autoDream 整合与五页可视化面板 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/ripples-of-aion-0.6.0/ripples-of-aion-0.6.0.zip) | modusensus | [Ripples-of-Aion](https://github.com/modusensus/Ripples-of-Aion) |
 | [chat-export](./plugins/chat-export) | 1.0.0 | 把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/chat-export-1.0.0/chat-export-1.0.0.zip) | Playa | — |
 | [minecraft-bot](./plugins/minecraft-bot) | 0.10.0-beta.1（Beta） | 把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/minecraft-bot-0.10.0-beta.1/minecraft-bot-0.10.0-beta.1.zip) | Cyrene | — |
+| [bili-music](./plugins/bili-music) | 0.3.2 | B 站听歌：视频分 P 当音源，搜索/下载转 M4A 用内置隐藏播放器出声，支持播放队列与扫码登录（凭据只存本机），匿名可用 | — | boring9720 | — |
 
 ---
 

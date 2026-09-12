@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "bili-music",
+  "name": "B 站听歌",
+  "version": "0.3.2",
+  "description": "语音听歌：B 站视频分 P 当音源，搜索/定位/下载转 M4A 后用内置隐藏播放器直接出声。支持播放队列与暂停/继续/下一首/音量控制，支持 B 站扫码登录（解锁高码率音源，凭据只存本机）。匿名也可用。",
+  "author": "boring9720",
+  "entry": "index.cjs",
+  "defaultEnabled": false
+}
