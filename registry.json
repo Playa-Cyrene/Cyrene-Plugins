@@ -81,10 +81,10 @@
                     {
                         "id":  "astral-relay",
                         "name":  "星驿 · Astral Relay BYOS",
-                        "description":  "BYOS 中转站：用你自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——编程套餐仅限 Code 交互会话，通用套餐全模式可用",
+                        "description":  "BYOS 中转站：用你自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——编程套餐仅限 Code 交互会话，通用套餐全模式可用；编程套餐的模式判定由插件自行完成，不需要改动宿主",
                         "author":  "Unknownuserfrommars",
                         "homepage":  "https://github.com/Unknownuserfrommars/astral-relay",
-                        "version":  "0.4.0",
+                        "version":  "0.5.0",
                         "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/astral-relay-0.4.0/astral-relay-0.4.0.zip",
                         "sha256":  "679fffdf2f48b61c82e95ae1c4e2ea5dd799fd815485e18a0ed4a94ec4a0c5f0",
                         "downloads":  0
