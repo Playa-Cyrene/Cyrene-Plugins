@@ -1,6 +1,6 @@
 {
     "apiVersion":  1,
-    "updatedAt":  "2026-09-12",
+    "updatedAt":  "2026-09-19",
     "plugins":  [
                     {
                         "id":  "ripples-of-aion",
@@ -34,6 +34,14 @@
                         "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/subscription-oauth-1.2.7/subscription-oauth-1.2.7.zip",
                         "sha256":  "c39040191cf8dcb2e6339615f58119cfa4ebd0c00ff7fa682fc59d4ee5f1e807",
                         "downloads":  8
+                    },
+                    {
+                        "id":  "cyrene-browser",
+                        "name":  "Cyrene 内置浏览器",
+                        "description":  "使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页",
+                        "author":  "1971687396",
+                        "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/cyrene-browser",
+                        "version":  "0.3.0"
                     },
                     {
                         "id":  "indextts-tts",

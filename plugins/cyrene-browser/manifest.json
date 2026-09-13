@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "cyrene-browser",
+  "name": "Cyrene 内置浏览器",
+  "version": "0.3.0",
+  "description": "使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页",
+  "author": "1971687396",
+  "entry": "index.cjs",
+  "icon": "icon.svg",
+  "defaultEnabled": false
+}

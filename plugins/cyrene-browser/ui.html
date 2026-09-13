@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cyrene 内置浏览器</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --cy-bg-page: #faf4f8;
+      --cy-bg-workspace: #fffbfc;
+      --cy-bg-hover: #fff1f6;
+      --cy-bg-active: #fde0ed;
+      --cy-border: #f2f2f2;
+      --cy-line: rgba(111, 81, 96, 0.13);
+      --cy-text: #1d1d1f;
+      --cy-text-muted: #8e8e93;
+      --cy-accent: #ff5b8a;
+      --cy-danger: #ff5f57;
+      --cy-shadow: 0 8px 26px rgba(108, 65, 82, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+      color: var(--cy-text);
+      font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+      font-size: 13px;
+    }
+
+    button, input { font: inherit; }
+    button, input, form, .tab { -webkit-app-region: no-drag; }
+
+    #window-shell {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      border: 1px solid rgba(111, 81, 96, 0.12);
+      border-radius: 20px;
+      background: var(--cy-bg-page);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+    }
+
+    html.is-maximized #window-shell {
+      border: 0;
+      border-radius: 0;
+    }
+
+    html.is-unfocused #window-brand,
+    html.is-unfocused #window-caption { opacity: 0.68; }
+
+    #chrome {
+      height: 140px;
+      user-select: none;
+    }
+
+    #window-titlebar {
+      position: relative;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      padding: 0 14px 0 16px;
+      -webkit-app-region: drag;
+    }
+
+    #window-brand {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: opacity 160ms ease;
+    }
+
+    #window-brand img {
+      width: 23px;
+      height: 23px;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 2px 5px rgba(255, 91, 138, 0.16));
+    }
+
+    .brand-name {
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.01em;
+    }
+
+    .brand-divider,
+    .brand-subtitle {
+      color: var(--cy-text-muted);
+      font-size: 12px;
+    }
+
+    #window-caption {
+      position: absolute;
+      left: 50%;
+      width: min(42vw, 420px);
+      overflow: hidden;
+      transform: translateX(-50%);
+      color: var(--cy-text-muted);
+      font-size: 12px;
+      line-height: 30px;
+      text-align: center;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      pointer-events: none;
+      transition: opacity 160ms ease;
+    }
+
+    #window-controls {
+      z-index: 2;
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+      -webkit-app-region: no-drag;
+    }
+
+    .window-control {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--cy-border);
+      border-radius: 50%;
+      color: var(--cy-text-muted);
+      background: var(--cy-bg-workspace);
+      cursor: pointer;
+      transition: color 120ms ease, background 120ms ease, border-color 120ms ease, transform 120ms ease;
+    }
+
+    .window-control:hover {
+      color: var(--cy-text);
+      border-color: rgba(255, 91, 138, 0.18);
+      background: var(--cy-bg-hover);
+    }
+
+    .window-control:active { transform: scale(0.94); }
+
+    .window-control.close:hover {
+      color: #fff;
+      border-color: var(--cy-danger);
+      background: var(--cy-danger);
+    }
+
+    .window-control svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.5;
+      pointer-events: none;
+    }
+
+    .restore-icon { display: none; }
+    html.is-maximized .maximize-icon { display: none; }
+    html.is-maximized .restore-icon { display: block; }
+
+    #browser-chrome {
+      height: 92px;
+      margin: 0 10px;
+      overflow: hidden;
+      border: 1px solid var(--cy-border);
+      border-bottom-color: var(--cy-line);
+      border-radius: 14px 14px 0 0;
+      background: color-mix(in srgb, var(--cy-bg-workspace) 94%, transparent);
+      box-shadow: var(--cy-shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    #tab-row {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 7px;
+      border-bottom: 1px solid var(--cy-line);
+    }
+
+    #tabs {
+      display: flex;
+      min-width: 0;
+      flex: 1;
+      gap: 4px;
+      overflow: hidden;
+    }
+
+    .tab {
+      height: 29px;
+      min-width: 112px;
+      max-width: 220px;
+      flex: 0 1 220px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 7px 0 10px;
+      color: var(--cy-text-muted);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      cursor: default;
+      transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+
+    .tab:hover { color: var(--cy-text); background: var(--cy-bg-hover); }
+
+    .tab.active {
+      color: var(--cy-text);
+      background: #fff;
+      border-color: var(--cy-border);
+      box-shadow: 0 2px 8px rgba(99, 57, 75, 0.07);
+    }
+
+    .tab-loading {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--cy-accent);
+      opacity: 0.5;
+    }
+
+    .tab.loading .tab-loading { animation: pulse 0.8s ease-in-out infinite alternate; }
+
+    @keyframes pulse { to { transform: scale(1.45); opacity: 1; } }
+
+    .tab-title {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      text-align: left;
+    }
+
+    .tab-close {
+      width: 20px;
+      height: 20px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      color: inherit;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .tab-close:hover { color: var(--cy-danger); background: var(--cy-bg-active); }
+
+    .icon-button {
+      width: 32px;
+      height: 32px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      color: var(--cy-text);
+      background: transparent;
+      cursor: pointer;
+      transition: color 120ms ease, background 120ms ease, transform 120ms ease;
+    }
+
+    .icon-button:hover:not(:disabled) { background: var(--cy-bg-hover); color: var(--cy-accent); }
+    .icon-button:active:not(:disabled) { transform: scale(0.94); }
+    .icon-button:disabled { opacity: 0.32; cursor: default; }
+
+    .icon-button svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.7;
+      pointer-events: none;
+    }
+
+    .stop-icon { display: none; }
+    #reload.loading .reload-icon { display: none; }
+    #reload.loading .stop-icon { display: block; }
+
+    #new-tab { width: 30px; height: 30px; }
+
+    #toolbar {
+      height: 54px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 9px;
+    }
+
+    #nav-form {
+      min-width: 180px;
+      flex: 1;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      margin-left: 5px;
+      padding: 0 5px 0 10px;
+      border: 1px solid var(--cy-line);
+      border-radius: 12px;
+      background: #fff;
+      transition: border-color 130ms ease, box-shadow 130ms ease;
+    }
+
+    #nav-form:focus-within {
+      border-color: color-mix(in srgb, var(--cy-accent) 48%, white);
+      box-shadow: 0 0 0 3px rgba(255, 91, 138, 0.09);
+    }
+
+    #security {
+      width: 17px;
+      flex: 0 0 auto;
+      color: var(--cy-text-muted);
+      text-align: center;
+    }
+
+    #address {
+      min-width: 0;
+      flex: 1;
+      height: 30px;
+      padding: 0 8px;
+      color: var(--cy-text);
+      border: 0;
+      outline: 0;
+      background: transparent;
+      user-select: text;
+    }
+
+    #address::placeholder { color: var(--cy-text-muted); }
+
+    #go {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      color: white;
+      background: var(--cy-accent);
+      cursor: pointer;
+      transition: filter 120ms ease, transform 120ms ease;
+    }
+
+    #go:hover { filter: brightness(1.04); }
+    #go:active { transform: scale(0.94); }
+
+    #go svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.8;
+      pointer-events: none;
+    }
+
+    #status {
+      max-width: 210px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: var(--cy-text-muted);
+      font-size: 12px;
+      padding-left: 7px;
+    }
+
+    #error {
+      position: fixed;
+      top: 51px;
+      right: 20px;
+      z-index: 20;
+      display: none;
+      max-width: min(520px, calc(100vw - 40px));
+      padding: 8px 12px;
+      border: 1px solid color-mix(in srgb, var(--cy-danger) 36%, transparent);
+      border-radius: 10px;
+      color: #c43b42;
+      background: #fff8f8;
+      box-shadow: var(--cy-shadow);
+    }
+  </style>
+</head>
+<body>
+  <div id="window-shell">
+    <div id="chrome">
+      <header id="window-titlebar">
+        <div id="window-brand">
+          <img src="./icon.svg" alt="" draggable="false" />
+          <span class="brand-name">Cyrene</span>
+          <span class="brand-divider">·</span>
+          <span class="brand-subtitle">内置浏览器</span>
+        </div>
+        <div id="window-caption">新标签页</div>
+        <div id="window-controls" aria-label="窗口控制">
+          <button id="window-minimize" class="window-control" type="button" title="最小化" aria-label="最小化">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 7.5h7" /></svg>
+          </button>
+          <button id="window-maximize" class="window-control" type="button" title="最大化" aria-label="最大化">
+            <svg class="maximize-icon" viewBox="0 0 14 14" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1" /></svg>
+            <svg class="restore-icon" viewBox="0 0 14 14" aria-hidden="true"><path d="M5 3.5h5.5V9" /><rect x="3.5" y="5" width="5.5" height="5.5" rx="0.8" /></svg>
+          </button>
+          <button id="window-close" class="window-control close" type="button" title="关闭" aria-label="关闭">
+            <svg viewBox="0 0 14 14" aria-hidden="true"><path d="m4 4 6 6m0-6-6 6" /></svg>
+          </button>
+        </div>
+      </header>
+      <div id="browser-chrome">
+        <div id="tab-row">
+          <div id="tabs" aria-label="标签页"></div>
+          <button id="new-tab" class="icon-button" type="button" title="新建标签页 (Ctrl+T)" aria-label="新建标签页">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11" /></svg>
+          </button>
+        </div>
+        <div id="toolbar">
+          <button id="back" class="icon-button" type="button" title="后退 (Alt+Left)" aria-label="后退">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m11.5 4.5-5.5 5.5 5.5 5.5M6.5 10h8" /></svg>
+          </button>
+          <button id="forward" class="icon-button" type="button" title="前进 (Alt+Right)" aria-label="前进">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8.5 4.5 5.5 5.5-5.5 5.5M13.5 10h-8" /></svg>
+          </button>
+          <button id="reload" class="icon-button" type="button" title="刷新 (Ctrl+R)" aria-label="刷新">
+            <svg class="reload-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M15.3 6.4A6.5 6.5 0 1 0 16 12" /><path d="M15.4 3.5v3.3h-3.3" /></svg>
+            <svg class="stop-icon" viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.5" /></svg>
+          </button>
+          <button id="home" class="icon-button" type="button" title="空白页" aria-label="空白页">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m3.8 9.2 6.2-5 6.2 5v6.3a1 1 0 0 1-1 1H4.8a1 1 0 0 1-1-1z" /><path d="M8 16.5v-5h4v5" /></svg>
+          </button>
+          <form id="nav-form">
+            <span id="security" title="连接状态">○</span>
+            <input id="address" type="text" autocomplete="off" spellcheck="false" placeholder="输入网址或搜索内容" aria-label="地址栏" />
+            <button id="go" type="submit" title="打开" aria-label="打开">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h9m-3.5-3.5L14 10l-3.5 3.5" /></svg>
+            </button>
+          </form>
+          <span id="status" title=""></span>
+        </div>
+      </div>
+    </div>
+    <div id="error" role="alert"></div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const api = window.cyreneBrowser;
+      const tabsElement = document.getElementById("tabs");
+      const address = document.getElementById("address");
+      const security = document.getElementById("security");
+      const status = document.getElementById("status");
+      const errorBox = document.getElementById("error");
+      const windowCaption = document.getElementById("window-caption");
+      const maximizeButton = document.getElementById("window-maximize");
+      const back = document.getElementById("back");
+      const forward = document.getElementById("forward");
+      const reload = document.getElementById("reload");
+      let currentState = null;
+      let errorTimer = null;
+      let addressDirty = false;
+
+      function showError(message) {
+        errorBox.textContent = String(message || "未知错误");
+        errorBox.style.display = "block";
+        clearTimeout(errorTimer);
+        errorTimer = setTimeout(() => { errorBox.style.display = "none"; }, 5000);
+      }
+
+      async function invoke(action, extra = {}) {
+        try {
+          const result = await api.action({ action, ...extra });
+          if (result && result.ok === false) showError(result.error || "操作失败");
+          return result;
+        } catch (error) {
+          showError(error instanceof Error ? error.message : String(error));
+          return null;
+        }
+      }
+
+      function renderTabs(state) {
+        tabsElement.replaceChildren();
+        for (const tab of state.tabs || []) {
+          const element = document.createElement("div");
+          element.className = `tab${tab.id === state.activeTabId ? " active" : ""}${tab.loading ? " loading" : ""}`;
+          element.title = tab.title || tab.url || "新标签页";
+
+          const dot = document.createElement("span");
+          dot.className = "tab-loading";
+
+          const title = document.createElement("span");
+          title.className = "tab-title";
+          title.textContent = tab.title || "新标签页";
+
+          const close = document.createElement("button");
+          close.type = "button";
+          close.className = "tab-close";
+          close.textContent = "×";
+          close.title = "关闭标签页";
+          close.setAttribute("aria-label", `关闭 ${tab.title || "标签页"}`);
+          close.addEventListener("click", (event) => {
+            event.stopPropagation();
+            void invoke("close-tab", { tabId: tab.id });
+          });
+
+          element.addEventListener("click", () => void invoke("activate-tab", { tabId: tab.id }));
+          element.append(dot, title, close);
+          tabsElement.append(element);
+        }
+      }
+
+      function render(state) {
+        if (!state || typeof state !== "object") return;
+        currentState = state;
+        renderTabs(state);
+        const activeTab = (state.tabs || []).find((tab) => tab.id === state.activeTabId);
+        windowCaption.textContent = activeTab?.title || "新标签页";
+        document.documentElement.classList.toggle("is-maximized", Boolean(state.maximized));
+        document.documentElement.classList.toggle("is-unfocused", state.focused === false);
+        maximizeButton.title = state.maximized ? "还原" : "最大化";
+        maximizeButton.setAttribute("aria-label", state.maximized ? "还原" : "最大化");
+        back.disabled = !state.canGoBack;
+        forward.disabled = !state.canGoForward;
+        reload.classList.toggle("loading", Boolean(state.loading));
+        reload.title = state.loading ? "停止加载" : "刷新 (Ctrl+R)";
+        reload.setAttribute("aria-label", state.loading ? "停止加载" : "刷新");
+        status.textContent = state.statusMessage || "";
+        status.title = state.statusMessage || "";
+
+        const url = state.address || "";
+        if (!addressDirty) address.value = url === "about:blank" ? "" : url;
+        if (url.startsWith("https://")) {
+          security.textContent = "●";
+          security.style.color = "#39a46a";
+          security.title = "HTTPS 加密连接";
+        } else if (url.startsWith("http://")) {
+          security.textContent = "!";
+          security.style.color = "#d48b28";
+          security.title = "非加密 HTTP 连接";
+        } else {
+          security.textContent = "○";
+          security.style.color = "";
+          security.title = "空白页";
+        }
+      }
+
+      document.getElementById("nav-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        addressDirty = false;
+        void invoke("navigate", { address: address.value });
+      });
+      address.addEventListener("input", () => { addressDirty = true; });
+      address.addEventListener("blur", () => {
+        addressDirty = false;
+        if (currentState) render(currentState);
+      });
+      back.addEventListener("click", () => void invoke("back"));
+      forward.addEventListener("click", () => void invoke("forward"));
+      reload.addEventListener("click", () => void invoke(currentState?.loading ? "stop" : "reload"));
+      document.getElementById("home").addEventListener("click", () => void invoke("navigate", { address: "about:blank" }));
+      document.getElementById("new-tab").addEventListener("click", () => void invoke("new-tab"));
+      document.getElementById("window-minimize").addEventListener("click", () => void invoke("window-minimize"));
+      maximizeButton.addEventListener("click", () => void invoke("window-toggle-maximize"));
+      document.getElementById("window-close").addEventListener("click", () => void invoke("window-close"));
+
+      document.addEventListener("keydown", (event) => {
+        const command = event.ctrlKey || event.metaKey;
+        const key = event.key.toLowerCase();
+        if (command && key === "l") {
+          event.preventDefault();
+          address.focus();
+          address.select();
+        } else if (command && key === "t") {
+          event.preventDefault();
+          void invoke("new-tab");
+        } else if (command && key === "w") {
+          event.preventDefault();
+          void invoke("close-tab", { tabId: currentState?.activeTabId });
+        } else if (command && key === "r") {
+          event.preventDefault();
+          void invoke("reload");
+        }
+      });
+
+      api.onState(render);
+      api.onCommand((command) => {
+        if (command?.type === "focus-address") {
+          addressDirty = false;
+          const currentUrl = currentState?.address || "";
+          address.value = currentUrl === "about:blank" ? "" : currentUrl;
+          address.focus();
+          address.select();
+        }
+      });
+      void invoke("get-state").then((result) => {
+        if (result?.state) render(result.state);
+      });
+    })();
+  </script>
+</body>
+</html>
