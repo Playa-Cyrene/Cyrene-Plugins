@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "mijia-control",
+  "name": "米家智能家居控制",
+  "version": "0.3.0",
+  "description": "扫码连接小米/米家账号，扫描账号下的智能家居设备并按房间分组展示；基于公开 MIoT-Spec 自动为每台设备生成功能控件（开关 / 亮度 / 色温 / 档位 / 模式等），对话与面板两种方式均可操控，每 5 分钟同步云端与局域网设备。",
+  "author": "抽卡保底真君",
+  "entry": "index.cjs",
+  "defaultEnabled": false,
+  "deps": ["secrets"]
+}
