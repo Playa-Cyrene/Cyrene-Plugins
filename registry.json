@@ -99,6 +99,14 @@
                         "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/local-asr-0.4.9/local-asr-0.4.9.zip",
                         "sha256":  "4a4a540308c77d3c0078997e32111e3a6078a434cdc8e8767585d0f94f4ed328",
                         "downloads":  0
+                    },
+                    {
+                        "id":  "xiaomi-health",
+                        "name":  "小米运动数据同步服务",
+                        "version":  "0.5.3",
+                        "description":  "扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均可感知健康数据，支持播报频率 / 风格与独立早安问候配置，可选将健康定期写入长期记忆（L2），一键退出登录清空数据",
+                        "author":  "抽卡保底真君",
+                        "homepage":  "https://github.com/ahwhshen/xiaomi-health-plugin"
                     }
                 ]
 }

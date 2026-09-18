@@ -29,6 +29,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [bili-music](./plugins/bili-music) | 0.3.2 | B 站听歌：视频分 P 当音源，搜索/下载转 M4A 用内置隐藏播放器出声，支持播放队列与扫码登录（凭据只存本机），匿名可用 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/bili-music-0.3.2/bili-music-0.3.2.zip) | boring9720 | — |
 | [astral-relay](./plugins/astral-relay) | 0.5.0 | BYOS 中转站：用自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——通义千问 / 腾讯 Coding Plan 仅限 Code 交互会话（由插件自行判定，不需要改动宿主），MiniMax 全模式，xAI Grok 为实验性 OAuth 接入 | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/astral-relay-0.5.0/astral-relay-0.5.0.zip) | Unknownuserfrommars | [astral-relay](https://github.com/Unknownuserfrommars/astral-relay) |
 | [local-asr](./plugins/local-asr) | 0.4.9 | 本地语音识别：麦克风语音转文字自动进输入框，通话开始自动接管（纯 SDK 接口实现）；零环境小白可用（无引擎时面板一键下载轻量 CPU 引擎，SHA-256 校验，断点续传） | [ZIP](https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/local-asr-0.4.9/local-asr-0.4.9.zip) | boring9720 | [boring9720/cyrene-local-asr](https://github.com/boring9720/cyrene-local-asr) |
+| [xiaomi-health](./plugins/xiaomi-health) | 0.5.3 | 扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均能感知健康数据，可配播报频率 / 风格与早安问候，支持将健康写入长期记忆（L2） | — | 抽卡保底真君 | [xiaomi-health-plugin](https://github.com/ahwhshen/xiaomi-health-plugin) |
 
 ---
 

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>小米运动数据同步服务</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --card: #ffffff;
+      --text-strong: #1d1d1f;
+      --text-default: #2c2c2e;
+      --text-muted: #4f4a57;
+      --text-faint: #6f6876;
+      --pink: #ff5b8a;
+      --pink-hover: #e84a78;
+      --border-soft: #e5e5ea;
+      --border-strong: #d2d2d7;
+      --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.04);
+      --shadow-pink: 0 4px 16px rgba(255, 91, 138, 0.20);
+      --ok: #34c759;
+      --warn: #ff9f0a;
+      --err: #ff3b30;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text-default);
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    .app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* 自定义标题栏（与 agent 一致：柔和粉紫 + 自绘窗口控制） */
+    .titlebar {
+      display: flex;
+      align-items: center;
+      height: 44px;
+      flex-shrink: 0;
+      padding: 0 10px 0 16px;
+      background: linear-gradient(135deg, rgba(255, 91, 138, 0.10), rgba(159, 122, 234, 0.08));
+      border-bottom: 1px solid var(--border-soft);
+      -webkit-app-region: drag;
+      user-select: none;
+    }
+    .titlebar__brand { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--text-strong); }
+    .titlebar__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--pink); box-shadow: var(--shadow-pink); }
+    .titlebar__spacer { flex: 1; }
+    .winbtn {
+      -webkit-app-region: no-drag;
+      width: 30px; height: 30px; border: none; border-radius: 8px;
+      background: transparent; color: var(--text-muted);
+      font-size: 15px; line-height: 1; cursor: pointer;
+    }
+    .winbtn:hover { background: rgba(0, 0, 0, 0.06); color: var(--text-strong); }
+    .winbtn.close:hover { background: var(--err); color: #fff; }
+
+    .scroll { flex: 1; overflow-y: auto; padding: 16px; }
+    .scroll::-webkit-scrollbar { width: 10px; }
+    .scroll::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.18); border-radius: 9999px; border: 3px solid transparent; background-clip: padding-box; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border-soft);
+      border-radius: 16px;
+      box-shadow: var(--shadow-card);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600;
+    }
+    .badge.ok { background: rgba(52, 199, 89, 0.12); color: #248a3d; }
+    .badge.off { background: rgba(0, 0, 0, 0.06); color: var(--text-faint); }
+    .meta { color: var(--text-faint); font-size: 12px; margin-top: 6px; }
+
+    .btn {
+      appearance: none; border: none; border-radius: 12px; cursor: pointer;
+      padding: 10px 16px; font-size: 14px; font-weight: 600;
+      background: var(--pink); color: #fff; box-shadow: var(--shadow-pink);
+      transition: transform .05s ease, background .15s ease;
+    }
+    .btn:hover { background: var(--pink-hover); }
+    .btn:active { transform: scale(0.98); }
+    .btn.ghost { background: transparent; color: var(--text-muted); box-shadow: none; border: 1px solid var(--border-strong); }
+    .btn.ghost:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-strong); }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-row { display: flex; gap: 10px; margin-top: 14px; }
+
+    .hint { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+    .section-title { font-size: 13px; font-weight: 700; color: var(--text-strong); margin: 0 0 10px; }
+
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 8px; }
+    .qr-box {
+      width: 220px; height: 220px; border-radius: 14px; border: 1px solid var(--border-soft);
+      background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .qr-box img { width: 100%; height: 100%; object-fit: contain; }
+    .qr-box .ph { color: var(--text-faint); font-size: 13px; text-align: center; padding: 16px; }
+    .state-line { font-size: 13px; color: var(--text-muted); text-align: center; }
+    .state-line.err { color: var(--err); }
+    .login-url { font-size: 11px; color: var(--text-faint); word-break: break-all; text-align: center; }
+
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .metric {
+      background: var(--bg); border: 1px solid var(--border-soft); border-radius: 12px;
+      padding: 12px 10px; text-align: center;
+    }
+    .metric .k { font-size: 12px; color: var(--text-muted); }
+    .metric .v { font-size: 20px; font-weight: 700; color: var(--text-strong); margin-top: 4px; }
+    .metric .u { font-size: 11px; color: var(--text-faint); }
+    .empty { color: var(--text-faint); font-size: 13px; text-align: center; padding: 8px 0; }
+    .foot { color: var(--text-faint); font-size: 11px; text-align: center; padding: 4px 0 10px; }
+
+    /* 设置项 */
+    .btn.danger { background: transparent; color: var(--err); box-shadow: none; border: 1px solid rgba(255, 59, 48, 0.4); }
+    .btn.danger:hover { background: rgba(255, 59, 48, 0.08); color: var(--err); }
+    .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; }
+    .field--col { flex-direction: column; align-items: stretch; gap: 8px; }
+    .field--end { justify-content: flex-end; padding-top: 12px; }
+    .field__label { font-size: 13px; color: var(--text-default); font-weight: 500; }
+    .field select, .field input[type="time"], .field input[type="number"] {
+      font: inherit; font-size: 13px; color: var(--text-strong);
+      background: var(--bg); border: 1px solid var(--border-strong); border-radius: 9px;
+      padding: 6px 9px; outline: none; max-width: 180px;
+    }
+    .field input[type="number"] { width: 74px; }
+    .inline { display: flex; align-items: center; gap: 6px; }
+    .checks { display: flex; gap: 16px; }
+    .checks label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+    .segmented { display: flex; flex-direction: column; gap: 7px; }
+    .segmented label { display: inline-flex; align-items: flex-start; gap: 7px; font-size: 13px; color: var(--text-muted); cursor: pointer; line-height: 1.4; }
+    .segmented input { margin-top: 2px; accent-color: var(--pink); }
+    .segmented .sub { display: block; font-size: 11px; color: var(--text-faint); }
+    .divider { height: 1px; background: var(--border-soft); margin: 4px 0; }
+
+    /* 开关 */
+    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch i {
+      position: absolute; inset: 0; border-radius: 9999px; background: var(--border-strong);
+      transition: background .15s ease; cursor: pointer;
+    }
+    .switch i::before {
+      content: ""; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px;
+      border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform .15s ease;
+    }
+    .switch input:checked + i { background: var(--pink); }
+    .switch input:checked + i::before { transform: translateX(18px); }
+    .note { font-size: 12px; color: var(--text-faint); line-height: 1.6; margin-top: 6px; }
+    .note.warn { color: var(--warn); }
+    #task-note { white-space: pre-line; }
+    .linkbtn { appearance: none; border: none; background: none; color: var(--pink); font-size: 12px; font-weight: 600; cursor: pointer; padding: 0; margin-left: 6px; text-decoration: underline; }
+    /* 顶部说明 / 免责声明 */
+    .intro { background: linear-gradient(135deg, rgba(255, 91, 138, 0.06), rgba(159, 122, 234, 0.05)); }
+    .intro summary { cursor: pointer; font-weight: 600; color: var(--text-strong); font-size: 13px; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; }
+    .intro summary::-webkit-details-marker { display: none; }
+    .intro summary::before { content: "\25B8"; color: var(--pink); transition: transform .15s ease; }
+    .intro[open] summary::before { transform: rotate(90deg); }
+    .intro .body { margin-top: 10px; font-size: 12.5px; line-height: 1.7; color: var(--text-muted); }
+    .intro .body b { color: var(--text-strong); }
+    .foot .disclaimer { display: block; margin-top: 4px; max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="titlebar">
+      <div class="titlebar__brand"><span class="titlebar__dot"></span>小米运动数据同步服务</div>
+      <div class="titlebar__spacer"></div>
+      <button class="winbtn" id="btn-min" title="最小化">&#8211;</button>
+      <button class="winbtn close" id="btn-close" title="关闭">&#10005;</button>
+    </div>
+
+    <div class="scroll">
+      <!-- 顶部说明：为何只有小米 -->
+      <div class="card intro">
+        <details>
+          <summary>为什么目前只有小米能同步？</summary>
+          <div class="body">
+            手机健康数据都锁在各自厂商的云端。华为 / 荣耀 / vivo 虽有官方接口，但要求<b>企业主体 + 资质审核 + 开发者应用授权</b>，个人开发者申请不到；OPPO 走<b>商务定向接入</b>；苹果 HealthKit 只在<b>设备端</b>、不开放第三方云端读取。<br />
+            而小米可以通过官方 App <b>扫码授权 + 公开接口</b>直接读取你本人账号下的数据，无需申请资质，所以先做了小米。其它品牌后续可能通过「导出文件本地导入」的方式支持。
+          </div>
+        </details>
+      </div>
+
+      <!-- 连接状态 -->
+      <div class="card">
+        <div class="status-row">
+          <div>
+            <span id="badge" class="badge off">未连接</span>
+            <div class="meta" id="meta">扫码后即可同步你的健康数据</div>
+          </div>
+          <button class="btn ghost" id="btn-sync" disabled>立即同步</button>
+        </div>
+      </div>
+
+      <!-- 登录区（未连接时显示） -->
+      <div class="card" id="login-card">
+        <h3 class="section-title">连接账号</h3>
+        <p class="hint">使用<b>已登录该小米账号的小米运动健康 App</b> 扫描下方二维码并确认授权。凭证经系统安全存储加密保存，不会明文落盘。</p>
+        <p class="note warn">本插件为第三方工具，非小米官方出品；仅读取你本人账号下的健康数据，凭证只加密保存在本机。数据获取基于公开接口，请自行确认符合小米《用户协议》。</p>
+        <div class="btn-row">
+          <button class="btn" id="btn-login">开始扫码登录</button>
+          <button class="btn ghost" id="btn-cancel" style="display:none">取消</button>
+        </div>
+        <div class="qr-wrap" id="qr-wrap" style="display:none">
+          <div class="qr-box" id="qr-box"><div class="ph">正在获取二维码…</div></div>
+          <div class="state-line" id="state-line">等待扫码…</div>
+          <div class="login-url" id="login-url"></div>
+        </div>
+      </div>
+
+      <!-- 数据区（已连接时显示） -->
+      <div class="card" id="data-card" style="display:none">
+        <h3 class="section-title" id="data-title">今日健康</h3>
+        <p class="note" style="margin:-2px 0 10px">数据来自小米云端，需设备先把运动 / 睡眠同步到云端，本插件才能读取；刚醒来时昨夜睡眠可能尚未同步，稍后再同步即可。</p>
+        <div id="data-body"><div class="empty">尚无数据，点击「立即同步」拉取。</div></div>
+      </div>
+
+      <!-- 设置区（已连接时显示） -->
+      <div class="card" id="settings-card" style="display:none">
+        <h3 class="section-title">播报与隐私</h3>
+
+        <div class="field">
+          <span class="field__label">对话内健康感知</span>
+          <label class="switch"><input type="checkbox" id="pref-chatinject" /><i></i></label>
+        </div>
+        <p class="note" style="margin:-2px 0 6px">开启后，昔涟会在日常对话里看到你的健康摘要，并可调用查询工具回答身体相关问题。</p>
+
+        <div class="divider"></div>
+
+        <div class="field">
+          <span class="field__label">定时主动播报</span>
+          <label class="switch"><input type="checkbox" id="pref-proactive" /><i></i></label>
+        </div>
+        <div id="proactive-box" style="display:none">
+          <div class="field">
+            <span class="field__label">播报频率</span>
+            <select id="pref-freq">
+              <option value="1">每天 1 次</option>
+              <option value="2">每天 2 次</option>
+              <option value="3">每天 3 次</option>
+              <option value="4">每天 4 次</option>
+              <option value="5">每天 5 次</option>
+              <option value="6">每天 6 次</option>
+              <option value="8">每天 8 次</option>
+              <option value="0">所有 · 每条（≈每小时）</option>
+            </select>
+          </div>
+          <div class="field field--col">
+            <span class="field__label">播报风格</span>
+            <div class="segmented">
+              <label><input type="radio" name="pref-style" value="natural" />
+                <span>自然关心（不报数字）<span class="sub">只让昔涟了解今天情况，问你睡得好不好、累不累，更像日常聊天</span></span>
+              </label>
+              <label><input type="radio" name="pref-style" value="detail" />
+                <span>带上具体数字<span class="sub">消息里直接报出步数 / 睡眠时长 / 心率等</span></span>
+              </label>
+            </div>
+          </div>
+          <div class="field field--col">
+            <span class="field__label">播报内容</span>
+            <div class="checks">
+              <label><input type="checkbox" id="pref-m-steps" />步数</label>
+              <label><input type="checkbox" id="pref-m-sleep" />睡眠</label>
+              <label><input type="checkbox" id="pref-m-heart" />心率</label>
+            </div>
+          </div>
+          <p class="note">提示：本插件的主动播报独立于 Agent 的「主动消息」频率，无法读取或自动对齐；请把频率设得不高于 Agent 里的主动消息频率。选「所有 · 每条」会按≈每小时高频发送。</p>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field">
+          <span class="field__label">早安主动问候</span>
+          <label class="switch"><input type="checkbox" id="pref-morning" /><i></i></label>
+        </div>
+        <div id="morning-box" style="display:none">
+          <div class="field">
+            <span class="field__label">早安时间</span>
+            <input type="time" id="pref-morningtime" value="08:00" />
+          </div>
+          <div class="field">
+            <span class="field__label">问好携带健康信息</span>
+            <label class="switch"><input type="checkbox" id="pref-morninginfo" /><i></i></label>
+          </div>
+          <div class="note warn" id="morning-note" style="display:none">该选项需在你醒来、且昨夜睡眠数据完成同步后才会带上健康信息；否则当天只发一句简单早安。<button class="linkbtn" id="btn-ack-morning">我已知晓</button></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field">
+          <span class="field__label">健康写入长期记忆</span>
+          <label class="switch"><input type="checkbox" id="pref-remember" /><i></i></label>
+        </div>
+        <div id="remember-box" style="display:none">
+          <div class="field">
+            <span class="field__label">记忆写入频率</span>
+            <select id="pref-rememberfreq">
+              <option value="1">每天 1 次</option>
+              <option value="2">每天 2 次</option>
+              <option value="3">每天 3 次</option>
+              <option value="4">每天 4 次</option>
+              <option value="5">每天 5 次</option>
+              <option value="6">每天 6 次</option>
+            </select>
+          </div>
+          <p class="note">开启后，昔涟会定期把当天健康数据作为一条「对话记忆（L2）」写入长期记忆（逐条追加、不覆盖、可被语义检索）。这样即使没开主动播报，日常对话与主动寒暄在聊到身体/作息时也能自然想起你的近况。此功能与 Agent 的记忆系统共用同一存储。</p>
+          <p class="note warn">注意：这会把健康数据写入与 Agent 共用的长期记忆，可能被日常对话与主动寒暄检索到；若不再需要，可关闭本开关并到 Agent「记忆」面板删除历史记录。</p>
+        </div>
+
+        <div class="field">
+          <span class="field__label">后台同步间隔（分钟）</span>
+          <input type="number" id="pref-syncint" value="30" min="5" max="1440" />
+        </div>
+        <p class="note">仅在应用运行期间同步与播报；应用关闭时不会在后台拉起。</p>
+
+        <div class="note" id="task-note"></div>
+
+        <div class="field field--end">
+          <button class="btn" id="btn-save-prefs">保存设置</button>
+        </div>
+      </div>
+
+      <!-- 账号区（已连接时显示） -->
+      <div class="card" id="account-card" style="display:none">
+        <div class="status-row">
+          <div>
+            <h3 class="section-title" style="margin:0">账号</h3>
+            <div class="meta">退出将清除已加密保存的登录凭证与本地同步数据</div>
+          </div>
+          <button class="btn danger" id="btn-logout">退出登录</button>
+        </div>
+      </div>
+
+      <div class="foot">
+        昔涟 · 小米运动数据同步服务 · CN 区（hlth.io.mi.com）
+        <span class="disclaimer">非官方开源插件，与小米公司无关联、未获授权。“小米运动健康”为小米公司商标，此处仅用于说明数据来源。基于公开接口，仅供个人学习与研究使用。</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require("electron");
+    const P = "plugin:xiaomi-health:";
+
+    const el = (id) => document.getElementById(id);
+    const state = { connected: false, summary: null, loginState: "idle", prefs: null, hasScheduler: false, tasks: [], morningNoticeAck: false };
+
+    function fmtMin(min) {
+      if (!min) return "0 分";
+      const h = Math.floor(min / 60), m = min % 60;
+      return h ? `${h} 时 ${String(m).padStart(2, "0")} 分` : `${m} 分`;
+    }
+    function fmtTime(ms) {
+      return ms ? new Date(ms).toLocaleString("zh-CN", { hour12: false }) : "从未";
+    }
+
+    function renderSummary(summary) {
+      if (!summary) { el("data-body").innerHTML = '<div class="empty">尚无数据，点击「立即同步」拉取。</div>'; return; }
+      el("data-title").textContent = `今日健康 · ${summary.date || ""}`;
+      const s = summary.steps, sl = summary.sleep, hr = summary.heart_rate;
+      if (!s && !sl && !hr) { el("data-body").innerHTML = '<div class="empty">今日暂无同步到的数据（设备可能未同步或未共享）。</div>'; return; }
+      let html = "";
+      if (s) html += `<div style="margin-bottom:12px"><div class="k" style="font-size:12px;color:var(--text-muted);margin-bottom:6px">步数与活动</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="v">${s.steps ?? 0}</div><div class="u">步</div></div>
+          <div class="metric"><div class="v">${((s.distance || 0) / 1000).toFixed(1)}</div><div class="u">公里</div></div>
+          <div class="metric"><div class="v">${s.calories ?? 0}</div><div class="u">千卡</div></div>
+        </div></div>`;
+      if (sl) html += `<div style="margin-bottom:12px"><div class="k" style="font-size:12px;color:var(--text-muted);margin-bottom:6px">睡眠</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="v" style="font-size:15px">${fmtMin(sl.total_duration)}</div><div class="u">总时长</div></div>
+          <div class="metric"><div class="v">${sl.sleep_score ?? "-"}</div><div class="u">评分</div></div>
+          <div class="metric"><div class="v" style="font-size:15px">${fmtMin(sl.sleep_deep_duration)}</div><div class="u">深睡</div></div>
+        </div></div>`;
+      if (hr) html += `<div><div class="k" style="font-size:12px;color:var(--text-muted);margin-bottom:6px">心率</div>
+        <div class="metric-grid">
+          <div class="metric"><div class="v">${hr.avg_hr ?? "-"}</div><div class="u">平均 bpm</div></div>
+          <div class="metric"><div class="v">${hr.avg_rhr ?? "-"}</div><div class="u">静息 bpm</div></div>
+          <div class="metric"><div class="v">${hr.latest_hr ? hr.latest_hr.bpm : (hr.max_hr ?? "-")}</div><div class="u">${hr.latest_hr ? "最新 bpm" : "最高 bpm"}</div></div>
+        </div></div>`;
+      el("data-body").innerHTML = html;
+    }
+
+    function render() {
+      const badge = el("badge");
+      badge.className = "badge " + (state.connected ? "ok" : "off");
+      badge.textContent = state.connected ? "已连接" : "未连接";
+      el("meta").textContent = state.connected
+        ? `账号 ${state.userId || ""} · 上次同步 ${fmtTime(state.lastSyncAt)}`
+        : "扫码后即可同步你的健康数据";
+      el("btn-sync").disabled = !state.connected;
+      el("login-card").style.display = state.connected ? "none" : "";
+      el("data-card").style.display = state.connected ? "" : "none";
+      el("settings-card").style.display = state.connected ? "" : "none";
+      el("account-card").style.display = state.connected ? "" : "none";
+      if (state.connected) renderTaskNote();
+      renderSummary(state.summary);
+    }
+
+    function renderLogin(ls) {
+      state.loginState = ls.state;
+      const showQr = ls.state === "connecting" || ls.state === "scanning" || ls.state === "error";
+      el("qr-wrap").style.display = showQr ? "" : "none";
+      el("btn-cancel").style.display = showQr ? "" : "none";
+      const loginBtn = el("btn-login");
+      loginBtn.disabled = ls.state === "connecting" || ls.state === "scanning";
+      loginBtn.textContent = ls.state === "scanning" ? "等待确认…" : (ls.state === "connecting" ? "正在获取二维码…" : "开始扫码登录");
+      const sl = el("state-line");
+      const box = el("qr-box");
+      sl.className = "state-line";
+      if (ls.qr) box.innerHTML = `<img src="${ls.qr}" alt="登录二维码" />`;
+      else if (ls.state === "connecting") box.innerHTML = '<div class="ph">正在向小米请求二维码…</div>';
+      if (ls.state === "scanning") sl.textContent = "请用小米运动健康 App 扫码并确认";
+      else if (ls.state === "connecting") sl.textContent = "正在建立登录会话…";
+      else if (ls.state === "error") { sl.className = "state-line err"; sl.textContent = "登录失败：" + (ls.error || "请重试"); }
+      else if (ls.state === "connected") sl.textContent = "登录成功！";
+      el("login-url").textContent = ls.loginUrl ? ("打不开二维码？手机浏览器打开：" + ls.loginUrl) : "";
+    }
+
+    // ── 设置面板 ───────────────────────────────────────────────
+    let settingsDirty = false;
+
+    function populateSettingsForm(prefs) {
+      if (!prefs) return;
+      const p = prefs.proactive || {};
+      el("pref-chatinject").checked = prefs.chatInject !== false;
+      el("pref-proactive").checked = Boolean(p.enabled);
+      el("pref-freq").value = String(p.timesPerDay != null ? p.timesPerDay : 2);
+      const style = p.style === "detail" ? "detail" : "natural";
+      document.querySelectorAll('input[name="pref-style"]').forEach((r) => { r.checked = r.value === style; });
+      const m = Array.isArray(p.metrics) ? p.metrics : ["steps", "sleep", "heart"];
+      el("pref-m-steps").checked = m.includes("steps");
+      el("pref-m-sleep").checked = m.includes("sleep");
+      el("pref-m-heart").checked = m.includes("heart");
+      el("pref-syncint").value = String(prefs.syncIntervalMin || 30);
+      el("pref-morning").checked = Boolean(p.morning);
+      el("pref-morningtime").value = p.morningTime || "08:00";
+      el("pref-morninginfo").checked = p.morningCarriesInfo !== false;
+      el("pref-remember").checked = Boolean(p.remember);
+      el("pref-rememberfreq").value = String(p.rememberTimesPerDay != null ? p.rememberTimesPerDay : 1);
+      applyProactiveVisibility();
+      applyMorningVisibility();
+      applyRememberVisibility();
+    }
+
+    function readSettingsForm() {
+      const metrics = [];
+      if (el("pref-m-steps").checked) metrics.push("steps");
+      if (el("pref-m-sleep").checked) metrics.push("sleep");
+      if (el("pref-m-heart").checked) metrics.push("heart");
+      return {
+        syncIntervalMin: Number(el("pref-syncint").value) || 30,
+        chatInject: el("pref-chatinject").checked,
+        proactive: {
+          enabled: el("pref-proactive").checked,
+          timesPerDay: Number(el("pref-freq").value) || 0,
+          style: (document.querySelector('input[name="pref-style"]:checked') || {}).value || "natural",
+          metrics: metrics.length ? metrics : ["steps", "sleep", "heart"],
+          morning: el("pref-morning").checked,
+          morningTime: el("pref-morningtime").value || "08:00",
+          morningCarriesInfo: el("pref-morninginfo").checked,
+          remember: el("pref-remember").checked,
+          rememberTimesPerDay: Number(el("pref-rememberfreq").value) || 1,
+        },
+      };
+    }
+
+    function applyProactiveVisibility() {
+      el("proactive-box").style.display = el("pref-proactive").checked ? "" : "none";
+    }
+
+    function applyMorningVisibility() {
+      const on = el("pref-morning").checked;
+      el("morning-box").style.display = on ? "" : "none";
+      // 首次开启「问好携带健康信息」时提示：需醒后 + 睡眠同步完成后才真正带上数据。
+      const showNote = on && el("pref-morninginfo").checked && !state.morningNoticeAck;
+      el("morning-note").style.display = showNote ? "" : "none";
+    }
+
+    function applyRememberVisibility() {
+      el("remember-box").style.display = el("pref-remember").checked ? "" : "none";
+    }
+
+    function renderTaskNote() {
+      const note = el("task-note");
+      note.className = "note";
+      if (!state.hasScheduler) {
+        note.className = "note warn";
+        note.textContent = "当前宿主未提供定时任务能力，主动播报不可用。";
+        return;
+      }
+      const tasks = state.tasks || [];
+      if (!tasks.length) { note.textContent = "保存后将创建播报任务。"; return; }
+      const lines = tasks.map((t) => {
+        const label = (t.title || "").replace(/^小米健康 · /, "");
+        if (!t.enabled) return `· ${label}：待你在宿主「定时任务」面板点【启用】`;
+        return `· ${label}：已启用` + (t.nextFireAt ? `，下次 ${fmtTime(Date.parse(t.nextFireAt))}` : "");
+      });
+      note.textContent = lines.join("\n");
+      if (tasks.some((t) => !t.enabled)) note.className = "note warn";
+    }
+
+    async function refresh() {
+      try {
+        const s = await ipcRenderer.invoke(P + "status");
+        Object.assign(state, s);
+        if (!settingsDirty && s.prefs) populateSettingsForm(s.prefs);
+        render();
+        renderLogin({ state: s.loginState, qr: s.qr, loginUrl: s.loginUrl, error: s.loginError });
+      } catch (err) {
+        el("meta").textContent = "状态读取失败：" + (err && err.message ? err.message : err);
+      }
+    }
+
+    el("btn-min").onclick = () => ipcRenderer.send(P + "win-minimize");
+    el("btn-close").onclick = () => ipcRenderer.send(P + "win-close");
+    el("btn-login").onclick = async () => { await ipcRenderer.invoke(P + "loginStart"); refresh(); };
+    el("btn-cancel").onclick = async () => { await ipcRenderer.invoke(P + "loginCancel"); refresh(); };
+    el("btn-sync").onclick = async () => {
+      el("btn-sync").disabled = true;
+      const r = await ipcRenderer.invoke(P + "sync");
+      if (r && r.ok === false) el("meta").textContent = "同步失败：" + (r.error || "");
+      await refresh();
+      el("btn-sync").disabled = false;
+    };
+
+    // 主进程扫码状态推送（扫码成功会自动同步并刷新）
+    ipcRenderer.on(P + "login", (_e, ls) => { renderLogin(ls); if (ls && ls.state === "connected") setTimeout(refresh, 1500); });
+
+    // 设置面板事件
+    el("pref-proactive").addEventListener("change", () => { settingsDirty = true; applyProactiveVisibility(); renderTaskNote(); });
+    el("pref-morning").addEventListener("change", () => { settingsDirty = true; applyMorningVisibility(); renderTaskNote(); });
+    el("pref-morninginfo").addEventListener("change", () => { settingsDirty = true; applyMorningVisibility(); });
+    el("pref-remember").addEventListener("change", () => { settingsDirty = true; applyRememberVisibility(); renderTaskNote(); });
+    ["pref-chatinject", "pref-freq", "pref-rememberfreq", "pref-syncint", "pref-morningtime", "pref-m-steps", "pref-m-sleep", "pref-m-heart"]
+      .forEach((id) => el(id).addEventListener("change", () => { settingsDirty = true; }));
+    document.querySelectorAll('input[name="pref-style"]').forEach((r) => r.addEventListener("change", () => { settingsDirty = true; }));
+    el("btn-ack-morning").onclick = async () => {
+      try { await ipcRenderer.invoke(P + "ackMorningNotice"); state.morningNoticeAck = true; applyMorningVisibility(); } catch (err) { /* 忽略 */ }
+    };
+
+    el("btn-save-prefs").onclick = async () => {
+      const btn = el("btn-save-prefs");
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = "保存中…";
+      try {
+        const r = await ipcRenderer.invoke(P + "setPrefs", readSettingsForm());
+        if (r && r.prefs) { state.prefs = r.prefs; state.hasScheduler = r.hasScheduler; state.tasks = r.tasks || []; state.morningNoticeAck = r.morningNoticeAck; }
+        settingsDirty = false;
+        renderTaskNote();
+        el("meta").textContent = "设置已保存";
+      } catch (err) {
+        el("meta").textContent = "保存失败：" + (err && err.message ? err.message : err);
+      }
+      btn.disabled = false;
+      btn.textContent = prev;
+    };
+
+    el("btn-logout").onclick = async () => {
+      if (!confirm("确定退出登录？将清除加密保存的小米凭证、本地同步数据与主动播报任务，此操作不可撤销。")) return;
+      const btn = el("btn-logout");
+      btn.disabled = true;
+      try {
+        await ipcRenderer.invoke(P + "logout");
+        settingsDirty = false;
+        await refresh();
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    refresh();
+    setInterval(refresh, 8000);
+  </script>
+</body>
+</html>
