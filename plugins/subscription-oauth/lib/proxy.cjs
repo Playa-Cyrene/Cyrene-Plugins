@@ -13,6 +13,28 @@ const http = require("node:http");
 const { PROVIDERS, authHeaders, chatBodyFrom, providerForModel, decodeJwtPayload } = require("./vendor-http.cjs");
 
 const DEFAULT_PORT = 6231;
+const PORT_FALLBACK_ATTEMPTS = 20;
+
+function isRetryableListenError(error) {
+  return error && (error.code === "EADDRINUSE" || error.code === "EACCES");
+}
+
+function listenOnce(server, port) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.removeListener("listening", onListen);
+      reject(error);
+    };
+    const onListen = () => {
+      server.removeListener("error", onError);
+      const address = server.address();
+      resolve(address && typeof address === "object" ? address.port : port);
+    };
+    server.once("error", onError);
+    server.once("listening", onListen);
+    server.listen(port, "127.0.0.1");
+  });
+}
 
 function json(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -134,9 +156,11 @@ function tierOf(tokens) {
  * @param {(message: string) => void} options.log
  * @param {(providerId: string) => Promise<object>} options.fetchUsage  （可选）用量查询
  * @param {(providerId: string) => Promise<object>} options.fetchCatalog （可选）模型目录查询
+ * @param {{tryServe: (req: object, res: object, url: URL) => boolean}} options.mediaStore
+ *   （可选）插件私有图片的只读本地服务
  * @returns {{ server: import('node:http').Server, port: () => number, start: () => Promise<number>, stop: () => Promise<void> }}
  */
-function createProxy({ getTokens, log = () => {}, fetchUsage, fetchCatalog }) {
+function createProxy({ getTokens, log = () => {}, fetchUsage, fetchCatalog, mediaStore }) {
   /** 当前监听端口；0 表示未启动或已停止。 */
   let currentPort = 0;
   let server = null;
@@ -315,6 +339,7 @@ async function handleChatCompletions(req, res, endpoint) {
 
   server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", `http://127.0.0.1:${currentPort || DEFAULT_PORT}`);
+    if (mediaStore && mediaStore.tryServe(req, res, url)) return;
     if (req.method === "GET" && url.pathname === "/health") {
       json(res, 200, { ok: true, port: currentPort });
       return;
@@ -331,7 +356,7 @@ async function handleChatCompletions(req, res, endpoint) {
     }
     json(res, 404, {
       error: {
-        message: `未知端点 ${url.pathname}（支持 POST ${Object.keys(ENDPOINTS).join(" / ")}，GET /v1/models，GET /health）`,
+        message: `未知端点 ${url.pathname}（支持 POST ${Object.keys(ENDPOINTS).join(" / ")}，GET /v1/models，GET /health，GET /media/...）`,
       },
     });
   });
@@ -341,22 +366,33 @@ async function handleChatCompletions(req, res, endpoint) {
     port: () => currentPort,
     async start(preferredPort = DEFAULT_PORT) {
       if (server && currentPort) return currentPort;
-      return new Promise((resolve, reject) => {
-        const onError = (error) => {
-          server.removeListener("listening", onListen);
-          reject(error);
-        };
-        const onListen = () => {
-          server.removeListener("error", onError);
-          const addr = server.address();
-          currentPort = addr && typeof addr === "object" ? addr.port : preferredPort;
+      const firstPort = Number.isInteger(preferredPort) && preferredPort >= 0 && preferredPort <= 65535
+        ? preferredPort
+        : DEFAULT_PORT;
+      const candidates = firstPort === 0
+        ? [0]
+        : Array.from(
+            { length: Math.min(PORT_FALLBACK_ATTEMPTS, 65536 - firstPort) },
+            (_, index) => firstPort + index,
+          );
+      // 极端情况下连续 20 个固定端口都不可用，最后交给系统分配一个空闲端口。
+      if (firstPort !== 0) candidates.push(0);
+
+      let firstFailure = null;
+      for (const candidate of candidates) {
+        try {
+          currentPort = await listenOnce(server, candidate);
+          if (firstFailure) {
+            log(`[proxy] 端口 ${firstPort} 不可用（${firstFailure.code || "listen_failed"}），已自动改用 ${currentPort}`);
+          }
           log(`[proxy] 已监听 127.0.0.1:${currentPort}`);
-          resolve(currentPort);
-        };
-        server.once("error", onError);
-        server.once("listening", onListen);
-        server.listen(preferredPort, "127.0.0.1");
-      });
+          return currentPort;
+        } catch (error) {
+          if (!firstFailure) firstFailure = error;
+          if (!isRetryableListenError(error) || candidate === 0) throw error;
+        }
+      }
+      throw firstFailure || new Error("没有可用的本地代理端口");
     },
     async stop() {
       if (!server) return;

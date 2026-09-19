@@ -27,13 +27,10 @@
                     {
                         "id":  "subscription-oauth",
                         "name":  "订阅 OAuth（ChatGPT / Claude / Grok）",
-                        "description":  "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理按各家原生协议直通，支持多账号切换、模型目录与用量显示",
+                        "description":  "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理使用订阅模型，并支持 ChatGPT / Grok 订阅生图在聊天内直接预览。",
                         "author":  "1971687396",
                         "homepage":  "https://github.com/Playa-0v0/Cyrene-Plugins/tree/main/plugins/subscription-oauth",
-                        "version":  "1.2.7",
-                        "zip":  "https://github.com/Playa-0v0/Cyrene-Plugins/releases/download/subscription-oauth-1.2.7/subscription-oauth-1.2.7.zip",
-                        "sha256":  "c39040191cf8dcb2e6339615f58119cfa4ebd0c00ff7fa682fc59d4ee5f1e807",
-                        "downloads":  8
+                        "version":  "1.2.11"
                     },
                     {
                         "id":  "indextts-tts",
