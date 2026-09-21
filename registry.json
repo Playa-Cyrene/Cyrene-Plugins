@@ -126,7 +126,9 @@
       "version": "0.5.3",
       "description": "扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均可感知健康数据，支持播报频率 / 风格与独立早安问候配置，可选将健康定期写入长期记忆（L2），一键退出登录清空数据",
       "author": "抽卡保底真君",
-      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health"
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.3.zip",
+      "sha256": "d2189ef19db0a75c3a5c963c4c64d5730c5f6220541c3fd8a383aefa20e789b7"
     }
   ]
 }

@@ -89,4 +89,4 @@ Cyrene-Plugins/
 ```
 | [mijia-control](./plugins/mijia-control) | 0.3.0 | 米家智能家居控制：扫码连接米家账号，按房间分组展示设备；基于公开 MIoT-Spec 自动生成功能控件（开关/滑块/下拉/动作按钮），对话与面板两种方式操控，淡粉液态玻璃面板带底部抽屉上滑减速动画 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.0.zip) | 抽卡保底真君 | [ahwhshen/cyrene-plugin-mijia-control](https://github.com/ahwhshen/cyrene-plugin-mijia-control) |
 | [cyrene-browser](./plugins/cyrene-browser) | 0.3.0 | 使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip) | 1971687396 | — |
-| [xiaomi-health](./plugins/xiaomi-health) | 0.5.3 | 扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均能感知健康数据，可配播报频率 / 风格与早安问候，支持将健康写入长期记忆（L2） | — | 抽卡保底真君 | [xiaomi-health-plugin](https://github.com/ahwhshen/xiaomi-health-plugin) |
+| [xiaomi-health](./plugins/xiaomi-health) | 0.5.3 | 扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均能感知健康数据，可配播报频率 / 风格与早安问候，支持将健康写入长期记忆（L2） | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.3.zip) | 抽卡保底真君 | [xiaomi-health-plugin](https://github.com/ahwhshen/xiaomi-health-plugin) |
