@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-09-22",
+  "updatedAt": "2026-09-21",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -11,7 +11,7 @@
       "version": "0.6.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip",
       "sha256": "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
-      "downloads": 48
+      "downloads": 57
     },
     {
       "id": "system-status",
@@ -22,7 +22,7 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
       "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-      "downloads": 67
+      "downloads": 73
     },
     {
       "id": "subscription-oauth",
@@ -31,7 +31,7 @@
       "author": "1971687396",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/subscription-oauth",
       "version": "1.2.11",
-      "downloads": 26,
+      "downloads": 29,
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/subscription-oauth-1.2.11.zip",
       "sha256": "b891b19e4e4f5cd48a09a40c5748fc06e307e3edc6dff081756773c69f1f3924"
     },
@@ -41,7 +41,7 @@
       "description": "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
       "author": "Downfallofthedownfall",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/indextts-tts",
-      "downloads": 56,
+      "downloads": 64,
       "version": "1.1.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip",
       "sha256": "2366bc5a5d12235f8a2bd9b8f5f230b62ae536d74298cc488a1f18c253694fa3"
@@ -52,7 +52,7 @@
       "description": "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
       "author": "Playa",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/chat-export",
-      "downloads": 18,
+      "downloads": 22,
       "version": "1.0.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip",
       "sha256": "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
@@ -62,7 +62,7 @@
       "name": "Minecraft 机器人",
       "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射",
       "author": "Cyrene",
-      "downloads": 10,
+      "downloads": 14,
       "version": "0.10.0-beta.1",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip",
       "sha256": "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
@@ -76,7 +76,7 @@
       "version": "0.3.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
       "sha256": "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
-      "downloads": 21
+      "downloads": 29
     },
     {
       "id": "astral-relay",
@@ -84,7 +84,7 @@
       "description": "BYOS 中转站：用你自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——编程套餐仅限 Code 交互会话，通用套餐全模式可用",
       "author": "Unknownuserfrommars",
       "homepage": "https://github.com/Unknownuserfrommars/astral-relay",
-      "downloads": 13,
+      "downloads": 19,
       "version": "0.5.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/astral-relay-0.5.0.zip",
       "sha256": "96fa55011c82f9404d459be24b326b0e9de3ed0e0e129ecf6c627e63eb6c323e"
@@ -98,7 +98,7 @@
       "version": "0.4.9",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/local-asr-0.4.9.zip",
       "sha256": "4a4a540308c77d3c0078997e32111e3a6078a434cdc8e8767585d0f94f4ed328",
-      "downloads": 16
+      "downloads": 25
     },
     {
       "id": "mijia-control",
@@ -108,7 +108,8 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/mijia-control",
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.0.zip",
-      "sha256": "7bfa115863ea2ccee7cf93b8f452ec435f58acb6493f2ae5b04f0b1484dffef8"
+      "sha256": "7bfa115863ea2ccee7cf93b8f452ec435f58acb6493f2ae5b04f0b1484dffef8",
+      "downloads": 2
     },
     {
       "id": "cyrene-browser",
@@ -118,7 +119,8 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-browser",
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip",
-      "sha256": "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40"
+      "sha256": "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40",
+      "downloads": 0
     },
     {
       "id": "xiaomi-health",
@@ -128,7 +130,8 @@
       "author": "抽卡保底真君",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.3.zip",
-      "sha256": "d2189ef19db0a75c3a5c963c4c64d5730c5f6220541c3fd8a383aefa20e789b7"
+      "sha256": "d2189ef19db0a75c3a5c963c4c64d5730c5f6220541c3fd8a383aefa20e789b7",
+      "downloads": 0
     }
   ]
 }
