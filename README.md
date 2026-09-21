@@ -87,3 +87,4 @@ Cyrene-Plugins/
 ├── CONTRIBUTING.md       # 提交规范（面向插件开发者）
 └── review-checklist.md   # 审核清单（面向维护者，也可供提交者自查）
 ```
+| [mijia-control](./plugins/mijia-control) | 0.3.0 | 米家智能家居控制：扫码连接米家账号，按房间分组展示设备；基于公开 MIoT-Spec 自动生成功能控件（开关/滑块/下拉/动作按钮），对话与面板两种方式操控，淡粉液态玻璃面板带底部抽屉上滑减速动画 | | 抽卡保底真君 | [ahwhshen/cyrene-plugin-mijia-control](https://github.com/ahwhshen/cyrene-plugin-mijia-control) |

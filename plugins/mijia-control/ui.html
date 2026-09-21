@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>米家智能家居控制</title>
+  <style>
+    :root {
+      --text-strong: #342540;
+      --text-default: #473554;
+      --text-muted: #73607f;
+      --text-faint: #9d8da8;
+      --accent: #7c5fcc;
+      --accent-hover: #6a4fb8;
+      --accent-soft: rgba(124, 95, 204, 0.14);
+      --glass: rgba(255, 255, 255, 0.55);
+      --glass-strong: rgba(255, 255, 255, 0.72);
+      --glass-line: rgba(255, 255, 255, 0.65);
+      --glass-edge: rgba(166, 140, 196, 0.28);
+      --border-soft: rgba(186, 158, 200, 0.24);
+      --border-strong: rgba(186, 158, 200, 0.45);
+      --titlebar-h: 46px;
+      --ok: #1fbf6a;
+      --warn: #e69331;
+      --err: #ff4d45;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; color: var(--text-default);
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 14px; -webkit-font-smoothing: antialiased; overflow: hidden;
+      background: transparent;
+    }
+    body::before {
+      /* 淡粉渐变底：左下偏粉、右上近白（与昔涟面板的粉紫视觉语言一致） */
+      content: ""; position: fixed; inset: 0; z-index: -2;
+      background:
+        linear-gradient(135deg, #ffe4ee 0%, #fff0f5 42%, #fff7fa 72%, #ffffff 100%);
+    }
+    body::after {
+      /* 右上角日光：柔和光核 + 外扩光晕 */
+      content: ""; position: fixed; top: -18%; right: -12%; width: 70vw; height: 70vw; z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 70% 30%,
+          rgba(255, 255, 255, 0.95) 0%,
+          rgba(255, 250, 235, 0.62) 16%,
+          rgba(255, 244, 214, 0.30) 34%,
+          rgba(255, 205, 225, 0.14) 56%,
+          rgba(255, 205, 225, 0) 74%);
+      filter: blur(4px);
+    }
+    .sunrays {
+      position: fixed; top: -10%; right: -6%; width: 62vw; height: 62vw; z-index: -1;
+      pointer-events: none; opacity: 0.5;
+      background:
+        conic-gradient(from 210deg at 78% 22%,
+          rgba(255,255,255,0) 0deg, rgba(255,250,232,0.5) 8deg, rgba(255,255,255,0) 16deg,
+          rgba(255,250,232,0.42) 30deg, rgba(255,255,255,0) 40deg,
+          rgba(255,250,232,0.4) 64deg, rgba(255,255,255,0) 74deg,
+          rgba(255,250,232,0.34) 96deg, rgba(255,255,255,0) 108deg);
+      mask-image: radial-gradient(circle at 78% 22%, #000 0%, rgba(0,0,0,0.4) 40%, transparent 68%);
+      -webkit-mask-image: radial-gradient(circle at 78% 22%, #000 0%, rgba(0,0,0,0.4) 40%, transparent 68%);
+      animation: sunspin 90s linear infinite;
+    }
+    @keyframes sunspin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .sunrays { animation: none; } }
+
+    .app { position: relative; display: flex; flex-direction: column; height: 100vh; }
+
+    .titlebar {
+      position: absolute; top: 0; left: 0; right: 0; height: var(--titlebar-h); z-index: 20;
+      display: flex; align-items: center; gap: 10px; padding: 0 10px 0 16px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.38));
+      backdrop-filter: blur(18px) saturate(1.5); -webkit-backdrop-filter: blur(18px) saturate(1.5);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+      -webkit-app-region: drag; user-select: none;
+    }
+    /* 标题栏底部的高斯模糊渐隐带：内容滚到这里会柔和糊化 */
+    .titlebar::after {
+      content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 26px; z-index: -1; pointer-events: none;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      mask-image: linear-gradient(180deg, rgba(0,0,0,0.6), transparent);
+      -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.6), transparent);
+      background: linear-gradient(180deg, rgba(255,255,255,0.32), rgba(255,255,255,0));
+    }
+    .titlebar__brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; color: var(--text-strong); letter-spacing: .2px; }
+    .titlebar__spacer { flex: 1; }
+    .titlebar__actions { display: flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; }
+    .winbtn {
+      -webkit-app-region: no-drag; width: 30px; height: 30px; border: none; border-radius: 9px;
+      background: transparent; color: var(--text-muted); font-size: 14px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: background .15s ease, color .15s ease;
+    }
+    .winbtn:hover { background: rgba(60, 90, 140, 0.12); color: var(--text-strong); }
+    .winbtn.close:hover { background: var(--err); color: #fff; }
+    .winbtn.gear { font-size: 16px; }
+    .winbtn.max svg { display: block; }
+
+    /* 顶部红色提示条 */
+    .warnbar {
+      position: absolute; top: var(--titlebar-h); left: 0; right: 0; z-index: 15;
+      display: none; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 7px 16px; background: rgba(255, 77, 69, 0.10);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 77, 69, 0.20);
+      color: var(--err); font-size: 12px;
+    }
+    .warnbar.show { display: flex; }
+    .warnbar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--err); flex-shrink: 0; }
+
+    .scroll {
+      flex: 1; overflow-y: auto; padding: calc(var(--titlebar-h) + 14px) 16px 24px;
+      scroll-behavior: smooth;
+    }
+    .app.has-warn .scroll { padding-top: calc(var(--titlebar-h) + 42px); }
+    .scroll::-webkit-scrollbar { width: 10px; }
+    .scroll::-webkit-scrollbar-thumb { background: rgba(158, 118, 172, 0.26); border-radius: 9999px; border: 3px solid transparent; background-clip: padding-box; }
+    .scroll::-webkit-scrollbar-thumb:hover { background: rgba(158, 118, 172, 0.42); background-clip: padding-box; }
+
+    /* 液态玻璃卡片 */
+    .card {
+      position: relative; background: var(--glass); border: 1px solid var(--glass-line); border-radius: 20px;
+      backdrop-filter: blur(20px) saturate(1.6); -webkit-backdrop-filter: blur(20px) saturate(1.6);
+      box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 10px 30px rgba(170,120,160,.14);
+      padding: 16px; margin-bottom: 14px; overflow: hidden;
+    }
+    .card::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: linear-gradient(160deg, rgba(255,255,255,.5), rgba(255,255,255,0) 42%);
+    }
+
+    /* 账号栏（更强的液态玻璃：深模糊 + 内高光 + 头像柔光晕 + 跟随光圈）*/
+    .card--acct {
+      width: fit-content; max-width: 100%;
+      backdrop-filter: blur(28px) saturate(1.9); -webkit-backdrop-filter: blur(28px) saturate(1.9);
+      background: linear-gradient(150deg, rgba(255,255,255,.66), rgba(255,255,255,.34));
+      border-color: rgba(255,255,255,.75);
+      box-shadow: 0 1px 0 rgba(255,255,255,.7) inset, 0 -1px 0 rgba(166,140,196,.12) inset, 0 16px 40px rgba(150,90,140,.18);
+      overflow: hidden;
+    }
+    .card--acct::after {
+      content: ""; position: absolute; top: -40px; left: -30px; width: 160px; height: 160px; border-radius: 50%; pointer-events: none;
+      background: radial-gradient(circle, rgba(196,150,220,.32), rgba(196,150,220,0) 70%);
+      filter: blur(6px);
+    }
+    .card--acct::before {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
+      background: radial-gradient(240px circle at var(--mx, -999px) var(--my, -999px),
+        rgba(255,255,255,.32) 0%, rgba(255,255,255,.12) 40%, rgba(255,255,255,0) 75%);
+      opacity: 0; transition: opacity .25s ease;
+    }
+    .card--acct:hover::before, .card--acct.near::before { opacity: 1; }
+    .card--acct > * { position: relative; z-index: 1; }
+    .acct { display: flex; align-items: center; gap: 12px; }
+    .avatar { width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0; overflow: hidden; background: linear-gradient(135deg, #b794f4, #7c5fcc); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; box-shadow: 0 4px 14px rgba(124,95,204,.35); }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .acct__info { flex: 1; min-width: 0; }
+    .acct__name { font-size: 15px; font-weight: 700; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .acct__meta { font-size: 12px; color: var(--text-faint); margin-top: 3px; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+    .badge.ok { background: rgba(31, 191, 106, 0.14); color: #14884b; }
+    .badge.off { background: rgba(90, 110, 140, 0.12); color: var(--text-faint); }
+
+    .btn { appearance: none; border: none; border-radius: 12px; cursor: pointer; padding: 10px 16px; font-size: 14px; font-weight: 600; background: var(--accent); color: #fff; transition: transform .05s ease, background .15s ease, box-shadow .15s ease; box-shadow: 0 6px 16px rgba(124,95,204,.30); }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:active { transform: scale(0.98); }
+    .btn.ghost { background: rgba(255,255,255,.5); color: var(--text-muted); border: 1px solid var(--border-strong); box-shadow: none; }
+    .btn.ghost:hover { background: rgba(255,255,255,.72); color: var(--text-strong); }
+    .btn.sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+    .btn.danger { background: transparent; color: var(--err); border: 1px solid rgba(255, 77, 69, 0.4); box-shadow: none; }
+    .btn.danger:hover { background: rgba(255, 77, 69, 0.08); }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-row { display: flex; gap: 10px; margin-top: 14px; }
+
+    .hint { color: var(--text-muted); font-size: 13px; line-height: 1.6; }
+    .section-title { font-size: 13px; font-weight: 700; color: var(--text-strong); margin: 0 0 10px; }
+
+    /* 登录 */
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 8px; }
+    .qr-box { width: 220px; height: 220px; border-radius: 14px; border: 1px solid var(--border-soft); background: #fff; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 8px 22px rgba(170,120,160,.14); }
+    .qr-box img { width: 100%; height: 100%; object-fit: contain; }
+    .qr-box .ph { color: var(--text-faint); font-size: 13px; text-align: center; padding: 16px; }
+    .state-line { font-size: 13px; color: var(--text-muted); text-align: center; }
+    .state-line.err { color: var(--err); }
+    .login-url { font-size: 11px; color: var(--text-faint); word-break: break-all; text-align: center; }
+    .note { font-size: 12px; color: var(--text-faint); line-height: 1.6; margin-top: 6px; }
+    .note.warn { color: var(--warn); }
+
+    /* 房间分组 + 卡片网格 */
+    .room { margin-bottom: 18px; }
+    .room__title { font-size: 13px; font-weight: 700; color: var(--text-muted); margin: 4px 2px 10px; display: flex; align-items: center; gap: 6px; }
+    .room__title .cnt { font-weight: 500; color: var(--text-faint); font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .dev {
+      position: relative; overflow: hidden; color: inherit;
+      background: var(--glass); border: 1px solid var(--glass-line); border-radius: 18px;
+      backdrop-filter: blur(18px) saturate(1.6); -webkit-backdrop-filter: blur(18px) saturate(1.6);
+      box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 8px 24px rgba(170,120,160,.12);
+      padding: 14px; cursor: pointer; transition: transform .1s ease, box-shadow .18s ease;
+    }
+    /* 鼠标跟随光圈：中心亮、由内到外依次变淡 */
+    .dev::before {
+      content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; z-index: 0;
+      background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%),
+        rgba(124,95,204,0.30) 0%,
+        rgba(124,95,204,0.16) 22%,
+        rgba(124,95,204,0.07) 44%,
+        rgba(124,95,204,0.02) 62%,
+        rgba(124,95,204,0) 78%);
+      opacity: 0; transition: opacity .25s ease;
+    }
+    /* 跟随光标的描边高光（内→外环） */
+    .dev::after {
+      content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1;
+      background: radial-gradient(160px circle at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,.85), rgba(255,255,255,0) 60%);
+      opacity: 0; transition: opacity .25s ease; mix-blend-mode: soft-light;
+    }
+    .dev:hover::before, .dev.near::before { opacity: 1; }
+    .dev:hover::after, .dev.near::after { opacity: 0.9; }
+    .dev:hover { box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 14px 34px rgba(150,90,150,.22); }
+    .dev > * { position: relative; z-index: 2; }
+    .dev:active { transform: scale(0.98); }
+    .dev__icon { width: 42px; height: 42px; border-radius: 13px; display: flex; align-items: center; justify-content: center; color: var(--text-muted); background: rgba(255,255,255,.6); box-shadow: 0 2px 8px rgba(170,120,160,.10); transition: color .2s ease, background .2s ease; }
+    .dev__icon svg { width: 23px; height: 23px; display: block; }
+    .dev.on .dev__icon { background: var(--accent-soft); color: var(--accent); }
+    .dev__name { margin-top: 10px; font-size: 14px; font-weight: 600; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dev__sub { margin-top: 3px; font-size: 11px; color: var(--text-faint); display: flex; align-items: center; gap: 5px; }
+    .dev__led { position: absolute; top: 14px; right: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--border-strong); }
+    .dev.on .dev__led { background: var(--accent); box-shadow: 0 0 0 3px rgba(124, 95, 204, 0.16); }
+    .dev.off-line { opacity: 0.55; }
+    .empty { color: var(--text-faint); font-size: 13px; text-align: center; padding: 30px 0; }
+
+    /* 遮罩层：设置 / 设备操作 */
+    .overlay { position: fixed; inset: 0; background: rgba(20, 35, 60, 0.30); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: flex-end; justify-content: center; z-index: 50; -webkit-app-region: no-drag; animation: fadein .18s ease; }
+    .overlay.show { display: flex; }
+    .overlay--center { align-items: center; }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fadeout { from { opacity: 1; } to { opacity: 0; } }
+    @keyframes popin { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+    /* 底部抽屉：由下而上滑入并逐渐减速（ease-out）；关闭时沿同一曲线反向滑出（ease-in） */
+    @keyframes sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
+    .overlay.show .sheet { animation: sheet-up .34s cubic-bezier(.16,1,.3,1); }
+    .overlay.closing { animation: fadeout .3s ease forwards; }
+    .overlay.closing .sheet { animation: sheet-down .3s cubic-bezier(.7,0,.84,0) forwards; }
+    /* 确认对话框：与面板同源的液态玻璃风 */
+    .dialog { width: min(360px, calc(100vw - 48px)); background: var(--glass-strong); border: 1px solid var(--glass-line); border-radius: 20px; backdrop-filter: blur(26px) saturate(1.7); -webkit-backdrop-filter: blur(26px) saturate(1.7); box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 18px 48px rgba(40,70,120,.28); padding: 20px; animation: popin .22s cubic-bezier(.2,.9,.3,1.2); position: relative; overflow: hidden; }
+    .dialog::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(160deg, rgba(255,255,255,.5), rgba(255,255,255,0) 42%); }
+    .dialog__title { font-size: 16px; font-weight: 700; color: var(--text-strong); margin: 0 0 8px; }
+    .dialog__msg { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin: 0 0 18px; }
+    .sheet { width: 100%; max-width: 560px; max-height: 86vh; overflow-y: auto; background: var(--glass-strong); border: 1px solid var(--glass-line); backdrop-filter: blur(26px) saturate(1.7); -webkit-backdrop-filter: blur(26px) saturate(1.7); border-radius: 22px 22px 0 0; padding: 18px 18px 28px; box-shadow: 0 -8px 40px rgba(40,70,120,.24); }
+    .sheet__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .sheet__title { font-size: 17px; font-weight: 700; color: var(--text-strong); }
+    .sheet__close { border: none; background: rgba(90, 110, 140, 0.12); width: 30px; height: 30px; border-radius: 50%; font-size: 15px; color: var(--text-muted); cursor: pointer; }
+    .sheet__close:hover { background: rgba(90, 110, 140, 0.2); color: var(--text-strong); }
+    .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; }
+    .field--col { flex-direction: column; align-items: stretch; gap: 8px; }
+    .field__label { font-size: 14px; color: var(--text-default); font-weight: 500; }
+    .field input[type="number"], .field input[type="text"], .field select { font: inherit; font-size: 13px; color: var(--text-strong); background: rgba(255,255,255,.72); border: 1px solid var(--border-strong); border-radius: 9px; padding: 7px 9px; outline: none; }
+    .field input[type="number"] { width: 80px; }
+    .divider { height: 1px; background: var(--border-soft); margin: 6px 0; }
+    .switch { position: relative; display: inline-block; width: 44px; height: 25px; flex-shrink: 0; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch i { position: absolute; inset: 0; border-radius: 9999px; background: var(--border-strong); transition: background .15s ease; cursor: pointer; }
+    .switch i::before { content: ""; position: absolute; width: 21px; height: 21px; left: 2px; top: 2px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform .15s ease; }
+    /* 开关选中态：与昔涟内部按键同源的深紫渐变（violet-500 → violet-600） */
+    .switch input:checked + i { background: linear-gradient(135deg, #9f7aea, #7c5fcc); }
+    .switch input:checked + i::before { transform: translateX(19px); }
+    /* 米家面板：电源键整行置顶（大号），模式下拉整行 */
+    .ctl-power { padding: 8px 0 4px; }
+    .ctl-power .cell--sw { width: 100%; padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, .62); }
+    .ctl-power .cell--sw .ctl__label { font-size: 16px; font-weight: 700; }
+    .ctl-power .switch { width: 52px; height: 30px; }
+    .ctl-power .switch i::before { width: 26px; height: 26px; }
+    .ctl-power .switch input:checked + i::before { transform: translateX(22px); }
+    .ctl-row { padding: 12px 0; }
+    .ctl-row .cell { width: 100%; }
+
+    .adv summary { cursor: pointer; font-weight: 600; color: var(--text-muted); font-size: 13px; list-style: none; padding: 8px 0; user-select: none; }
+    .adv summary::-webkit-details-marker { display: none; }
+    .adv summary::before { content: "\25B8"; color: var(--accent); margin-right: 6px; display: inline-block; transition: transform .15s ease; }
+    .adv[open] summary::before { transform: rotate(90deg); }
+    .inline-inputs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .status-line { font-size: 12px; color: var(--text-faint); margin-top: 8px; min-height: 16px; }
+    .status-line.err { color: var(--err); }
+    .status-line.ok { color: var(--ok); }
+    /* 动态控件（MIoT-Spec 驱动，排版参考米家：开关网格 / 滑块全宽 / 下拉数值两列 / 动作按钮流）*/
+    #spec-controls { background: var(--glass-strong); border: 1px solid var(--glass-line); border-radius: 16px; padding: 4px 16px; margin-bottom: 12px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+    .cell-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 0; }
+    .cell { background: rgba(255,255,255,.5); border: 1px solid var(--border-soft); border-radius: 13px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+    .cell__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+    .cell--sw { flex-direction: row; align-items: center; justify-content: space-between; }
+    .ctl__label { font-size: 13px; color: var(--text-default); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ctl__val { font-size: 13px; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    .ctl-select { font: inherit; font-size: 13px; color: var(--text-strong); background: rgba(255,255,255,.72); border: 1px solid var(--border-strong); border-radius: 9px; padding: 7px 10px; outline: none; width: 100%; }
+    .range { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 9999px; background: rgba(186,158,200,.3); outline: none; }
+    .range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 2px 6px rgba(124,95,204,.4); }
+    .num-row { display: flex; gap: 8px; align-items: center; }
+    .ctl-num, .ctl-text { font: inherit; font-size: 13px; color: var(--text-strong); background: rgba(255,255,255,.72); border: 1px solid var(--border-strong); border-radius: 9px; padding: 7px 9px; outline: none; min-width: 0; }
+    .ctl-num { width: 100%; flex: 1; }
+    .ctl-text { flex: 1; min-width: 80px; }
+    /* 滑块行（全宽）*/
+    .ctl { display: flex; flex-direction: column; gap: 8px; padding: 13px 0; border-bottom: 1px solid var(--border-soft); }
+    .ctl:last-child { border-bottom: none; }
+    .ctl__top { display: flex; align-items: center; justify-content: space-between; }
+    /* 动作按钮流：一行多个，米家风格 */
+    .act-wrap { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 0; border-top: 1px solid var(--border-soft); }
+    .act-item { display: flex; flex-direction: column; gap: 7px; background: rgba(255,255,255,.5); border: 1px solid var(--border-soft); border-radius: 13px; padding: 10px 12px; min-width: 118px; }
+    .act-item .act-arg { width: 100%; }
+    .act-title { font-size: 12px; font-weight: 700; color: var(--text-muted); padding-top: 12px; border-top: 1px solid var(--border-soft); }
+    .act-arg { font: inherit; font-size: 13px; border: 1px solid var(--border-strong); border-radius: 9px; padding: 6px 8px; width: 96px; outline: none; background: rgba(255,255,255,.72); color: var(--text-strong); }
+    .ctl-ro { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .ctl-ro .chip { font-size: 12px; color: var(--text-muted); background: rgba(255,255,255,.5); border: 1px solid var(--border-soft); border-radius: 9999px; padding: 3px 9px; }
+    .spec-msg { font-size: 13px; color: var(--text-muted); line-height: 1.6; padding: 14px 0; }
+    .dev__tag { font-size: 10px; color: var(--text-faint); background: rgba(255,255,255,.5); border: 1px solid var(--border-soft); border-radius: 6px; padding: 1px 5px; }
+    .foot { color: var(--text-faint); font-size: 11px; text-align: center; padding: 6px 0 2px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="sunrays" aria-hidden="true"></div>
+  <div class="app" id="app">
+    <div class="titlebar">
+      <div class="titlebar__brand">米家智能家居控制</div>
+      <div class="titlebar__spacer"></div>
+      <div class="titlebar__actions">
+        <button class="winbtn gear" id="btn-settings" title="设置">&#9881;</button>
+        <button class="winbtn" id="btn-min" title="收起">&#8211;</button>
+        <button class="winbtn max" id="btn-max" title="展开 / 还原"><svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.6" y="2.6" width="8.8" height="8.8" rx="1.6"/></svg></button>
+        <button class="winbtn close" id="btn-close" title="关闭">&#10005;</button>
+      </div>
+    </div>
+
+    <div class="warnbar" id="warnbar"></div>
+
+    <div class="scroll" id="scroll">
+      <!-- 登录区（未连接） -->
+      <div class="card" id="login-card">
+        <h3 class="section-title">连接米家账号</h3>
+        <p class="hint">使用<b>已登录该小米账号的米家 / 小米运动健康 App</b> 扫描下方二维码并确认授权。凭证经系统安全存储加密保存，不会明文落盘。</p>
+        <p class="note warn">本插件为第三方工具，非小米官方出品；仅读取并控制你本人账号下的设备，凭证只加密保存在本机。控制基于公开云端接口，请自行确认符合小米《用户协议》。</p>
+        <div class="btn-row">
+          <button class="btn" id="btn-login">开始扫码登录</button>
+          <button class="btn ghost" id="btn-cancel" style="display:none">取消</button>
+        </div>
+        <div class="qr-wrap" id="qr-wrap" style="display:none">
+          <div class="qr-box" id="qr-box"><div class="ph">正在获取二维码…</div></div>
+          <div class="state-line" id="state-line">等待扫码…</div>
+          <div class="login-url" id="login-url"></div>
+        </div>
+      </div>
+
+      <!-- 账号栏（已连接） -->
+      <div class="card card--acct" id="acct-card" style="display:none">
+        <div class="acct">
+          <div class="avatar" id="avatar">米</div>
+          <div class="acct__info">
+            <div class="acct__name" id="acct-name">米家账号</div>
+            <div class="acct__meta" id="acct-meta">—</div>
+          </div>
+          <span class="badge off" id="badge">未连接</span>
+        </div>
+      </div>
+
+      <!-- 设备区 -->
+      <div id="devices"></div>
+
+      <div class="foot">
+        昔涟 · 米家智能家居控制 · CN 区（api.io.mi.com）
+        <br />非官方开源插件，与小米公司无关联、未获授权。“米家 / 小米”为小米公司商标，此处仅用于说明数据来源。
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置遮罩 -->
+  <div class="overlay" id="settings-overlay">
+    <div class="sheet">
+      <div class="sheet__head">
+        <div class="sheet__title">设置</div>
+        <button class="sheet__close" id="btn-settings-close">&#10005;</button>
+      </div>
+      <div class="card" style="margin-top:8px">
+        <div class="field">
+          <span class="field__label">对话内设备感知</span>
+          <label class="switch"><input type="checkbox" id="pref-chatinject" /><i></i></label>
+        </div>
+        <p class="note" style="margin:-2px 0 6px">开启后，昔涟会在对话里知道你已连接的设备，可直接用自然语言帮你开关 / 调节。</p>
+        <div class="divider"></div>
+        <div class="field">
+          <span class="field__label">自动扫描设备</span>
+          <label class="switch"><input type="checkbox" id="pref-autoscan" /><i></i></label>
+        </div>
+        <div class="field">
+          <span class="field__label">扫描间隔（分钟）</span>
+          <input type="number" id="pref-scanint" value="5" min="1" max="1440" />
+        </div>
+        <p class="note">插件启动、打开本页面时都会各扫描一次，此后按此间隔定时扫描云端与局域网设备。</p>
+        <div class="field field--end" style="justify-content:flex-end;padding-top:14px">
+          <button class="btn" id="btn-save-prefs">保存设置</button>
+        </div>
+      </div>
+      <div class="card" id="account-card" style="display:none">
+        <div class="status-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div>
+            <h3 class="section-title" style="margin:0">账号</h3>
+            <div class="note">退出将清除加密保存的登录凭证与设备缓存</div>
+          </div>
+          <button class="btn danger" id="btn-logout">退出登录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设备操作遮罩 -->
+  <div class="overlay" id="dev-overlay">
+    <div class="sheet">
+      <div class="sheet__head">
+        <div class="sheet__title" id="dev-title">设备</div>
+        <button class="sheet__close" id="btn-dev-close">&#10005;</button>
+      </div>
+      <div class="note" id="dev-sub" style="margin:0 0 12px"></div>
+      <div id="spec-controls"><div class="hint">正在读取设备能力…</div></div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn ghost sm" id="btn-dev-refresh">刷新状态</button>
+      </div>
+      <details class="adv">
+        <summary>高级：自定义属性 / 动作</summary>
+        <div class="card" style="margin-top:6px">
+          <div class="field field--col">
+            <span class="field__label">写属性（set_prop）</span>
+            <div class="inline-inputs">
+              <input type="number" id="adv-set-siid" placeholder="siid" />
+              <input type="number" id="adv-set-piid" placeholder="piid" />
+              <input type="text" id="adv-set-val" placeholder="value" style="flex:1;min-width:120px" />
+              <button class="btn sm" id="btn-adv-set">设置</button>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="field field--col">
+            <span class="field__label">执行动作（call_action）</span>
+            <div class="inline-inputs">
+              <input type="number" id="adv-act-siid" placeholder="siid" />
+              <input type="number" id="adv-act-aiid" placeholder="aiid" />
+              <input type="text" id="adv-act-in" placeholder='in，如 [25] 或留空' style="flex:1;min-width:120px" />
+              <button class="btn sm" id="btn-adv-act">执行</button>
+            </div>
+          </div>
+          <p class="note">属性/动作的 siid·piid·aiid 依设备型号而异，可在米家 MIoT-Spec 查询。开关类设备通常 siid=2、piid=1。</p>
+        </div>
+      </details>
+      <div class="status-line" id="dev-status"></div>
+    </div>
+  </div>
+
+  <!-- 确认对话框（玻璃风，替代原生 confirm） -->
+  <div class="overlay overlay--center" id="confirm-overlay">
+    <div class="dialog" role="alertdialog" aria-modal="true">
+      <h3 class="dialog__title" id="confirm-title">确认</h3>
+      <p class="dialog__msg" id="confirm-msg"></p>
+      <div class="btn-row" style="margin-top:0;justify-content:flex-end">
+        <button class="btn ghost sm" id="confirm-cancel">取消</button>
+        <button class="btn sm" id="confirm-ok">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require("electron");
+    const P = "plugin:mijia-control:";
+    const el = (id) => document.getElementById(id);
+    // 设备类型图标：与玻璃风统一的线性 SVG（stroke=currentColor，随开关变蓝）
+    const svg = (inner) =>
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+    const CAT_ICON = {
+      "灯": svg('<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 1 6 6c0 2.4-1.4 3.9-2.4 5.3-.6.8-.6 1.4-.6 2.2h-6c0-.8 0-1.4-.6-2.2C7.4 12.9 6 11.4 6 9a6 6 0 0 1 6-6z"/>'),
+      "风扇": svg('<ellipse cx="12" cy="6.8" rx="2.5" ry="4"/><ellipse cx="12" cy="6.8" rx="2.5" ry="4" transform="rotate(120 12 12)"/><ellipse cx="12" cy="6.8" rx="2.5" ry="4" transform="rotate(240 12 12)"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>'),
+      "插座": svg('<rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9.5 10.5v2.5M14.5 10.5v2.5"/>'),
+      "空气净化器": svg('<rect x="6" y="4" width="12" height="16" rx="2.5"/><path d="M9 8h6M9 11h6M9 14h6"/><circle cx="12" cy="17.5" r="0.9" fill="currentColor" stroke="none"/>'),
+      "加湿器": svg('<path d="M12 3s5 5.4 5 9.2a5 5 0 0 1-10 0C7 8.4 12 3 12 3z"/><path d="M9.5 21h5"/>'),
+      "扫地机器人": svg('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.2"/><path d="M4 12h4.8M15.2 12H20"/><circle cx="12" cy="4" r="0.7" fill="currentColor" stroke="none"/>'),
+      "摄像机": svg('<circle cx="12" cy="9" r="4.5"/><circle cx="12" cy="9" r="1.2" fill="currentColor" stroke="none"/><path d="M12 13.5V18M9 21h6"/>'),
+      "门锁": svg('<rect x="6" y="10" width="12" height="10" rx="2"/><path d="M8.5 10V7a3.5 3.5 0 0 1 7 0v3"/><circle cx="12" cy="14.5" r="1.4"/><path d="M12 15.9v2"/>'),
+      "窗帘": svg('<path d="M5 4h14M5 20h14M5 4v16"/><path d="M10 5c-1.2 2.4 1.2 4.2 0 6.6s1.2 4.2 0 6.6M14 5c-1.2 2.4 1.2 4.2 0 6.6s1.2 4.2 0 6.6"/>'),
+      "传感器": svg('<circle cx="12" cy="16.5" r="1.6" fill="currentColor" stroke="none"/><path d="M8.5 13a6 6 0 0 1 7 0M6 10a10 10 0 0 1 12 0"/>'),
+      "开关": svg('<rect x="5" y="8" width="14" height="8" rx="4"/><circle cx="9.5" cy="12" r="2.4"/>'),
+      "影音": svg('<rect x="4" y="6" width="16" height="11" rx="2"/><path d="M9 20h6M12 17v3"/>'),
+      "空调/遥控": svg('<rect x="8" y="3" width="8" height="18" rx="2"/><circle cx="12" cy="7.5" r="1.2"/><path d="M10 11h4M10 14h4M10 17h4"/>'),
+      "穿戴": svg('<rect x="9" y="6.5" width="6" height="11" rx="2.5"/><path d="M9.5 6.5l.5-3h4l.5 3M9.5 17.5l.5 3h4l.5-3"/><path d="M12 10v2.3l1.6 1"/>'),
+      "设备": svg('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>'),
+    };
+
+    const state = {
+      connected: false, userId: "", nickname: "", avatar: "", deviceCount: 0,
+      devices: [], fetchedAt: 0, lastError: "", netOnline: true,
+      loginState: "idle", qr: "", loginUrl: "", loginError: "", prefs: null,
+    };
+    let bluetoothOk = true;
+    let currentDev = null;
+
+    function maskUid(uid) { return uid ? ("用户 " + String(uid).slice(0, 4) + "••••") : "米家账号"; }
+    function fmtTime(ms) { return ms ? new Date(ms).toLocaleString("zh-CN", { hour12: false }) : "从未"; }
+
+    // 底部抽屉开合：打开直接 show（触发上滑动画）；关闭先加 closing 播下滑，动画结束后再隐藏。
+    function openSheet(id) {
+      const ov = el(id);
+      if (ov._sheetTimer) { clearTimeout(ov._sheetTimer); ov._sheetTimer = null; }
+      ov.classList.remove("closing");
+      ov.classList.add("show");
+    }
+    function closeSheet(id) {
+      const ov = el(id);
+      if (!ov.classList.contains("show") || ov.classList.contains("closing")) return;
+      ov.classList.add("closing");
+      ov._sheetTimer = setTimeout(() => {
+        ov.classList.remove("show");
+        ov.classList.remove("closing");
+        ov._sheetTimer = null;
+      }, 300);
+    }
+
+    // ── 卡片光晕：以光标为中心的一片光域，附近卡片（无需悬停）也按远近被照亮 ──
+    (function bindCardGlow() {
+      const GLOW_R = 240; // 光域半径：光标周围 240px 内的卡片都会亮
+      let raf = 0, lastX = -1e4, lastY = -1e4;
+      function apply() {
+        raf = 0;
+        // 设备卡片走「光域」：附近也亮；账号栏只在自己范围内点亮跟随光圈
+        for (const card of document.querySelectorAll(".dev, .card--acct")) {
+          const r = card.getBoundingClientRect();
+          const dx = Math.max(r.left - lastX, 0, lastX - r.right);
+          const dy = Math.max(r.top - lastY, 0, lastY - r.bottom);
+          const inside = dx === 0 && dy === 0;
+          const isAcct = card.classList.contains("card--acct");
+          if (isAcct ? !inside : dx * dx + dy * dy > GLOW_R * GLOW_R) {
+            card.classList.remove("near");
+            continue;
+          }
+          card.style.setProperty("--mx", (lastX - r.left) + "px");
+          card.style.setProperty("--my", (lastY - r.top) + "px");
+          card.classList.add("near");
+        }
+      }
+      el("scroll").addEventListener("pointermove", (e) => {
+        lastX = e.clientX; lastY = e.clientY;
+        if (!raf) raf = requestAnimationFrame(apply);
+      }, { passive: true });
+      el("scroll").addEventListener("pointerleave", () => {
+        lastX = -1e4; lastY = -1e4;
+        document.querySelectorAll(".dev.near, .card--acct.near").forEach((c) => c.classList.remove("near"));
+      });
+    })();
+
+    // ── 顶部红字提示（WiFi / 蓝牙）──
+    function renderWarn() {
+      const msgs = [];
+      if (!state.netOnline) msgs.push("未检测到可用网络，云端设备无法操控");
+      if (!bluetoothOk) msgs.push("未检测到蓝牙模块，无法操控蓝牙/蓝牙 Mesh 设备（云端控制不受影响）");
+      const bar = el("warnbar");
+      if (msgs.length && state.connected) {
+        bar.className = "warnbar show";
+        bar.innerHTML = msgs.map((m) => `<span class="dot"></span><span>${m}</span>`).join("");
+        el("app").classList.add("has-warn");
+      } else {
+        bar.className = "warnbar";
+        bar.innerHTML = "";
+        el("app").classList.remove("has-warn");
+      }
+    }
+
+    // ── 账号栏 ──
+    function renderAcct() {
+      el("badge").className = "badge " + (state.connected ? "ok" : "off");
+      el("badge").textContent = state.connected ? "已连接" : "未连接";
+      const name = state.nickname || maskUid(state.userId);
+      el("acct-name").textContent = name;
+      el("acct-meta").textContent = `共 ${state.deviceCount} 台设备 · 上次扫描 ${fmtTime(state.fetchedAt)}`;
+      const av = el("avatar");
+      if (state.avatar) av.innerHTML = `<img src="${state.avatar}" onerror="this.remove();this.parentNode.textContent='米'" />`;
+      else av.textContent = (name[0] || "米");
+    }
+
+    // ── 设备卡片（按房间分组）──
+    function renderDevices() {
+      const box = el("devices");
+      if (!state.connected) { box.innerHTML = ""; return; }
+      if (!state.devices.length) {
+        box.innerHTML = `<div class="card"><div class="empty">${state.lastError ? "扫描失败：" + esc(state.lastError) : "尚未发现设备，将按设定间隔自动扫描（重新打开面板也会触发一次）"}</div></div>`;
+        return;
+      }
+      const byRoom = {};
+      for (const d of state.devices) (byRoom[d.room] = byRoom[d.room] || []).push(d);
+      let html = "";
+      for (const [room, ds] of Object.entries(byRoom)) {
+        html += `<div class="room"><div class="room__title">📍 ${esc(room)} <span class="cnt">${ds.length}</span></div><div class="grid">`;
+        for (const d of ds) {
+          const on = d.online;
+          html += `<div class="dev ${on ? "" : "off-line"}" data-did="${esc(d.did)}">
+            <span class="dev__led"></span>
+            <div class="dev__icon">${CAT_ICON[d.category] || CAT_ICON["设备"]}</div>
+            <div class="dev__name">${esc(d.name)}</div>
+            <div class="dev__sub">${esc(d.category)} · ${on ? "在线" : "离线"}${d.controlState === "none" ? ' <span class="dev__tag">仅展示</span>' : ""}</div>
+          </div>`;
+        }
+        html += `</div></div>`;
+      }
+      box.innerHTML = html;
+      box.querySelectorAll(".dev").forEach((c) => c.addEventListener("click", () => openDevice(c.getAttribute("data-did"))));
+    }
+
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m])); }
+
+    // ── 登录态 ──
+    function renderLogin(ls) {
+      state.loginState = ls.state;
+      const showQr = ls.state === "connecting" || ls.state === "scanning" || ls.state === "error";
+      el("qr-wrap").style.display = showQr ? "" : "none";
+      el("btn-cancel").style.display = showQr ? "" : "none";
+      const b = el("btn-login");
+      b.disabled = ls.state === "connecting" || ls.state === "scanning";
+      b.textContent = ls.state === "scanning" ? "等待确认…" : (ls.state === "connecting" ? "正在获取二维码…" : "开始扫码登录");
+      const sl = el("state-line"), box = el("qr-box");
+      sl.className = "state-line";
+      if (ls.qr) box.innerHTML = `<img src="${ls.qr}" alt="登录二维码" />`;
+      else if (ls.state === "connecting") box.innerHTML = '<div class="ph">正在向小米请求二维码…</div>';
+      if (ls.state === "scanning") sl.textContent = "请用米家 / 小米 App 扫码并确认";
+      else if (ls.state === "connecting") sl.textContent = "正在建立登录会话…";
+      else if (ls.state === "error") { sl.className = "state-line err"; sl.textContent = "登录失败：" + (ls.error || "请重试"); }
+      else if (ls.state === "connected") sl.textContent = "登录成功！";
+      el("login-url").textContent = ls.loginUrl ? ("打不开二维码？手机浏览器打开：" + ls.loginUrl) : "";
+    }
+
+    function applyLayout() {
+      el("login-card").style.display = state.connected ? "none" : "";
+      el("acct-card").style.display = state.connected ? "" : "none";
+      el("account-card").style.display = state.connected ? "" : "none";
+      renderAcct();
+      renderDevices();
+      renderWarn();
+    }
+
+    async function refresh() {
+      try {
+        const s = await ipcRenderer.invoke(P + "status");
+        Object.assign(state, s);
+        applyLayout();
+        renderLogin({ state: s.loginState, qr: s.qr, loginUrl: s.loginUrl, error: s.loginError });
+      } catch (err) {
+        el("acct-meta").textContent = "状态读取失败：" + (err && err.message ? err.message : err);
+      }
+    }
+
+    // ── 设备操作面板（MIoT-Spec 驱动动态控件）──
+    function openDevice(did) {
+      currentDev = state.devices.find((d) => d.did === did) || { did, name: did };
+      el("dev-title").textContent = currentDev.name;
+      el("dev-sub").textContent = `${currentDev.room} · ${currentDev.category} · ${currentDev.online ? "在线" : "离线"} · did=${currentDev.did}`;
+      el("dev-status").textContent = "";
+      el("dev-status").className = "status-line";
+      openSheet("dev-overlay");
+      loadDeviceSpec(false);
+    }
+    async function loadDeviceSpec(quiet) {
+      if (!currentDev) return;
+      const box = el("spec-controls");
+      if (!quiet) box.innerHTML = '<div class="hint">正在读取设备能力（MIoT-Spec）…</div>';
+      try {
+        const r = await ipcRenderer.invoke(P + "deviceSpec", currentDev.did);
+        if (!r || !r.ok) { box.innerHTML = `<div class="spec-msg">读取失败：${esc(r && r.error || "")}</div>`; return; }
+        renderSpecControls(box, r.spec || {}, r.values || {});
+      } catch (err) {
+        box.innerHTML = `<div class="spec-msg">读取失败：${esc(err.message || err)}</div>`;
+      }
+    }
+    function valOf(values, siid, piid) {
+      const e = values[siid + ":" + piid];
+      return e && e.code === 0 ? e.value : undefined;
+    }
+    function unitLabel(u) {
+      const map = { percentage: "%", "℃": "°C", celsius: "°C", minutes: "分钟", seconds: "秒", hours: "小时", days: "天", "pm2.5-density": "μg/m³" };
+      return map[u] || u;
+    }
+    function fmtVal(c, v) {
+      if (v === undefined || v === null) return "—";
+      if (c.format === "bool") return v ? "开" : "关";
+      if (c.options) { const o = c.options.find((x) => String(x.value) === String(v)); return o ? o.label : String(v); }
+      return v + (c.unit ? " " + unitLabel(c.unit) : "");
+    }
+    function renderSpecControls(box, desc, values) {
+      if (desc.noSpec) {
+        box.innerHTML = `<div class="spec-msg">未在公开 MIoT-Spec 库中找到型号「${esc(desc.model || "未知")}」，无法自动生成功能控件。可在下方「高级」区手动按 siid/piid 操控。</div>`;
+        return;
+      }
+      const controls = Array.isArray(desc.controls) ? desc.controls : [];
+      const actions = Array.isArray(desc.actions) ? desc.actions : [];
+      const writable = controls.filter((c) => c.kind !== "readonly");
+      const readonly = controls.filter((c) => c.kind === "readonly");
+      if (!writable.length && !actions.length) {
+        let ro = "";
+        if (readonly.length) ro = `<div class="ctl-ro">` + readonly.slice(0, 12).map((c) => `<span class="chip">${esc(c.label)}：${esc(fmtVal(c, valOf(values, c.siid, c.piid)))}</span>`).join("") + `</div>`;
+        box.innerHTML = `<div class="spec-msg">该设备无可远程操控的功能（多为穿戴 / 纯传感 / 仅 App 本地设备）。${ro}</div>`;
+        return;
+      }
+      // 排版参考米家面板：电源键整行置顶 → 其余开关两列 → 滑块整行 → 模式下拉整行 → 数值两列 → 动作按钮流 → 只读状态
+      const isPower = (c) => /^(on|power|main-switch|switch)$/.test(c.name) || /电源|总开关/.test(c.label);
+      const switches = writable.filter((c) => c.kind === "switch");
+      const powerCtl = switches.find(isPower) || null;
+      const otherSwitches = switches.filter((c) => c !== powerCtl);
+      const sliders = writable.filter((c) => c.kind === "slider");
+      const selects = writable.filter((c) => c.kind === "select");
+      const numbers = writable.filter((c) => c.kind === "number" || c.kind === "text");
+      let html = "";
+      if (powerCtl) html += `<div class="ctl-power">` + controlHtml(powerCtl, values) + `</div>`;
+      if (otherSwitches.length) html += `<div class="cell-grid">` + otherSwitches.map((c) => controlHtml(c, values)).join("") + `</div>`;
+      for (const c of sliders) html += controlHtml(c, values);
+      for (const c of selects) html += `<div class="ctl-row">` + controlHtml(c, values) + `</div>`;
+      if (numbers.length) html += `<div class="cell-grid">` + numbers.map((c) => controlHtml(c, values)).join("") + `</div>`;
+      if (actions.length) {
+        html += `<div class="act-title">动作</div><div class="act-wrap">` +
+          actions.map((a, i) => {
+            const argInputs = (a.in || []).map((arg) => `<input type="text" class="act-arg" data-argin="${a.siid}:${a.aiid}:${arg.piid}" placeholder="${esc(arg.label || "参数")}" />`).join("");
+            return `<div class="act-item"><button class="btn sm ghost act" data-i="${i}">${esc(a.label)}</button>${argInputs}</div>`;
+          }).join("") + `</div>`;
+      }
+      if (readonly.length) {
+        html += `<div class="ctl-ro">` + readonly.slice(0, 12).map((c) => `<span class="chip">${esc(c.label)}：${esc(fmtVal(c, valOf(values, c.siid, c.piid)))}</span>`).join("") + `</div>`;
+      }
+      box.innerHTML = html;
+      bindControls(box, actions);
+    }
+    function controlHtml(c, values) {
+      const v = valOf(values, c.siid, c.piid);
+      const key = `${c.siid}:${c.piid}`;
+      const idAttr = `data-siid="${c.siid}" data-piid="${c.piid}"`;
+      if (c.kind === "switch") {
+        const checked = v === true || v === 1 ? "checked" : "";
+        return `<div class="cell cell--sw"><span class="ctl__label" title="${esc(c.label)}">${esc(c.label)}</span><label class="switch"><input type="checkbox" data-ctl="switch" ${idAttr} ${checked} /><i></i></label></div>`;
+      }
+      if (c.kind === "select") {
+        const opts = c.options.map((o) => `<option value="${esc(o.value)}" ${String(v) === String(o.value) ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+        return `<div class="cell"><div class="cell__row"><span class="ctl__label" title="${esc(c.label)}">${esc(c.label)}</span></div><select class="ctl-select" data-ctl="select" ${idAttr}>${opts}</select></div>`;
+      }
+      if (c.kind === "slider") {
+        const min = Number.isFinite(c.min) ? c.min : 0, max = Number.isFinite(c.max) ? c.max : 100, step = Number.isFinite(c.step) && c.step > 0 ? c.step : 1;
+        const val = Number.isFinite(v) ? v : min;
+        const disp = v === undefined ? "—" : (val + (c.unit ? " " + unitLabel(c.unit) : ""));
+        return `<div class="ctl"><div class="ctl__top"><span class="ctl__label">${esc(c.label)}</span><span class="ctl__val" data-val="${key}">${esc(disp)}</span></div><input type="range" class="range" data-ctl="slider" ${idAttr} min="${min}" max="${max}" step="${step}" value="${val}" data-unit="${esc(c.unit || "")}" /></div>`;
+      }
+      if (c.kind === "number") {
+        const val = v === undefined ? "" : v;
+        return `<div class="cell"><div class="cell__row"><span class="ctl__label" title="${esc(c.label)}">${esc(c.label)}</span></div><div class="num-row"><input type="number" class="ctl-num" ${idAttr} value="${esc(val)}" /><button class="btn sm" data-set="number" data-siid="${c.siid}" data-piid="${c.piid}">设置</button></div></div>`;
+      }
+      const val = v === undefined ? "" : v;
+      return `<div class="cell"><div class="cell__row"><span class="ctl__label" title="${esc(c.label)}">${esc(c.label)}</span></div><div class="num-row"><input type="text" class="ctl-text" ${idAttr} value="${esc(val)}" /><button class="btn sm" data-set="text" data-siid="${c.siid}" data-piid="${c.piid}">设置</button></div></div>`;
+    }
+    function coerce(raw) {
+      if (raw === "true") return true;
+      if (raw === "false") return false;
+      if (raw !== "" && !isNaN(Number(raw))) return Number(raw);
+      return raw;
+    }
+    function bindControls(box, actions) {
+      box.querySelectorAll('input[data-ctl="switch"]').forEach((inp) =>
+        inp.addEventListener("change", () => {
+          const lbl = inp.closest(".cell, .ctl").querySelector(".ctl__label");
+          sendControl({ op: "set", siid: Number(inp.dataset.siid), piid: Number(inp.dataset.piid), value: inp.checked });
+          if (lbl) setDevStatus(`${lbl.textContent} → ${inp.checked ? "开" : "关"}`, "ok");
+        }));
+      box.querySelectorAll('select[data-ctl="select"]').forEach((sel) =>
+        sel.addEventListener("change", () =>
+          sendControl({ op: "set", siid: Number(sel.dataset.siid), piid: Number(sel.dataset.piid), value: coerce(sel.value) })));
+      box.querySelectorAll('input[data-ctl="slider"]').forEach((rng) => {
+        const out = box.querySelector(`[data-val="${rng.dataset.siid}:${rng.dataset.piid}"]`);
+        const upd = () => { if (out) out.textContent = rng.value + (rng.dataset.unit ? " " + unitLabel(rng.dataset.unit) : ""); };
+        rng.addEventListener("input", upd);
+        rng.addEventListener("change", () => { upd(); sendControl({ op: "set", siid: Number(rng.dataset.siid), piid: Number(rng.dataset.piid), value: Number(rng.value) }); });
+      });
+      box.querySelectorAll('button[data-set]').forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const inp = btn.closest(".num-row").querySelector("input");
+          let val = btn.dataset.set === "number" ? (inp.value === "" ? null : Number(inp.value)) : inp.value;
+          if (val === null) { setDevStatus("请输入数值", "err"); return; }
+          sendControl({ op: "set", siid: Number(btn.dataset.siid), piid: Number(btn.dataset.piid), value: val });
+        }));
+      box.querySelectorAll("button.act").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const a = actions[Number(btn.dataset.i)];
+          if (!a) return;
+          const inArr = [];
+          for (const arg of (a.in || [])) {
+            const inp = box.querySelector(`[data-argin="${a.siid}:${a.aiid}:${arg.piid}"]`);
+            if (!inp || inp.value.trim() === "") { setDevStatus(`「${a.label}」需参数，请用高级区填写`, "err"); return; }
+            inArr.push(coerce(inp.value.trim()));
+          }
+          sendControl({ op: "call", siid: a.siid, aiid: a.aiid, in: inArr });
+        }));
+    }
+    function setDevStatus(msg, kind) { const s = el("dev-status"); s.textContent = msg; s.className = "status-line " + (kind || ""); }
+
+    async function sendControl(args) {
+      setDevStatus("执行中…", "");
+      try {
+        const r = await ipcRenderer.invoke(P + "control", Object.assign({ device: currentDev.did }, args));
+        setDevStatus(String(r || "完成"), "ok");
+        setTimeout(() => { loadDeviceSpec(true); refresh(); }, 700);
+      } catch (err) { setDevStatus("失败：" + (err.message || err), "err"); }
+    }
+
+    // ── 窗口三控件：直连插件自有的 frameless 窗口（min / max / close）──
+    el("btn-min").onclick = () => ipcRenderer.send(P + "win-minimize");
+    el("btn-max").onclick = () => ipcRenderer.send(P + "win-maximize");
+    el("btn-close").onclick = () => {
+      // 有遮罩时先收起最上层，避免直接关掉整个窗口；否则关闭窗口
+      if (el("dev-overlay").classList.contains("show")) { closeSheet("dev-overlay"); return; }
+      if (el("settings-overlay").classList.contains("show")) { closeSheet("settings-overlay"); return; }
+      ipcRenderer.send(P + "win-close");
+    };
+    el("btn-login").onclick = async () => { await ipcRenderer.invoke(P + "loginStart"); refresh(); };
+    el("btn-cancel").onclick = async () => { await ipcRenderer.invoke(P + "loginCancel"); refresh(); };
+
+    el("btn-settings").onclick = () => { populateSettings(); openSheet("settings-overlay"); };
+    el("btn-settings-close").onclick = () => closeSheet("settings-overlay");
+    el("btn-dev-close").onclick = () => closeSheet("dev-overlay");
+    el("settings-overlay").addEventListener("click", (e) => { if (e.target === el("settings-overlay")) closeSheet("settings-overlay"); });
+    el("dev-overlay").addEventListener("click", (e) => { if (e.target === el("dev-overlay")) closeSheet("dev-overlay"); });
+
+    el("btn-dev-refresh").onclick = () => loadDeviceSpec(false);
+    el("btn-adv-set").onclick = () => {
+      const siid = Number(el("adv-set-siid").value), piid = Number(el("adv-set-piid").value);
+      let val = el("adv-set-val").value;
+      if (!siid || !piid) { setDevStatus("请填写 siid 与 piid", "err"); return; }
+      if (val === "true") val = true; else if (val === "false") val = false;
+      else if (val !== "" && !isNaN(Number(val))) val = Number(val);
+      sendControl({ op: "set", siid, piid, value: val });
+    };
+    el("btn-adv-act").onclick = () => {
+      const siid = Number(el("adv-act-siid").value), aiid = Number(el("adv-act-aiid").value);
+      if (!siid || !aiid) { setDevStatus("请填写 siid 与 aiid", "err"); return; }
+      let inArr = [];
+      const raw = el("adv-act-in").value.trim();
+      if (raw) { try { inArr = JSON.parse(raw); } catch { setDevStatus("in 需为 JSON 数组", "err"); return; } }
+      sendControl({ op: "call", siid, aiid, in: inArr });
+    };
+
+    // ── 设置 ──
+    function populateSettings() {
+      const p = state.prefs || {};
+      el("pref-chatinject").checked = p.chatInject !== false;
+      el("pref-autoscan").checked = p.autoScan !== false;
+      el("pref-scanint").value = String(p.scanIntervalMin || 5);
+    }
+    el("btn-save-prefs").onclick = async () => {
+      const btn = el("btn-save-prefs"); btn.disabled = true; const prev = btn.textContent; btn.textContent = "保存中…";
+      try {
+        const r = await ipcRenderer.invoke(P + "setPrefs", {
+          chatInject: el("pref-chatinject").checked,
+          autoScan: el("pref-autoscan").checked,
+          scanIntervalMin: Number(el("pref-scanint").value) || 5,
+        });
+        if (r && r.prefs) state.prefs = r.prefs;
+        el("acct-meta").textContent = "设置已保存";
+        closeSheet("settings-overlay");
+      } catch (err) { el("acct-meta").textContent = "保存失败：" + (err.message || err); }
+      btn.disabled = false; btn.textContent = prev;
+    };
+    // ── 玻璃风确认框（替代原生 confirm，风格与面板一致）──
+    let confirmResolve = null;
+    function askConfirm(title, msg, okLabel, okClass) {
+      return new Promise((resolve) => {
+        confirmResolve = resolve;
+        el("confirm-title").textContent = title || "确认";
+        el("confirm-msg").textContent = msg || "";
+        const ok = el("confirm-ok");
+        ok.textContent = okLabel || "确定";
+        ok.className = "btn sm " + (okClass || "");
+        el("confirm-overlay").classList.add("show");
+        ok.focus();
+      });
+    }
+    function closeConfirm(result) {
+      el("confirm-overlay").classList.remove("show");
+      if (confirmResolve) { confirmResolve(result); confirmResolve = null; }
+    }
+    el("confirm-ok").onclick = () => closeConfirm(true);
+    el("confirm-cancel").onclick = () => closeConfirm(false);
+    el("confirm-overlay").addEventListener("click", (e) => { if (e.target === el("confirm-overlay")) closeConfirm(false); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && el("confirm-overlay").classList.contains("show")) closeConfirm(false); });
+
+    el("btn-logout").onclick = async () => {
+      if (!(await askConfirm("退出登录", "确定退出登录？将清除加密保存的小米凭证与设备缓存。", "退出登录", "danger"))) return;
+      try { await ipcRenderer.invoke(P + "logout"); await refresh(); closeSheet("settings-overlay"); } catch (err) { /* 忽略 */ }
+    };
+
+    // 主进程推送
+    ipcRenderer.on(P + "login", (_e, ls) => { renderLogin(ls); if (ls && ls.state === "connected") setTimeout(refresh, 1500); });
+    ipcRenderer.on(P + "devices", (_e, snap) => { if (snap) { state.devices = snap.devices || []; state.fetchedAt = snap.fetchedAt || state.fetchedAt; state.lastError = snap.lastError || ""; renderDevices(); renderAcct(); } });
+
+    // 蓝牙可用性检测（Chromium Web Bluetooth）
+    (async () => {
+      try {
+        if (navigator.bluetooth && navigator.bluetooth.getAvailability) bluetoothOk = await navigator.bluetooth.getAvailability();
+        else bluetoothOk = false;
+      } catch { bluetoothOk = false; }
+      renderWarn();
+    })();
+
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
+</body>
+</html>
