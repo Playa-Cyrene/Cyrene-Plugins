@@ -109,6 +109,14 @@
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.0.zip",
       "sha256": "7bfa115863ea2ccee7cf93b8f452ec435f58acb6493f2ae5b04f0b1484dffef8"
+    },
+    {
+      "id": "cyrene-browser",
+      "name": "Cyrene 内置浏览器",
+      "description": "使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页",
+      "author": "1971687396",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-browser",
+      "version": "0.3.0"
     }
   ]
 }
