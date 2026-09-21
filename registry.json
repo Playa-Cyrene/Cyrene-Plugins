@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-09-20",
+  "updatedAt": "2026-09-22",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -106,7 +106,9 @@
       "description": "扫码连接米家账号，按房间分组展示设备；基于公开 MIoT-Spec 自动生成功能控件（开关/滑块/下拉/动作按钮），对话与面板两种方式操控，淡粉液态玻璃面板带底部抽屉上滑减速动画",
       "author": "抽卡保底真君",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/mijia-control",
-      "version": "0.3.0"
+      "version": "0.3.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.0.zip",
+      "sha256": "7bfa115863ea2ccee7cf93b8f452ec435f58acb6493f2ae5b04f0b1484dffef8"
     }
   ]
 }
