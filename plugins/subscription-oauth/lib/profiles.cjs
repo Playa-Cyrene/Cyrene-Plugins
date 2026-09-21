@@ -103,6 +103,41 @@ function readExistingProfiles() {
   }
 }
 
+function isValidPort(port) {
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+/** 只接受本插件生成的本机 HTTP 代理地址，避免误用用户自定义远端端口。 */
+function localProxyPort(baseUrl) {
+  try {
+    const parsed = new URL(String(baseUrl || ""));
+    if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1") return undefined;
+    const port = Number(parsed.port);
+    return isValidPort(port) ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 优先复用既有订阅档案中的代理端口。
+ *
+ * 这一步必须发生在 proxy.start() 前：宿主会在插件启动前缓存模型设置；若插件每次都先
+ * 抢默认端口、再把磁盘档案改到新端口，当前进程仍会拿旧缓存请求，表现为 0 轮次的
+ * E_HARNESS_FAILURE。复用档案端口可让绝大多数启动从一开始就与宿主缓存一致。
+ */
+function preferredProxyPortFromProfiles(fallbackPort) {
+  const safeFallback = isValidPort(fallbackPort) ? fallbackPort : 6231;
+  const read = readExistingProfiles();
+  if (!read.ok) return safeFallback;
+  for (const profile of read.profiles) {
+    if (!String(profile.id || "").startsWith(PROFILE_PREFIX)) continue;
+    const port = localProxyPort(profile.baseUrl);
+    if (port !== undefined) return port;
+  }
+  return safeFallback;
+}
+
 /** 统计新增/更新数量（按 model + baseUrl 匹配）。 */
 function diffProfiles(existing, desired) {
   let added = 0;
@@ -194,6 +229,63 @@ function writeProfilesToDisk(existingProfiles, desired) {
 }
 
 /**
+ * 代理端口自动回退后，把插件拥有的既有档案统一改到当前端口。
+ * 这里先落盘完成持久化；当前进程里已经加载的宿主缓存由
+ * refreshProfilesInHostCache() 通过公开的 settings API 随后刷新。
+ * 非 oauth-sub-* 档案及其余字段全部保持不变。
+ */
+function rebindProfilesToProxyPort(port) {
+  if (!isValidPort(port)) {
+    return { ok: false, error: "本地代理端口无效" };
+  }
+  const read = readExistingProfiles();
+  if (!read.ok) return read;
+
+  const baseUrl = `http://127.0.0.1:${port}/v1`;
+  let updated = 0;
+  const profiles = read.profiles.map((profile) => {
+    if (!String(profile.id || "").startsWith(PROFILE_PREFIX) || profile.baseUrl === baseUrl) {
+      return profile;
+    }
+    updated += 1;
+    return { ...profile, baseUrl };
+  });
+  if (updated === 0) return { ok: true, updated: 0, profiles: profiles.length };
+
+  read.settings.modelProfiles = profiles;
+  try {
+    const fs = require("node:fs");
+    fs.writeFileSync(modelSettingsPath(), JSON.stringify(read.settings, null, 2), "utf8");
+  } catch (error) {
+    return { ok: false, error: `迁移订阅模型代理端口失败：${error.message}` };
+  }
+  return { ok: true, updated, profiles: profiles.length };
+}
+
+/**
+ * 经宿主公开 API 重放现有订阅档案，确保主进程模型设置缓存与代理实际端口一致。
+ *
+ * 即使磁盘上的 baseUrl 已经正确也必须重放：端口迁移发生在插件启动阶段时，宿主往往
+ * 已先读取并缓存旧文件。该函数只走公开 API，不再回退写盘，便于调用方等待宿主窗口
+ * 就绪后安全重试。
+ */
+async function refreshProfilesInHostCache(port) {
+  if (!isValidPort(port)) return { ok: false, error: "本地代理端口无效" };
+  const read = readExistingProfiles();
+  if (!read.ok) return read;
+
+  const baseUrl = `http://127.0.0.1:${port}/v1`;
+  const desired = read.profiles
+    .filter((profile) => String(profile.id || "").startsWith(PROFILE_PREFIX))
+    .map((profile) => ({ ...profile, baseUrl }));
+  if (desired.length === 0) return { ok: true, synced: 0 };
+
+  const result = await saveProfilesViaRenderer(desired);
+  if (!result.ok) return result;
+  return { ok: true, synced: desired.length };
+}
+
+/**
  * 把订阅模型目录同步成宿主模型档案。
  * @returns {Promise<{ok: boolean, added?: number, updated?: number, profiles?: number, error?: string, degraded?: boolean}>}
  */
@@ -255,6 +347,9 @@ module.exports = {
   PROVIDER_TRANSPORT,
   buildProfiles,
   reasoningFromModel,
+  preferredProxyPortFromProfiles,
+  rebindProfilesToProxyPort,
+  refreshProfilesInHostCache,
   syncProfilesIntoModelSettings,
   removeProfilesForProvider,
 };
