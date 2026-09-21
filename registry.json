@@ -31,7 +31,9 @@
       "author": "1971687396",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/subscription-oauth",
       "version": "1.2.11",
-      "downloads": 26
+      "downloads": 26,
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/subscription-oauth-1.2.11.zip",
+      "sha256": "b891b19e4e4f5cd48a09a40c5748fc06e307e3edc6dff081756773c69f1f3924"
     },
     {
       "id": "indextts-tts",
