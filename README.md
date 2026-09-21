@@ -23,7 +23,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [scheduled-automation](./plugins/scheduled-automation) | 0.1.0 | 通过对话创建、管理自己的定时任务（创建后需在宿主界面确认启用） | —（示例，不分发） | Cyrene 示例 | — |
 | [local-asr-contract](./plugins/local-asr-contract) | 0.1.0 | 本地语音识别契约示例：演示语音输入租约的获取、提交与释放 | —（示例，不分发） | Cyrene 示例 | — |
 | [system-status](./plugins/system-status) | 0.1.0 | 查询本机系统状态：CPU、内存、磁盘、电池与开机时长，附带可视化状态面板 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip) | Playa | — |
-| [subscription-oauth](./plugins/subscription-oauth) | 1.2.11 | 用订阅账号登录 ChatGPT / Claude / Grok，经本地代理使用订阅模型；支持工具调用、多账号、模型目录、用量显示及 ChatGPT / Grok 订阅生图 | —（待维护者打包） | 1971687396 | — |
+| [subscription-oauth](./plugins/subscription-oauth) | 1.2.11 | 用订阅账号登录 ChatGPT / Claude / Grok，经本地代理使用订阅模型；支持工具调用、多账号、模型目录、用量显示及 ChatGPT / Grok 订阅生图 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/subscription-oauth-1.2.11.zip) | 1971687396 | — |
 | [indextts-tts](./plugins/indextts-tts) | 1.1.2 | 在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip) | Downfallofthedownfall | — |
 | [ripples-of-aion](./plugins/ripples-of-aion) | 0.6.0 | 结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴、autoDream 整合与五页可视化面板 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip) | modusensus | [Ripples-of-Aion](https://github.com/modusensus/Ripples-of-Aion) |
 | [chat-export](./plugins/chat-export) | 1.0.0 | 把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip) | Playa | — |
