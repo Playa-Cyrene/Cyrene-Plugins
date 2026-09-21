@@ -416,8 +416,13 @@
       const sl = el("state-line");
       const box = el("qr-box");
       sl.className = "state-line";
-      if (ls.qr) box.innerHTML = `<img src="${ls.qr}" alt="登录二维码" />`;
-      else if (ls.state === "connecting") box.innerHTML = '<div class="ph">正在向小米请求二维码…</div>';
+      if (ls.qr) {
+        box.replaceChildren(Object.assign(document.createElement("img"), { src: ls.qr, alt: "登录二维码" }));
+      } else if (ls.state === "connecting") {
+        box.replaceChildren(Object.assign(document.createElement("div"), { className: "ph", textContent: "正在向小米请求二维码…" }));
+      } else {
+        box.replaceChildren();
+      }
       if (ls.state === "scanning") sl.textContent = "请用小米运动健康 App 扫码并确认";
       else if (ls.state === "connecting") sl.textContent = "正在建立登录会话…";
       else if (ls.state === "error") { sl.className = "state-line err"; sl.textContent = "登录失败：" + (ls.error || "请重试"); }
