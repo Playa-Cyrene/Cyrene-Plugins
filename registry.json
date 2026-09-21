@@ -116,7 +116,9 @@
       "description": "使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页",
       "author": "1971687396",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-browser",
-      "version": "0.3.0"
+      "version": "0.3.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip",
+      "sha256": "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40"
     }
   ]
 }
