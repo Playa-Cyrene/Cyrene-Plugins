@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-09-21",
+  "updatedAt": "2026-09-22",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -22,7 +22,7 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
       "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-      "downloads": 73
+      "downloads": 74
     },
     {
       "id": "subscription-oauth",
@@ -109,7 +109,7 @@
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.0.zip",
       "sha256": "7bfa115863ea2ccee7cf93b8f452ec435f58acb6493f2ae5b04f0b1484dffef8",
-      "downloads": 2
+      "downloads": 3
     },
     {
       "id": "cyrene-browser",
