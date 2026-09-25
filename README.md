@@ -66,6 +66,18 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 
 ---
 
+## 维护者：下载量与 Gitee 同步
+
+`.github/workflows/aggregate-downloads.yml` 每天统计 GitHub Release 附件下载量，更新 `registry.json` 后将当前 `main` 同步到 Gitee，避免客户端主源与 GitHub 索引不一致。
+
+首次启用前，需要在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 新建仓库 Secret：
+
+- `GITEE_TOKEN`：Gitee 账号 `playa0` 的私人令牌，需要具备向 `playa0/cyrene-plugins` 推送代码的权限。
+
+工作流即使当天下载量没有变化，也会执行 Gitee 同步，因此镜像短暂落后时可在下一次定时任务或手动运行 `workflow_dispatch` 后自动追平。同步使用普通 fast-forward push，不会强制覆盖 Gitee 上的独立提交；若两边历史发生分叉，工作流会失败并提示维护者人工处理。
+
+---
+
 ## 安全说明
 
 - 本仓库所有插件经过人工安全审核后才收录，但**审核不构成担保**，请只安装你信任的插件
