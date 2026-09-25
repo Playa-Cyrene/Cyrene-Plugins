@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-09-24",
+  "updatedAt": "2026-09-25",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -11,7 +11,7 @@
       "version": "0.6.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip",
       "sha256": "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
-      "downloads": 57
+      "downloads": 58
     },
     {
       "id": "system-status",
@@ -22,7 +22,7 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
       "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-      "downloads": 75
+      "downloads": 76
     },
     {
       "id": "subscription-oauth",
@@ -62,7 +62,7 @@
       "name": "Minecraft 机器人",
       "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射",
       "author": "Cyrene",
-      "downloads": 14,
+      "downloads": 15,
       "version": "0.10.0-beta.1",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip",
       "sha256": "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
@@ -76,7 +76,7 @@
       "version": "0.3.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
       "sha256": "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
-      "downloads": 29
+      "downloads": 30
     },
     {
       "id": "astral-relay",
