@@ -895,31 +895,42 @@ function pause(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+const MAX_CONCURRENT_SETTLES = 3;
+let activeSettleCount = 0;
+
 async function settleAfterInput(tab, timeoutMs = 3000) {
   const contents = safeWebContents(tab);
   if (!contents) return null;
-  const deadline = Date.now() + timeoutMs;
-  let latest = null;
-  let stableKey = "";
-  let stableSince = 0;
-  await pause(100);
-  while (Date.now() < deadline) {
-    try {
-      latest = await readPageSignal(tab);
-      const key = `${latest.documentRevision}:${latest.domRevision}:${latest.url}:${latest.scrollX}:${latest.scrollY}`;
-      if (!latest.loading && key === stableKey) {
-        if (stableSince && Date.now() - stableSince >= 220) return latest;
-      } else {
-        stableKey = key;
-        stableSince = Date.now();
-      }
-    } catch {
-      stableKey = "";
-      stableSince = 0;
-    }
-    await pause(90);
+  if (activeSettleCount >= MAX_CONCURRENT_SETTLES) {
+    throw new Error("自动化操作过于频繁，请稍后重试");
   }
-  return latest;
+  activeSettleCount++;
+  try {
+    const deadline = Date.now() + timeoutMs;
+    let latest = null;
+    let stableKey = "";
+    let stableSince = 0;
+    await pause(100);
+    while (Date.now() < deadline) {
+      try {
+        latest = await readPageSignal(tab);
+        const key = `${latest.documentRevision}:${latest.domRevision}:${latest.url}:${latest.scrollX}:${latest.scrollY}`;
+        if (!latest.loading && key === stableKey) {
+          if (stableSince && Date.now() - stableSince >= 220) return latest;
+        } else {
+          stableKey = key;
+          stableSince = Date.now();
+        }
+      } catch {
+        stableKey = "";
+        stableSince = 0;
+      }
+      await pause(90);
+    }
+    return latest;
+  } finally {
+    activeSettleCount--;
+  }
 }
 
 async function toolClick(args) {
