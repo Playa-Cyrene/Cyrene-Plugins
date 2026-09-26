@@ -1,5 +1,6 @@
-# 每日聚合插件下载量：统计 Release 附件下载次数并写回 registry.json
+# 每日聚合插件下载量：统计 GitHub Release 附件下载次数并写回 registry.json
 # 附件必须通过 Release 分发才会被 GitHub 计数（发布流程见 scripts/publish-plugins.ps1）
+# 聚合完成后把当前 main 同步到 Gitee，保证客户端主源与 GitHub 索引一致。
 name: 聚合插件下载量
 
 on:
@@ -19,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Gitee 可能落后多个提交；完整历史可让普通 fast-forward push 自动追平。
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -26,7 +30,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/aggregate-downloads.mjs
-      - name: 有变化时提交
+      - name: 有变化时提交 GitHub
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -37,3 +41,15 @@ jobs:
             git commit -m "更新插件下载量统计"
             git push
           fi
+      - name: 同步 main 到 Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          if [ -z "$GITEE_TOKEN" ]; then
+            echo "::error::缺少 GitHub Actions Secret: GITEE_TOKEN"
+            exit 1
+          fi
+
+          git remote remove gitee 2>/dev/null || true
+          git remote add gitee "https://playa0:${GITEE_TOKEN}@gitee.com/playa0/cyrene-plugins.git"
+          git push gitee HEAD:main

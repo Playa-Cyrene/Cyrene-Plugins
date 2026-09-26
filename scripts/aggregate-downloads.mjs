@@ -3,7 +3,7 @@
 // 口径：插件总下载量 = 该插件所有历史版本 Release 附件下载次数之和（发新版不清零）。
 import { readFile, writeFile } from "node:fs/promises";
 
-const REPO = "Playa-0v0/Cyrene-Plugins";
+const REPO = "Playa-Cyrene/Cyrene-Plugins";
 const REGISTRY_PATH = new URL("../registry.json", import.meta.url);
 
 // 分页拉取全部 Release；优先用 GITHUB_TOKEN 提高速率限额（本地未登录则匿名）

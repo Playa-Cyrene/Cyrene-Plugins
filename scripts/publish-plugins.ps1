@@ -16,7 +16,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Repo = "Playa-0v0/Cyrene-Plugins"
+$Repo = "Playa-Cyrene/Cyrene-Plugins"
 $root = Split-Path -Parent $PSScriptRoot
 $pluginsDir = Join-Path $root "plugins"
 $zipsDir = Join-Path $root "zips"
