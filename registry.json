@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-10-02",
+  "updatedAt": "2026-10-04",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -11,7 +11,7 @@
       "version": "0.6.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip",
       "sha256": "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
-      "downloads": 58
+      "downloads": 59
     },
     {
       "id": "system-status",
@@ -22,7 +22,7 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
       "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-      "downloads": 76
+      "downloads": 77
     },
     {
       "id": "subscription-oauth",
@@ -76,7 +76,7 @@
       "version": "0.3.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
       "sha256": "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
-      "downloads": 30
+      "downloads": 31
     },
     {
       "id": "astral-relay",
@@ -109,7 +109,7 @@
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.0.zip",
       "sha256": "7bfa115863ea2ccee7cf93b8f452ec435f58acb6493f2ae5b04f0b1484dffef8",
-      "downloads": 3
+      "downloads": 4
     },
     {
       "id": "cyrene-browser",
@@ -120,7 +120,7 @@
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip",
       "sha256": "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40",
-      "downloads": 0
+      "downloads": 1
     },
     {
       "id": "xiaomi-health",
@@ -131,7 +131,7 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.3.zip",
       "sha256": "d2189ef19db0a75c3a5c963c4c64d5730c5f6220541c3fd8a383aefa20e789b7",
-      "downloads": 0
+      "downloads": 1
     },
     {
       "id": "ide-account-bridge",
