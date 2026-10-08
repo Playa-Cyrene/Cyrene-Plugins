@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "用你自己的订阅额度驱动 Cyrene，不用另买按量付费 API 额度",
+    "支持 xAI Grok 订阅（实验性，浏览器 OAuth / 设备码登录）、MiniMax Token Plan、通义千问 Coding Plan、腾讯云 Coding Plan",
+    "按厂商条款放行：Grok 与 MiniMax 全模式可用；Qwen / 腾讯编程套餐只在 Code 模式的交互式对话里生效",
+    "一个本地端口服务全部厂商，在模型档案里选 OpenAI 兼容即可接入"
+  ],
+  "requirements": [
+    "需要支持插件 API v1（含 prompt provider）的 Cyrene 版本，不需要改动宿主",
+    "需要对应厂商的有效订阅：SuperGrok / X Premium、MiniMax Token Plan（sk-cp-）或 Qwen / 腾讯 Coding Plan（sk-sp-）",
+    "Grok 接入为实验性，尚未用真实订阅账号做过端到端验证"
+  ],
+  "setup": [
+    "在插件市场安装后手动启用，点「Open / 打开」进入面板",
+    "Grok 点「连接订阅」在浏览器授权；其它厂商填写订阅 Key",
+    "把卡片上的 Base URL、模型 ID 和底部 token 填进 Cyrene 模型档案，协议选 OpenAI 兼容",
+    "编程套餐请在 Code 模式直接发消息测试（模型档案的「连接测试」会被拒绝）",
+    "端口和 token 每次启用都会重新生成，重启后需重新复制"
+  ],
+  "dataHandling": [
+    "订阅 Key 与 OAuth 凭据只写入宿主安全存储，不明文落盘",
+    "本地代理只监听本机，转发时把本地 token 替换为你的订阅凭据，请求只发往所选厂商的官方端点",
+    "Code 轮次校验只保存用户输入的 SHA-256 指纹（默认 2 小时、最多 64 条），不保存原文；停用插件即清空",
+    "不收集遥测，出站请求头如实标明 astral-relay，不伪装官方客户端"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/blob/main/plugins/astral-relay/README.md"
+}
