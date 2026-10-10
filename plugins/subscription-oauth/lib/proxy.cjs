@@ -4,16 +4,139 @@
  * 订阅 OAuth 本地代理服务器。
  *
  * 对外按订阅原生协议暴露三个端点，由 Cyrene 档案选择对应 transport：
- *  - /v1/responses        → ChatGPT Codex（Responses API）
+ *  - /v1/responses        → ChatGPT Codex / xAI（Responses API）
  *  - /v1/messages         → Claude Code（Messages API）
  *  - /v1/chat/completions → xAI（OpenAI Chat Completions）
  * token 由调用方（index.cjs）通过 getTokens 闭包注入，过期自动刷新。
  */
 const http = require("node:http");
+const { sanitizeLogText } = require("./privacy.cjs");
 const { PROVIDERS, authHeaders, chatBodyFrom, providerForModel, decodeJwtPayload } = require("./vendor-http.cjs");
+const { projectSearchResponse, prepareSearchInput, createSearchSseCompat } = require("./responses-search-compat.cjs");
 
 const DEFAULT_PORT = 6231;
 const PORT_FALLBACK_ATTEMPTS = 20;
+const HOST_WEB_SEARCH_TOOL = "web_search";
+const HOST_MINIMAX_SEARCH_PREFIXES = ["minimax-web-search-", "minimax_web_search_"];
+
+function clientToolName(tool) {
+  if (!tool || typeof tool !== "object" || Array.isArray(tool)) return undefined;
+  if (tool.type === "function") {
+    if (typeof tool.name === "string") return tool.name;
+    if (tool.function && typeof tool.function.name === "string") return tool.function.name;
+  }
+  // Anthropic 客户端工具没有 type，靠 name + input_schema 区分。
+  if (!tool.type && tool.input_schema && typeof tool.name === "string") return tool.name;
+  return undefined;
+}
+
+function isHostWebSearchTool(tool) {
+  const name = clientToolName(tool);
+  return name === HOST_WEB_SEARCH_TOOL
+    || HOST_MINIMAX_SEARCH_PREFIXES.some((prefix) => String(name || "").startsWith(prefix));
+}
+
+function isNativeWebSearchTool(providerId, tool) {
+  if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
+  if (providerId === "claude") {
+    return typeof tool.type === "string"
+      && tool.type.startsWith("web_search_")
+      && tool.name === "web_search";
+  }
+  return tool.type === "web_search";
+}
+
+function nativeWebSearchTool(providerId) {
+  if (providerId === "claude") {
+    // 基础版本兼容 Claude 4.x；服务端自行执行并把引用写入最终文本。
+    return { type: "web_search_20250305", name: "web_search", max_uses: 5 };
+  }
+  if (providerId === "chatgpt") {
+    // 允许模型在检索已有角色、人物、地点等视觉主体时同时取得文字资料和
+    // 参考图；是否真正搜索仍由模型按本轮任务决定。
+    return {
+      type: "web_search",
+      search_content_types: ["image", "text"],
+      image_settings: { max_results: 4, caption: true },
+    };
+  }
+  // xAI Responses 的网页搜索可按需搜索图片，并理解网页中遇到的参考图。
+  return {
+    type: "web_search",
+    enable_image_search: true,
+    enable_image_understanding: true,
+  };
+}
+
+function mergeNativeWebSearchTool(providerId, existingTool) {
+  const defaults = nativeWebSearchTool(providerId);
+  if (providerId === "claude") return { ...defaults, ...existingTool };
+  if (providerId === "chatgpt") {
+    return {
+      ...defaults,
+      ...existingTool,
+      image_settings: {
+        ...defaults.image_settings,
+        ...(existingTool.image_settings && typeof existingTool.image_settings === "object"
+          ? existingTool.image_settings
+          : {}),
+      },
+    };
+  }
+  return { ...defaults, ...existingTool };
+}
+
+function toolChoiceTargetsHostSearch(toolChoice) {
+  if (!toolChoice || typeof toolChoice !== "object" || Array.isArray(toolChoice)) return false;
+  const name = typeof toolChoice.name === "string"
+    ? toolChoice.name
+    : toolChoice.function && typeof toolChoice.function.name === "string"
+      ? toolChoice.function.name
+      : undefined;
+  return name === HOST_WEB_SEARCH_TOOL
+    || HOST_MINIMAX_SEARCH_PREFIXES.some((prefix) => String(name || "").startsWith(prefix));
+}
+
+/**
+ * 去掉 Cyrene 第三方搜索函数，并注入厂商服务端原生网页搜索。
+ * 其它宿主工具保持不变，可与服务端搜索混用。
+ */
+function withNativeWebSearch(providerId, requestBody) {
+  const sourceTools = Array.isArray(requestBody.tools) ? requestBody.tools : [];
+  const tools = sourceTools.filter((tool) => !isHostWebSearchTool(tool));
+  const removedHostTools = tools.length !== sourceTools.length;
+  let injected = false;
+  const nativeIndex = tools.findIndex((tool) => isNativeWebSearchTool(providerId, tool));
+  if (nativeIndex < 0) {
+    tools.push(nativeWebSearchTool(providerId));
+    injected = true;
+  } else {
+    // 客户端已带原生搜索时补齐图片检索能力，同时保留调用方显式设置。
+    tools[nativeIndex] = mergeNativeWebSearchTool(providerId, tools[nativeIndex]);
+  }
+  const body = { ...requestBody, tools };
+  if (removedHostTools && toolChoiceTargetsHostSearch(body.tool_choice)) {
+    delete body.tool_choice;
+  }
+  return { body, injected, enabled: true, removedHostTools };
+}
+
+function withoutNativeWebSearch(providerId, requestBody) {
+  const body = { ...requestBody };
+  if (Array.isArray(body.tools)) {
+    const tools = body.tools.filter((tool) => !isNativeWebSearchTool(providerId, tool));
+    if (tools.length > 0) body.tools = tools;
+    else delete body.tools;
+  }
+  if (toolChoiceTargetsHostSearch(body.tool_choice)) delete body.tool_choice;
+  return body;
+}
+
+function nativeSearchRejected(status, detail) {
+  return [400, 422].includes(status)
+    && /web[_ -]?search|server[_ -]?side search|search tool/i.test(detail)
+    && /unsupported|unknown variant|not (?:enabled|supported|available)|disabled/i.test(detail);
+}
 
 function isRetryableListenError(error) {
   return error && (error.code === "EADDRINUSE" || error.code === "EACCES");
@@ -36,10 +159,61 @@ function listenOnce(server, port) {
   });
 }
 
-function json(res, status, payload) {
+function json(res, status, payload, headers = {}) {
   const body = JSON.stringify(payload);
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body) });
+  res.writeHead(status, { ...headers, "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(body) });
   res.end(body);
+}
+
+/** Bound error reads; do not copy OAuth headers or an HTML challenge into model output. */
+async function readErrorText(response, maxBytes = 16 * 1024) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (size < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const part = Buffer.from(value).subarray(0, maxBytes - size);
+      chunks.push(part);
+      size += part.length;
+    }
+  } finally {
+    if (size >= maxBytes) await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function publicError(response, providerId, text) {
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { /* Non-JSON responses are summarized, never exposed verbatim. */ }
+  const upstreamError = parsed && typeof parsed === "object" && parsed.error && typeof parsed.error === "object"
+    ? parsed.error : parsed;
+  const safeField = (value) => typeof value === "string" && /^[A-Za-z0-9_.:\[\]-]{1,160}$/.test(value) ? value : undefined;
+  const requestId = safeField(response.headers.get("x-request-id") || response.headers.get("request-id"))
+    || safeField(parsed && parsed.request_id) || safeField(upstreamError && upstreamError.request_id);
+  const message = upstreamError && (upstreamError.message || upstreamError.detail || (typeof parsed.error === "string" ? parsed.error : undefined));
+  const safeMessage = typeof message === "string" && !/<(?:!doctype|html|script|body)\b/i.test(message)
+    ? sanitizeLogText(message.slice(0, 4096))
+      .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+      .replace(/\bsk-[A-Za-z0-9_-]+/g, "[redacted-key]")
+      .replace(/((?:authorization|cookie|set-cookie)\b\s*["']?\s*[:=]\s*["']?)[^\r\n"',;}\]]+/gi, "$1[redacted]")
+      .replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 1000)
+    : `上游 ${providerId} 返回 HTTP ${response.status}（${parsed ? "未提供错误说明" : "非 JSON 错误响应"}）`;
+  const error = { message: safeMessage, provider: providerId };
+  for (const key of ["code", "type", "param"]) {
+    const value = safeField(upstreamError && upstreamError[key]);
+    if (value) error[key] = value;
+  }
+  if (requestId) error.request_id = requestId;
+  const headers = {};
+  if (requestId) headers["x-request-id"] = requestId;
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter && retryAfter.length <= 128 && !/[\r\n]/.test(retryAfter)) headers["retry-after"] = retryAfter;
+  return { payload: { error }, headers };
 }
 
 function readBody(req) {
@@ -174,23 +348,24 @@ function createProxy({ getTokens, log = () => {}, fetchUsage, fetchCatalog, medi
  */
 const ENDPOINTS = {
   "/v1/chat/completions": {
-    provider: "grok",
-    upstream: "https://api.x.ai/v1/chat/completions",
+    upstreams: { grok: "https://api.x.ai/v1/chat/completions" },
   },
   "/v1/responses": {
-    provider: "chatgpt",
-    upstream: "https://chatgpt.com/backend-api/codex/responses",
+    upstreams: {
+      chatgpt: "https://chatgpt.com/backend-api/codex/responses",
+      grok: "https://api.x.ai/v1/responses",
+    },
   },
   "/v1/messages": {
-    provider: "claude",
-    upstream: "https://api.anthropic.com/v1/messages?beta=true",
+    upstreams: { claude: "https://api.anthropic.com/v1/messages?beta=true" },
   },
 };
 
-/** 按模型名判断请求是否允许打到该端点（防串线）。 */
-function endpointAcceptsModel(providerId, model) {
-  const detected = providerForModel(model);
-  return detected === providerId;
+/** 按模型名解析端点内的订阅商与上游地址（防串线）。 */
+function resolveEndpointRoute(endpoint, model) {
+  const providerId = providerForModel(model);
+  const upstream = providerId && endpoint.upstreams[providerId];
+  return upstream ? { providerId, upstream } : undefined;
 }
 
 async function handleChatCompletions(req, res, endpoint) {
@@ -200,15 +375,17 @@ async function handleChatCompletions(req, res, endpoint) {
     });
     if (!body) return;
     const model = String(body.model || "");
-    const providerId = endpoint.provider;
-    if (!endpointAcceptsModel(providerId, model)) {
+    const route = resolveEndpointRoute(endpoint, model);
+    if (!route) {
+      const accepted = Object.keys(endpoint.upstreams).map((id) => PROVIDERS[id].displayName).join(" / ");
       json(res, 400, {
         error: {
-          message: `该端点只接受 ${PROVIDERS[providerId].displayName} 模型（收到 ${model || "(空)"}）`,
+          message: `该端点只接受 ${accepted} 模型（收到 ${model || "(空)"}）`,
         },
       });
       return;
     }
+    const { providerId, upstream: upstreamUrl } = route;
     const auth = await getTokens(providerId).catch((error) => {
       json(res, 502, { error: { message: `读取订阅 token 失败：${error.message}` } });
       return null;
@@ -221,8 +398,16 @@ async function handleChatCompletions(req, res, endpoint) {
     const headers = authHeaders(providerId, tokens);
     headers["content-type"] = "application/json";
 
-    // 原样透传请求体，仅做必要的防御性修正
-    const upstreamBody = { ...body };
+    // 原样透传请求体，仅做必要的防御性修正。网页搜索统一交给厂商服务端：
+    // 清掉宿主第三方搜索函数，保留其它客户端工具，再注入原生搜索工具。
+    const nativeSearch = withNativeWebSearch(providerId, body);
+    let upstreamBody = nativeSearch.body;
+    const responsesProtocol = endpoint === ENDPOINTS["/v1/responses"];
+    if (responsesProtocol) {
+      const prepared = prepareSearchInput(upstreamBody);
+      upstreamBody = prepared.body;
+      if (prepared.removedOrphans) log(`[proxy] 已兼容 ${prepared.removedOrphans} 条原生搜索孤立结果（普通函数工具历史保持不变）`);
+    }
     if (providerId === "chatgpt") {
       // Codex 端点强制要求 store:false（Cyrene 的 Responses transport 已带，
       // 这里兜底以防其它客户端省略）
@@ -243,32 +428,51 @@ async function handleChatCompletions(req, res, endpoint) {
       headers["openai-beta"] = "responses=experimental";
     }
 
-    log(`[proxy] ${model} → ${providerId} ${endpoint.upstream.split("?")[0]} (stream=${Boolean(body.stream)})`);
+    log(`[proxy] ${model} → ${providerId} ${upstreamUrl.split("?")[0]} (stream=${Boolean(body.stream)}, native-search=on)`);
 
-    const upstream = await fetch(endpoint.upstream, {
+    const disconnect = new AbortController();
+    res.once("close", () => disconnect.abort());
+    const requestSignal = AbortSignal.any([disconnect.signal, AbortSignal.timeout(300_000)]);
+    const requestUpstream = (payload) => fetch(upstreamUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify(upstreamBody),
-      signal: AbortSignal.timeout(300_000),
+      body: JSON.stringify(payload),
+      signal: requestSignal,
     });
+    let upstream = await requestUpstream(upstreamBody);
+    let errorText;
+    // 个别账号/组织可能在服务端关闭原生搜索。只在错误明确指向搜索工具时
+    // 无搜索重试，避免一个可选能力拖垮所有普通对话。
+    if (!upstream.ok && nativeSearch.enabled && [400, 422].includes(upstream.status)) {
+      errorText = await readErrorText(upstream).catch(() => "");
+      if (nativeSearchRejected(upstream.status, errorText)) {
+        log(`[proxy] ${providerId} 原生网页搜索不可用，本轮降级为无搜索请求`);
+        upstreamBody = withoutNativeWebSearch(providerId, upstreamBody);
+        upstream = await requestUpstream(upstreamBody);
+        errorText = undefined;
+      }
+    }
+
+    if (!upstream.ok) {
+      const detail = errorText ?? await readErrorText(upstream).catch(() => "");
+      const failure = publicError(upstream, providerId, detail);
+      log(`[proxy] ${providerId} HTTP ${upstream.status} code=${failure.payload.error.code || "unknown"} request-id=${failure.headers["x-request-id"] || "unavailable"}`);
+      if (!res.destroyed) json(res, upstream.status, failure.payload, failure.headers);
+      return;
+    }
 
     if (body.stream) {
-      // SSE 真流式转发；ChatGPT 只缓存已完成 output item，并在空终态中补回，
-      // 让 Cyrene 能保存 function_call 后继续发送工具结果。
+      // Responses 补齐空终态后，再将服务端搜索投影成普通参考文本；
+      // 未适配宿主不会把原生搜索交给本地工具循环，普通 function_call 不变。
       res.writeHead(upstream.status, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       });
-      if (!upstream.ok) {
-        const text = await upstream.text().catch(() => "");
-        res.write(`data: ${JSON.stringify({ error: { message: `上游 ${providerId} 返回 HTTP ${upstream.status}: ${text.slice(0, 300)}` } })}\n\n`);
-        res.end();
-        return;
-      }
       if (upstream.body) {
         const reader = upstream.body.getReader();
-        const repair = providerId === "chatgpt" ? createResponsesSseRepair() : null;
+        const repair = responsesProtocol ? createResponsesSseRepair() : null;
+        const searchCompat = responsesProtocol ? createSearchSseCompat() : null;
         const decoder = repair ? new TextDecoder() : null;
         const pump = async () => {
           try {
@@ -278,7 +482,8 @@ async function handleChatCompletions(req, res, endpoint) {
               if (!value) continue;
               if (repair && decoder) {
                 const repaired = repair.push(decoder.decode(value, { stream: true }));
-                if (repaired) res.write(repaired);
+                const compatible = searchCompat ? searchCompat.push(repaired) : repaired;
+                if (compatible) res.write(compatible);
               } else {
                 res.write(Buffer.from(value));
               }
@@ -288,7 +493,8 @@ async function handleChatCompletions(req, res, endpoint) {
           } finally {
             if (repair && decoder) {
               const repaired = repair.push(decoder.decode()) + repair.flush();
-              if (repaired) res.write(repaired);
+              const compatible = searchCompat ? searchCompat.push(repaired) + searchCompat.flush() : repaired;
+              if (compatible) res.write(compatible);
             }
             res.end();
           }
@@ -301,10 +507,6 @@ async function handleChatCompletions(req, res, endpoint) {
     }
 
     const text = await upstream.text().catch(() => "");
-    if (!upstream.ok) {
-      json(res, upstream.status, { error: { message: `上游 ${providerId} 返回 HTTP ${upstream.status}: ${text.slice(0, 300)}` } });
-      return;
-    }
     let parsed;
     try {
       parsed = JSON.parse(text);
@@ -312,7 +514,7 @@ async function handleChatCompletions(req, res, endpoint) {
       json(res, 502, { error: { message: `上游 ${providerId} 返回了非 JSON 内容` } });
       return;
     }
-    json(res, 200, parsed);
+    json(res, 200, responsesProtocol ? projectSearchResponse(parsed) : parsed);
   }
 
   async function handleModels(res) {
@@ -350,7 +552,9 @@ async function handleChatCompletions(req, res, endpoint) {
     }
     if (req.method === "POST" && ENDPOINTS[url.pathname]) {
       handleChatCompletions(req, res, ENDPOINTS[url.pathname]).catch((error) => {
-        json(res, 500, { error: { message: error.message } });
+        if (res.destroyed) return;
+        if (res.headersSent) { res.end(); return; }
+        json(res, 502, { error: { message: sanitizeLogText(error.message), code: "upstream_connection_error" } });
       });
       return;
     }
@@ -404,4 +608,11 @@ async function handleChatCompletions(req, res, endpoint) {
   };
 }
 
-module.exports = { createProxy, createResponsesSseRepair, DEFAULT_PORT, tierOf };
+module.exports = {
+  createProxy,
+  createResponsesSseRepair,
+  withNativeWebSearch,
+  withoutNativeWebSearch,
+  DEFAULT_PORT,
+  tierOf,
+};

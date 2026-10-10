@@ -83,7 +83,7 @@
         <h2>本地代理<span class="hint">三种原生协议自动直通</span></h2>
       <div class="proxy-box" id="proxy-box">正在启动…</div>
       <div class="hint" style="margin-top:8px">
-        登录后点「查看用量/模型」→「一键写入全部模型档案」即可；插件会自动选择 Responses、Messages 或 Chat Completions，无需手动创建端点，也无需 API Key。
+        登录后点「查看用量/模型」→「同步模型到渠道档案」即可；同一订阅服务的模型在同一页管理，插件会自动选择原生协议，无需手动创建端点或填写 API Key。
       </div>
     </div>
 
@@ -346,10 +346,10 @@
 
         const syncBtn = document.createElement("button");
         syncBtn.className = "primary";
-        syncBtn.textContent = "一键写入全部模型档案（可下拉选择）";
+        syncBtn.textContent = "同步模型到渠道档案";
         syncBtn.onclick = async () => {
           syncBtn.disabled = true;
-          setStatus("正在写入全部档案…");
+          setStatus("正在同步渠道模型清单…");
           const result = await ipcRenderer.invoke("plugin:subscription-oauth:syncProfiles", id, {});
           applySyncResult(result);
           syncBtn.disabled = false;
@@ -358,11 +358,11 @@
 
         if (hidden.length) {
           const allBtn = document.createElement("button");
-          allBtn.textContent = "含隐藏模型一并写入";
-          allBtn.title = "把 visibility=hide/none 的模型（如 gpt-6-astra）也写进档案";
+          allBtn.textContent = "同步并包含隐藏模型";
+          allBtn.title = "把 visibility=hide/none 的模型（如 gpt-6-astra）也加入该渠道清单";
           allBtn.onclick = async () => {
             allBtn.disabled = true;
-            setStatus("正在写入全部档案（含隐藏模型）…");
+            setStatus("正在同步渠道模型（含隐藏模型）…");
             const result = await ipcRenderer.invoke("plugin:subscription-oauth:syncProfiles", id, { includeHidden: true });
             applySyncResult(result);
             allBtn.disabled = false;
@@ -370,6 +370,10 @@
           btnRow.appendChild(allBtn);
         }
         detail.appendChild(btnRow);
+        const channelHint = document.createElement("div");
+        channelHint.className = "status-msg";
+        channelHint.textContent = "同一订阅服务只保留一个渠道档案，模型在同一页管理；旧档案会自动合并，保留旧聊天的模型选择。";
+        detail.appendChild(channelHint);
       }
 
       // 手动添加模型（目录未列出时的兜底）
@@ -409,7 +413,7 @@
       }
     }
 
-    /** 模型标签区：点击单个模型即写入该模型档案。 */
+    /** 模型标签区：点击单个模型即追加到该渠道的模型清单。 */
     function buildModelSection(title, models, providerId, isHidden) {
       const wrap = document.createElement("div");
       const h2 = document.createElement("div");
@@ -437,7 +441,7 @@
           + (isHidden ? "\n目录标记为隐藏，可能对新账号/客户端版本不可用" : "");
         tag.onclick = async () => {
           tag.classList.add("selected");
-          setStatus(`正在写入档案：${m.id}…`);
+          setStatus(`正在加入渠道清单：${m.id}…`);
           const result = await ipcRenderer.invoke("plugin:subscription-oauth:syncProfiles", providerId, { models: [m] });
           applySyncResult(result);
           tag.classList.remove("selected");
@@ -458,10 +462,11 @@
     /** 统一的写入结果提示。 */
     function applySyncResult(result) {
       if (result && result.ok) {
-        const extra = result.degraded ? "（降级写入，重启 Cyrene 后生效）" : "";
+        const migration = result.removed > 0 ? `，已合并 ${result.removed} 个旧档案` : "";
+        const availability = result.degraded ? "重启 Cyrene 后生效。" : "可在聊天窗口的该渠道下切换模型。";
         setStatus(
-          `已写入 ${result.added + result.updated} 个档案（新增 ${result.added}，更新 ${result.updated}）${extra}。聊天窗口模型选择器立即可选。`,
-          "ok",
+          `已同步到一个渠道档案，包含 ${result.modelCount} 个模型${migration}。${availability}${result.warning || ""}`,
+          result.migrationPending || result.degraded ? "" : "ok",
         );
       } else {
         setStatus("写入失败：" + ((result && result.error) || "未知错误"), "err");

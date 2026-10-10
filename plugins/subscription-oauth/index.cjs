@@ -8,7 +8,7 @@
  *  - 本地代理：按 Responses / Messages / Chat Completions 三种原生协议直通，
  *    并为对应上游注入订阅 token
  *  - 模型目录 / 用量拉取，弹窗内展示
- *  - ChatGPT / Grok 订阅生图：原图写入插件私有目录，聊天内只返回轻量预览 URL
+ *  - ChatGPT / Grok 订阅生图：参考图输入、可恢复的结果记录和宿主图片卡片
  *  - token 过期自动 refresh；secrets 加密存储（host 可用时）
  *
  * 使用：登录后从插件窗口把目录一键写入模型档案；插件会为三家分别选择
@@ -35,12 +35,14 @@ const {
 } = require("./lib/profiles.cjs");
 const { PROVIDERS } = require("./lib/vendor-http.cjs");
 const { sanitizeLogArg } = require("./lib/privacy.cjs");
+const { createImageWorkflow } = require("./lib/image-workflow.cjs");
 
 const PLUGIN_ID = "subscription-oauth";
 
 let pluginWin = null;
 let proxyHandle = null;   // { server, port, start, stop }
 let imageMediaStore = null;
+let imageWorkflow = null;
 let tokenStore = null;
 let ctxRef = null;
 let profileCacheRefreshTimer = null;
@@ -48,6 +50,17 @@ let profileCacheRefreshGeneration = 0;
 
 const PROFILE_CACHE_REFRESH_RETRY_MS = 500;
 const PROFILE_CACHE_REFRESH_MAX_ATTEMPTS = 120;
+
+function isLikelyImageCreationRequest(userText) {
+  const text = typeof userText === "string" ? userText.trim() : "";
+  if (!text) return false;
+  const capabilityOnly = /(?:能|会|支持|可以).{0,8}(?:生图|画图|生成(?:图片|图像)?).{0,3}[吗么?？]$/i.test(text)
+    && !/请|帮我|给我|来一|一张|一幅|一个|自己|现在|马上/i.test(text);
+  if (capabilityOnly) return false;
+  const hasCreationIntent = /生图|生成|画(?:一|张|个|幅|出|一下)?|绘制|创作|制作|设计|给我|来一|发一|generate|draw|create|make|show me/i.test(text);
+  const hasVisualSubject = /图|图片|图像|插画|海报|立绘|头像|肖像|自拍|照片|壁纸|封面|形象|你自己|自己|image|picture|illustration|poster|portrait|selfie|wallpaper/i.test(text);
+  return hasCreationIntent && hasVisualSubject;
+}
 
 function cancelProfileCacheRefresh() {
   profileCacheRefreshGeneration += 1;
@@ -81,14 +94,14 @@ function scheduleProfileCacheRefresh(port) {
       result = { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
     if (generation !== profileCacheRefreshGeneration || !ctxRef) return;
-    if (result.ok) {
+    if (result.ok && !result.migrationPending) {
       if (result.synced > 0) {
-        log(`[profiles] 已通过宿主 API 刷新 ${result.synced} 个订阅模型档案的运行时缓存`);
+        log(`[profiles] 已刷新 ${result.synced} 个订阅渠道档案，迁移 ${result.migratedSessions || 0} 个旧会话`);
       }
       return;
     }
     if (attempts >= PROFILE_CACHE_REFRESH_MAX_ATTEMPTS) {
-      log(`[profiles] 等待宿主窗口刷新模型缓存超时：${result.error || "未知错误"}`);
+      log(`[profiles] 等待宿主窗口刷新模型缓存超时：${result.error || result.warning || "未知错误"}`);
       return;
     }
     schedule();
@@ -165,20 +178,14 @@ async function resolveImageProvider(requestedProvider, toolContext) {
   const requested = ["chatgpt", "grok"].includes(requestedProvider) ? requestedProvider : "auto";
   const inferred = requested === "auto" ? imageProviderFromMetadata(toolContext) : null;
   const target = requested === "auto" ? inferred : requested;
-  if (target) {
-    const tokens = await resolveTokens(target);
-    if (!tokens) {
-      throw new Error(`${PROVIDERS[target].displayName} 订阅未登录，请先打开订阅 OAuth 插件完成登录`);
-    }
-    return { providerId: target, tokens };
-  }
+  // Select the provider without refreshing tokens. A saved image can be
+  // redelivered even if the account has since expired or logged out.
+  if (target) return { providerId: target };
 
   // 旧版宿主暂不传当前模型元数据：auto 在仅登录一家时自然选中；
   // 同时登录两家时保持 ChatGPT 优先，模型提示词会要求 Grok 会话显式传 grok。
-  const chatGptTokens = await resolveTokens("chatgpt");
-  if (chatGptTokens) return { providerId: "chatgpt", tokens: chatGptTokens };
-  const grokTokens = await resolveTokens("grok");
-  if (grokTokens) return { providerId: "grok", tokens: grokTokens };
+  if (await tokenStore?.getActive("chatgpt")) return { providerId: "chatgpt" };
+  if (await tokenStore?.getActive("grok")) return { providerId: "grok" };
   throw new Error("ChatGPT 与 Grok 订阅均未登录，请先打开订阅 OAuth 插件完成登录");
 }
 
@@ -353,7 +360,7 @@ const plugin = {
 
     // 把订阅模型目录同步成 Cyrene 模型档案（聊天窗口选择器直接可选）
     // options.includeHidden=true 时连带 visibility=hide/none 的模型一起写入；
-    // options.models=[...] 时只写指定的模型（用于单独添加某个隐藏模型）。
+    // options.models=[...] 时将指定模型追加到该渠道清单，不覆盖其余模型。
     ctx.registerIpc("syncProfiles", async (providerId, options) => {
       try {
         const tokens = await resolveTokens(providerId);
@@ -373,7 +380,8 @@ const plugin = {
 
         const result = await syncProfilesIntoModelSettings(providerId, models, { port });
         if (result.ok) {
-          log(`[profiles] ${providerId} 同步完成：新增 ${result.added} 更新 ${result.updated}，共 ${result.profiles} 个档案`);
+          log(`[profiles] ${providerId} 已同步到一个渠道档案，含 ${result.modelCount} 个模型，合并 ${result.removed || 0} 个旧档案`);
+          if (result.degraded || result.migrationPending) scheduleProfileCacheRefresh(port);
         }
         return result;
       } catch (error) {
@@ -403,7 +411,8 @@ const plugin = {
         const model = { id, name: typeof modelName === "string" && modelName.trim() ? modelName.trim() : id };
         const result = await syncProfilesIntoModelSettings(providerId, [model], { port });
         if (result.ok) {
-          log(`[profiles] 手动添加模型 ${id} → 新增 ${result.added} 更新 ${result.updated}`);
+          log(`[profiles] 模型 ${id} 已加入 ${providerId} 渠道清单，共 ${result.modelCount} 个模型`);
+          if (result.degraded || result.migrationPending) scheduleProfileCacheRefresh(port);
         }
         return { ...result, modelId: id };
       } catch (error) {
@@ -416,6 +425,7 @@ const plugin = {
       rootDir: ctx.storage.rootDir(),
       getPort: () => (proxyHandle ? proxyHandle.port() : 0),
     });
+    imageWorkflow = createImageWorkflow({ rootDir: ctx.storage.rootDir(), mediaStore: imageMediaStore });
 
     // 本地代理（同时只读提供生成图片的 localhost 预览/原图）
     proxyHandle = createProxy({
@@ -431,7 +441,7 @@ const plugin = {
     if (!rebound.ok) {
       log(`[profiles] 自动迁移代理端口失败：${rebound.error}`);
     } else if (rebound.updated > 0) {
-      log(`[profiles] 本地代理端口已变化，自动迁移 ${rebound.updated} 个订阅模型档案到 ${activeProxyPort}`);
+      log(`[profiles] 已迁移 ${rebound.updated} 个订阅模型档案（代理端口 / 原生搜索能力）`);
     }
     // 无论磁盘是否刚发生迁移都重放一次：可修复旧版已留下的“磁盘正确、内存仍旧”状态。
     scheduleProfileCacheRefresh(activeProxyPort);
@@ -441,15 +451,29 @@ const plugin = {
     ctx.registerPromptProvider({
       id: "image-generation-capability",
       sources: ["conversation"],
-      provide() {
-        return [
+      provide({ userText, conversationId }) {
+        const lines = [
           "[订阅 OAuth 生图能力]",
           "本插件提供 `subscription-oauth_generate_image` 工具，可使用已登录的 ChatGPT Plus / Pro 或具备 Imagine 权限的 Grok Build 订阅生成新图片。",
-          "若本轮可用工具中包含该工具：用户要求画图、生成图片、海报、插画或视觉素材时应直接调用，不要声称自己没有生图能力；用户只询问是否支持生图时，应明确说明可以使用此工具。",
+          "若本轮可用工具中包含该工具：用户要求画图、生成图片、海报、插画或视觉素材时应完成必要的前置检索后调用，不要声称自己没有生图能力；用户只询问是否支持生图时，应明确说明可以使用此工具。",
           "调用时必须传 `provider`：当前选用 Grok 订阅模型或用户点名 Grok / Grok Build 时传 `grok`；当前选用 ChatGPT 订阅模型或用户点名 ChatGPT 时传 `chatgpt`；无法判断且用户未指定时传 `auto`。Grok 的画幅使用 `aspect_ratio`。",
-          "工具成功后会返回预览图与原图链接的 Markdown，最终回复必须原样保留这两行，确保图片直接显示在聊天窗口。",
+          "新版宿主若返回 kind=cyrene.generated-image 的 JSON，图片卡片已经由宿主自动显示：最终回复简短说明即可，不要把 JSON、图片 ID 或本地协议地址输出给用户，也不要再次调用生图工具。旧宿主返回 Markdown 时仍须原样保留图片与原图链接。",
+          "生图工具会自动接收用户本轮的图片附件。没有附件时应传 reference_urls（真实公网 HTTPS 图片地址，不是网页地址）。ChatGPT 一次最多 3 张，Grok 一次 1 张。角色规范全名及版本传 subject；核对的外观写入 visual_description，资料页面地址传 source_urls，便于本会话复用。",
           "若本轮没有该工具，则提示用户在“工具”页开启“Chat 模式工具增强”，并在 Chat 页签勾选“订阅生图（ChatGPT / Grok）”。",
-        ].join("\n");
+        ];
+        if (isLikelyImageCreationRequest(userText)) {
+          lines.push(
+            "[本轮生图前置检索规则]",
+            "先判断画面主体是否为现实人物、已有作品/IP 的角色，或系统人设所对应的你自己。若是，必须先使用本轮可用的联网搜索，之后才能调用生图工具；不能因为系统提示词写了外观、或自认为知道该角色，就跳过检索。例外：用户本轮已提供参考图，或本会话缓存存在 7 天内、角色与版本完全匹配且来源可靠的参考资料时，可直接复用；用户要求重查或改用其他版本时传 refresh_references=true 并重新检索。",
+            "检索时使用角色规范全名、常用别名与作品名，优先查官方资料、可信角色资料页，并搜索官方立绘、设定图或其他可靠参考图；至少确认发色与发型、瞳色、服装、饰品、体态、主色和标志性元素。",
+            "把查到且相互印证的视觉特征整理进 `prompt`，用户指定的服装、场景和画风优先；资料冲突时优先官方与用户明确指定的版本，身份仍无法确认时先向用户问一个简短问题，不得凭空混合不同角色。",
+            "完成检索后应继续调用 `subscription-oauth_generate_image` 交付图片。不得只输出、展示或解释生图提示词，也不得在仍能联网检索时让用户自行寻找参考图。原创角色或用户明确要求不联网、只按其现成设定创作时，可以跳过检索。",
+            "参考图用于校准角色外观，不照搬单张参考图的构图、水印或文字。除非用户要求，不必展开汇报检索过程，直接完成生图。",
+          );
+          const references = imageWorkflow?.referencePrompt(conversationId);
+          if (references) lines.push(references);
+        }
+        return lines.join("\n");
       },
     });
 
@@ -481,7 +505,7 @@ const plugin = {
     ctx.registerTool({
       id: "subscription-oauth_generate_image",
       name: "订阅生图（ChatGPT / Grok）",
-      description: "使用已登录的 ChatGPT Plus / Pro 或 Grok Build 订阅生成一张新图片。Grok 会话应把 provider 设为 grok，ChatGPT 会话设为 chatgpt；无法判断时使用 auto。用户要求画图、生成图片、海报、插画或视觉素材时使用。工具结果会给出 Markdown 预览和原图链接；最终回复必须原样保留这两行 Markdown，不能改写成磁盘路径或 Base64。",
+      description: "使用已登录的 ChatGPT Plus / Pro 或 Grok Build 订阅生成图片。当前 Grok/ChatGPT 会话应分别选 provider=grok/chatgpt，无法判断时选 auto。已有角色、现实人物或当前角色自身先联网核对资料与参考图；本轮用户附件或本会话 7 天内完全匹配的参考资料可直接复用。将核对的外观写入 prompt/visual_description、真实图片地址传 reference_urls，不得只返回提示词。新版宿主收到 kind=cyrene.generated-image 会自动显示图片卡片，最终简短说明即可；旧宿主返回 Markdown 时原样保留图片和原图链接，不输出 Base64 或磁盘路径。同一用户消息重试会恢复已有图片，另发新消息才重新生成。",
       catalogHint: "通过 ChatGPT 或 Grok 订阅生成图片，并直接在聊天中显示轻量预览。",
       category: "media",
       capability: "subscription-oauth.image-generation",
@@ -496,7 +520,7 @@ const plugin = {
         properties: {
           prompt: {
             type: "string",
-            description: "完整、具体的生图提示词，应包含主体、构图、风格、光线、色彩和需要出现的文字。",
+            description: "完整生图提示词：主体、构图、风格、光线、色彩和文字。已有角色或现实人物须采用已联网核对、用户附件或本会话有效缓存的外观资料；不能只写角色名或照抄系统人设。",
           },
           provider: {
             type: "string",
@@ -527,6 +551,11 @@ const plugin = {
             default: "auto",
             description: "Grok Imagine 画幅：auto、方图、宽屏、竖屏、横向照片或纵向海报；ChatGPT 会自动换算成最接近的尺寸。",
           },
+          subject: { type: "string", description: "角色规范全名、作品名及外观版本，用于本会话参考资料缓存。" },
+          visual_description: { type: "string", description: "从可靠资料与参考图确认的角色视觉特征；不是检索指令。" },
+          reference_urls: { type: "array", items: { type: "string" }, maxItems: 3, description: "真实公网 HTTPS 图片直链（不是网页）。插件先下载校验，再随请求发送；单张最多 10 MiB，ChatGPT 最多 3 张，Grok 1 张；有本轮图片附件时优先附件。" },
+          source_urls: { type: "array", items: { type: "string" }, maxItems: 3, description: "核对资料的来源页面 HTTPS 地址，最多 3 个；与 subject、visual_description 一起保存。" },
+          refresh_references: { type: "boolean", description: "用户要求刷新或角色版本改变时设 true，并传重新检索的资料和参考图。" },
         },
         required: ["prompt", "provider"],
       },
@@ -538,34 +567,35 @@ const plugin = {
         const requestedProvider = ["auto", "chatgpt", "grok"].includes(args.provider)
           ? args.provider
           : "auto";
-        const { providerId, tokens } = await resolveImageProvider(requestedProvider, toolContext);
-        if (!imageMediaStore) throw new Error("本地图片服务未启动，请刷新插件后重试");
+        const { providerId } = await resolveImageProvider(requestedProvider, toolContext);
+        if (!imageMediaStore || !imageWorkflow) throw new Error("本地图片服务未启动，请刷新插件后重试");
 
-        const generated = providerId === "grok"
-          ? await generateImageViaGrok({
-              tokens,
-              prompt,
-              aspectRatio: grokAspectRatioFromArgs(args),
-              signal: toolContext?.signal,
-            })
-          : await generateImageViaChatGpt({
-              tokens,
-              prompt,
-              size: chatGptSizeFromArgs(args),
-              quality: args.quality,
-              background: args.background,
-              signal: toolContext?.signal,
-            });
-        const media = await imageMediaStore.save(generated.buffer, {
-          background: generated.background || "opaque",
+        return imageWorkflow.execute({ ...args, prompt }, toolContext || {}, {
+          providerId, providerName: PROVIDERS[providerId].displayName,
+          generate: async (reference) => {
+            const tokens = await resolveTokens(providerId);
+            if (!tokens || toolContext?.signal?.aborted) {
+              const error = new Error(toolContext?.signal?.aborted ? "生图已取消" : `${PROVIDERS[providerId].displayName} 订阅未登录，请先打开订阅 OAuth 插件完成登录`);
+              error.generationNotStarted = true;
+              throw error;
+            }
+            return providerId === "grok"
+              ? await generateImageViaGrok({
+                  tokens,
+                  ...reference,
+                  aspectRatio: grokAspectRatioFromArgs(args),
+                  signal: toolContext?.signal,
+                })
+              : await generateImageViaChatGpt({
+                  tokens,
+                  ...reference,
+                  size: chatGptSizeFromArgs(args),
+                  quality: args.quality,
+                  background: args.background,
+                  signal: toolContext?.signal,
+                });
+          },
         });
-        const providerName = PROVIDERS[providerId].displayName;
-        log(`[image:${providerId}] 生成完成：原图 ${media.originalBytes} B，聊天预览 ${media.previewBytes} B`);
-        return [
-          `图片已通过 ${providerName} 订阅生成。请在最终回复中原样输出下面两行 Markdown，让用户直接看到图片；不要输出 Base64 或磁盘路径：`,
-          `![生成图片](${media.previewUrl})`,
-          `[查看或下载原图](${media.originalUrl})`,
-        ].join("\n");
       },
     });
 
@@ -584,6 +614,7 @@ const plugin = {
       proxyHandle = null;
     }
     imageMediaStore = null;
+    imageWorkflow = null;
     tokenStore = null;
     ctxRef = null;
   },

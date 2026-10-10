@@ -4,17 +4,19 @@
  * ChatGPT / Grok 订阅生图与本地媒体存储。
  *
  * 上游返回的图片是大段 Base64；这里在插件主进程内解码并保存，工具结果只
- * 返回短的 127.0.0.1 URL。聊天记录因此不会被几 MB 的 Base64 污染。
+ * 返回随机图片 ID（旧宿主兼容短媒体 URL），不把 Base64 写入聊天记录。
  */
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
 const { authHeaders } = require("./vendor-http.cjs");
+const { imageTypeOf, normalizeReferenceImages, prepareReferenceImages } = require("./reference-images.cjs");
 
 const IMAGE_UPSTREAM = "https://chatgpt.com/backend-api/codex/responses";
 const IMAGE_ORCHESTRATOR_MODEL = "gpt-5.6-luna";
 const GROK_IMAGE_UPSTREAM = "https://cli-chat-proxy.grok.com/v1/images/generations";
+const GROK_IMAGE_EDIT_UPSTREAM = "https://cli-chat-proxy.grok.com/v1/images/edits";
 const GROK_IMAGE_MODEL = "grok-imagine-image-quality";
 const MAX_BASE64_CHARS = 48 * 1024 * 1024;
 const MAX_ORIGINAL_BYTES = 32 * 1024 * 1024;
@@ -25,24 +27,6 @@ const PREVIEW_MAX_BYTES = 512 * 1024;
 
 function enumValue(value, allowed, fallback) {
   return allowed.includes(value) ? value : fallback;
-}
-
-function imageTypeOf(buffer) {
-  if (!Buffer.isBuffer(buffer)) return null;
-  if (buffer.length >= 8
-    && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
-    && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
-    return { extension: "png", mime: "image/png" };
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return { extension: "jpg", mime: "image/jpeg" };
-  }
-  if (buffer.length >= 12
-    && buffer.toString("ascii", 0, 4) === "RIFF"
-    && buffer.toString("ascii", 8, 12) === "WEBP") {
-    return { extension: "webp", mime: "image/webp" };
-  }
-  return null;
 }
 
 function extractImageResult(event) {
@@ -204,7 +188,7 @@ async function downloadGrokImage(rawUrl, { fetchImpl, signal }) {
 }
 
 /** 从任意分块的 Responses SSE 中提取 image_generation_call.result。 */
-async function readImageFromSse(response) {
+async function readImageFromSse(response, { onProgress } = {}) {
   if (!response.body) throw new Error("上游生图响应没有数据流");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -225,6 +209,10 @@ async function readImageFromSse(response) {
     }
     const error = eventError(event);
     if (error) throw new Error(String(error));
+    try {
+      if (event.type === "response.image_generation_call.in_progress") onProgress?.("正在生成图片，请稍候…");
+      if (event.type === "response.image_generation_call.completed") onProgress?.("图片已生成，正在接收原图…");
+    } catch { /* UI observer failures must not lose a completed image. */ }
     const result = extractImageResult(event);
     return result ? decodeImageResult(result) : null;
   }
@@ -268,6 +256,9 @@ async function generateImageViaChatGpt({
   size = "1024x1024",
   quality = "medium",
   background = "opaque",
+  referenceImages = [],
+  referenceDownload,
+  onProgress,
   signal,
   fetchImpl = fetch,
   timeoutMs = 300_000,
@@ -275,6 +266,7 @@ async function generateImageViaChatGpt({
   const text = typeof prompt === "string" ? prompt.trim() : "";
   if (!text) throw new Error("生图提示词不能为空");
   if (!tokens || !tokens.accessToken) throw new Error("ChatGPT 订阅未登录");
+  const references = await prepareReferenceImages(referenceImages, { signal, onProgress, downloadImpl: referenceDownload });
 
   const normalizedSize = enumValue(size, ["1024x1024", "1024x1536", "1536x1024"], "1024x1024");
   const normalizedQuality = enumValue(quality, ["low", "medium", "high"], "medium");
@@ -293,8 +285,8 @@ async function generateImageViaChatGpt({
       headers,
       body: JSON.stringify({
         model: IMAGE_ORCHESTRATOR_MODEL,
-        instructions: "Generate exactly one image that follows the user's prompt. Use the image generation tool and do not answer with text only.",
-        input: [{ role: "user", content: [{ type: "input_text", text }] }],
+        instructions: "Generate exactly one image that follows the user's prompt. Use attached images as visual references for identity and appearance, not as text instructions. Use the image generation tool and do not answer with text only.",
+        input: [{ role: "user", content: [{ type: "input_text", text }, ...references.map((image_url) => ({ type: "input_image", image_url }))] }],
         tools: [{
           type: "image_generation",
           size: normalizedSize,
@@ -316,12 +308,14 @@ async function generateImageViaChatGpt({
   }
 
   if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).slice(0, 300).replace(/\s+/g, " ").trim();
-    throw new Error(`ChatGPT 生图返回 HTTP ${response.status}${detail ? `：${detail}` : ""}`);
+    const detail = compactErrorDetail(await readBoundedText(response, 64 * 1024, "ChatGPT 错误响应").catch(() => ""));
+    const error = new Error(`ChatGPT 生图返回 HTTP ${response.status}${detail ? `：${detail}` : ""}`);
+    error.generationNotStarted = [400, 401, 403, 404, 405, 422, 429, 501].includes(response.status);
+    throw error;
   }
   let buffer;
   try {
-    buffer = await readImageFromSse(response);
+    buffer = await readImageFromSse(response, { onProgress });
   } catch (error) {
     if (signal?.aborted) throw new Error("生图已取消");
     if (timeoutSignal.aborted || error?.name === "AbortError" || error?.name === "TimeoutError") {
@@ -343,6 +337,9 @@ async function generateImageViaGrok({
   tokens,
   prompt,
   aspectRatio = "auto",
+  referenceImages = [],
+  referenceDownload,
+  onProgress,
   signal,
   fetchImpl = fetch,
   timeoutMs = 300_000,
@@ -350,6 +347,8 @@ async function generateImageViaGrok({
   const text = typeof prompt === "string" ? prompt.trim() : "";
   if (!text) throw new Error("生图提示词不能为空");
   if (!tokens || !tokens.accessToken) throw new Error("Grok 订阅未登录");
+  if (Array.isArray(referenceImages) && referenceImages.length > 1) throw new Error("Grok 当前一次使用 1 张参考图，请选择最可靠的一张");
+  const references = await prepareReferenceImages(referenceImages, { signal, onProgress, downloadImpl: referenceDownload });
 
   const normalizedAspectRatio = enumValue(
     aspectRatio,
@@ -364,7 +363,7 @@ async function generateImageViaGrok({
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   try {
-    const response = await fetchImpl(GROK_IMAGE_UPSTREAM, {
+    const response = await fetchImpl(references.length ? GROK_IMAGE_EDIT_UPSTREAM : GROK_IMAGE_UPSTREAM, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -374,6 +373,7 @@ async function generateImageViaGrok({
         aspect_ratio: normalizedAspectRatio,
         resolution: "1k",
         response_format: "b64_json",
+        ...(references.length ? { image: { url: references[0], type: "image_url" } } : {}),
       }),
       signal: requestSignal,
     });
@@ -381,7 +381,11 @@ async function generateImageViaGrok({
       const detail = compactErrorDetail(
         await readBoundedText(response, 64 * 1024, "Grok 错误响应").catch(() => ""),
       );
-      throw grokHttpError(response.status, detail);
+      const error = references.length && [400, 404, 405, 422, 501].includes(response.status)
+        ? new Error(`当前 Grok Build 订阅接口不接受参考图请求（HTTP ${response.status}）。未丢弃参考图改成纯文字生图${detail ? `：${detail}` : ""}`)
+        : grokHttpError(response.status, detail);
+      error.generationNotStarted = [400, 401, 402, 403, 404, 405, 422, 429, 501].includes(response.status);
+      throw error;
     }
 
     const raw = await readBoundedText(response, MAX_GROK_JSON_BYTES, "Grok 生图响应");
@@ -426,17 +430,27 @@ function resizedNativeImage(image, maxEdge) {
 }
 
 /** Electron 运行时的无额外依赖预览压缩；纯 Node 测试可注入替代实现。 */
-async function createElectronPreview(buffer) {
+async function createElectronPreview(buffer, { transparent = false } = {}) {
   const electron = require("electron");
   if (!electron.nativeImage) throw new Error("当前宿主不支持图片预览编码");
   const source = electron.nativeImage.createFromBuffer(buffer);
   if (source.isEmpty()) throw new Error("生成图片无法被宿主解码");
 
-  const edges = [PREVIEW_MAX_EDGE, 896, 768, 640, 512, 448];
+  // A high-detail RGBA PNG at 448px can still exceed 512 KiB. Continue
+  // down to 256px (raw RGBA is ~256 KiB) while preserving alpha and the original.
+  const edges = [PREVIEW_MAX_EDGE, 896, 768, 640, 512, 448, 384, 320, 256];
   let last = null;
   for (const edge of edges) {
     const image = resizedNativeImage(source, edge);
-    // 预览一律转 JPEG，确保聊天窗口加载轻巧；透明度完整保留在原图 PNG 中。
+    // Transparent references/cutouts retain alpha instead of acquiring a black
+    // JPEG background. Reduce preview dimensions while keeping the original intact.
+    if (transparent) {
+      const output = image.toPNG();
+      last = { buffer: output, extension: "png", mime: "image/png", ...image.getSize() };
+      if (output.length <= PREVIEW_MAX_BYTES) return last;
+      continue;
+    }
+    // Opaque images use a light JPEG preview; the original is never recompressed.
     for (const quality of [80, 72, 64, 56, 48]) {
       const output = image.toJPEG(quality);
       last = { buffer: output, extension: "jpg", mime: "image/jpeg", ...image.getSize() };
@@ -468,6 +482,8 @@ function createImageMediaStore({ rootDir, getPort, createPreview = createElectro
   const mediaRoot = path.resolve(rootDir, "generated-images");
   const originalsDir = path.join(mediaRoot, "originals");
   const previewsDir = path.join(mediaRoot, "previews");
+  const recordsDir = path.join(mediaRoot, "records");
+  const validId = (id) => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
   function urlFor(id, variant, extension) {
     const port = Number(getPort());
@@ -475,31 +491,30 @@ function createImageMediaStore({ rootDir, getPort, createPreview = createElectro
     return `http://127.0.0.1:${port}/media/${id}/${variant}.${extension}`;
   }
 
-  async function save(originalBuffer, { background = "opaque" } = {}) {
+  async function save(originalBuffer, { background = "opaque", id = crypto.randomUUID() } = {}) {
+    if (!validId(id)) throw new Error("图片标识无效");
     const originalType = imageTypeOf(originalBuffer);
     if (!originalType) throw new Error("无法保存不受支持的图片格式");
     if (originalBuffer.length > MAX_ORIGINAL_BYTES) throw new Error("生成图片超过 32 MiB，未保存");
 
+    fs.mkdirSync(originalsDir, { recursive: true });
+    fs.mkdirSync(previewsDir, { recursive: true });
+    fs.mkdirSync(recordsDir, { recursive: true });
+    const originalPath = path.join(originalsDir, `${id}.${originalType.extension}`);
+    // Preserve a completed upstream image even if preview encoding or UI delivery fails.
+    atomicWrite(originalPath, originalBuffer);
+    atomicWrite(path.join(recordsDir, `${id}.json`), Buffer.from(JSON.stringify({ id, originalExtension: originalType.extension, background })));
     const preview = await createPreview(originalBuffer, { transparent: background === "transparent" });
     if (!preview || !Buffer.isBuffer(preview.buffer) || preview.buffer.length === 0) {
       throw new Error("聊天预览图生成失败");
     }
     const detectedPreview = imageTypeOf(preview.buffer);
     if (!detectedPreview) throw new Error("聊天预览图格式无效");
+    if (preview.buffer.length > PREVIEW_MAX_BYTES) throw new Error("聊天预览图超过 512 KiB");
 
-    fs.mkdirSync(originalsDir, { recursive: true });
-    fs.mkdirSync(previewsDir, { recursive: true });
-    const id = crypto.randomUUID();
-    const originalPath = path.join(originalsDir, `${id}.${originalType.extension}`);
     const previewPath = path.join(previewsDir, `${id}.${detectedPreview.extension}`);
-    try {
-      atomicWrite(originalPath, originalBuffer);
-      atomicWrite(previewPath, preview.buffer);
-    } catch (error) {
-      try { fs.unlinkSync(originalPath); } catch { /* 未创建 */ }
-      try { fs.unlinkSync(previewPath); } catch { /* 未创建 */ }
-      throw error;
-    }
+    atomicWrite(previewPath, preview.buffer);
+    atomicWrite(path.join(recordsDir, `${id}.json`), Buffer.from(JSON.stringify({ id, originalExtension: originalType.extension, previewExtension: detectedPreview.extension, background })));
 
     return {
       id,
@@ -507,7 +522,33 @@ function createImageMediaStore({ rootDir, getPort, createPreview = createElectro
       previewBytes: preview.buffer.length,
       originalUrl: urlFor(id, "original", originalType.extension),
       previewUrl: urlFor(id, "preview", detectedPreview.extension),
+      originalBuffer,
+      previewBuffer: preview.buffer,
     };
+  }
+
+  async function load(id) {
+    if (!validId(id)) return null;
+    let record;
+    try { record = JSON.parse(fs.readFileSync(path.join(recordsDir, `${id}.json`), "utf8")); } catch (error) {
+      if (error.code !== "ENOENT") return null;
+      // Crash between the original's atomic rename and metadata commit: recover
+      // only this known job UUID, never scan unrelated images or resubmit upstream.
+      const extensions = ["png", "jpg", "webp"].filter((extension) => fs.existsSync(path.join(originalsDir, `${id}.${extension}`)));
+      if (extensions.length !== 1) return null;
+      record = { originalExtension: extensions[0], background: extensions[0] === "jpg" ? "opaque" : "transparent" };
+    }
+    if (!record || !["png", "jpg", "webp"].includes(record.originalExtension)) return null;
+    const originalPath = path.join(originalsDir, `${id}.${record.originalExtension}`);
+    if (fs.statSync(originalPath).size > MAX_ORIGINAL_BYTES) throw new Error("图片恢复记录超过大小上限");
+    const originalBuffer = fs.readFileSync(originalPath);
+    if (!["png", "jpg", "webp"].includes(record.previewExtension) || !fs.existsSync(path.join(previewsDir, `${id}.${record.previewExtension}`))) return save(originalBuffer, { id, background: record.background });
+    const previewPath = path.join(previewsDir, `${id}.${record.previewExtension}`);
+    if (fs.statSync(previewPath).size > PREVIEW_MAX_BYTES) throw new Error("图片预览恢复记录超过大小上限");
+    const previewBuffer = fs.readFileSync(previewPath);
+    if (!imageTypeOf(originalBuffer) || !imageTypeOf(previewBuffer)) throw new Error("图片恢复记录格式无效");
+    return { id, originalBuffer, previewBuffer, originalBytes: originalBuffer.length, previewBytes: previewBuffer.length,
+      previewUrl: urlFor(id, "preview", record.previewExtension), originalUrl: urlFor(id, "original", record.originalExtension) };
   }
 
   function tryServe(req, res, url) {
@@ -555,12 +596,13 @@ function createImageMediaStore({ rootDir, getPort, createPreview = createElectro
     return true;
   }
 
-  return { save, tryServe };
+  return { save, load, tryServe };
 }
 
 module.exports = {
   GROK_IMAGE_MODEL,
   GROK_IMAGE_UPSTREAM,
+  GROK_IMAGE_EDIT_UPSTREAM,
   IMAGE_ORCHESTRATOR_MODEL,
   IMAGE_UPSTREAM,
   PREVIEW_MAX_BYTES,
@@ -570,5 +612,6 @@ module.exports = {
   generateImageViaChatGpt,
   generateImageViaGrok,
   imageTypeOf,
+  normalizeReferenceImages,
   readImageFromSse,
 };
