@@ -33,11 +33,11 @@ function urnName(urn, kind) {
 function sha1short(s) {
   return crypto.createHash("sha1").update(String(s)).digest("hex").slice(0, 16);
 }
-async function fetchJson(url) {
+async function fetchJson(url, signal) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const resp = await fetch(url, { signal: ctrl.signal, headers: { accept: "application/json" } });
+    const resp = await fetch(url, { signal: AbortSignal.any([ctrl.signal, signal].filter(Boolean)), headers: { accept: "application/json" } });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return await resp.json();
   } finally {
@@ -296,8 +296,9 @@ function extractControls(spec, model) {
 // ── spec 管理器（带落盘缓存）────────────────────────────────────────
 function createSpecManager(opts) {
   const o = opts || {};
+  const signal = o.signal;
   const store = o.storage || {}; // {get(key), set(key,val)}
-  const log = typeof o.log === "function" ? o.log : () => {};
+  const log = (message) => { if (!signal?.aborted && typeof o.log === "function") o.log(message); };
   let index = null; // {fetchedAt, map:{model:urn}}
   const specs = new Map(); // urn → descriptor
   let refreshedForMiss = false; // 本次会话内，索引缺 model 时最多强制刷新一次
@@ -306,14 +307,14 @@ function createSpecManager(opts) {
 
   async function doLoadIndex() {
     try {
-      const data = await fetchJson(INSTANCES_URL);
+      const data = await fetchJson(INSTANCES_URL, signal);
       const map = {};
       for (const it of Array.isArray(data && data.instances) ? data.instances : []) {
         if (it && it.model && it.type) map[String(it.model)] = String(it.type);
       }
       index = { fetchedAt: Date.now(), map };
       try {
-        if (store.set) await store.set("spec-index", index);
+        if (store.set && !signal?.aborted) await store.set("spec-index", index);
       } catch {
         /* 落盘失败不影响使用 */
       }
@@ -334,6 +335,7 @@ function createSpecManager(opts) {
   }
 
   async function loadIndex(force) {
+    if (signal?.aborted) return index || { fetchedAt: 0, map: {} };
     if (index && !force && Date.now() - (index.fetchedAt || 0) < INDEX_TTL_MS) return index;
     if (indexPromise) return indexPromise; // 已有下载在途，复用同一个 promise
     indexPromise = doLoadIndex().finally(() => {
@@ -358,7 +360,7 @@ function createSpecManager(opts) {
   // 返回控件描述符；无 spec 时返回 {noSpec:true,...}，绝不抛异常。
   async function getSpec(model) {
     const m = String(model || "");
-    if (!m) return extractControls(null, m);
+    if (!m || signal?.aborted) return extractControls(null, m);
     const urn = await resolveUrn(m);
     if (!urn) return extractControls(null, m);
     if (specs.has(urn)) return specs.get(urn);
@@ -367,10 +369,10 @@ function createSpecManager(opts) {
       const ck = "spec-" + sha1short(urn);
       if (store.get) spec = store.get(ck);
       if (!spec || !Array.isArray(spec.services)) {
-        spec = await fetchJson(`${INSTANCE_URL}?type=${encodeURIComponent(urn)}`);
+        spec = await fetchJson(`${INSTANCE_URL}?type=${encodeURIComponent(urn)}`, signal);
         if (spec && Array.isArray(spec.services)) {
           try {
-            if (store.set) await store.set(ck, spec);
+            if (store.set && !signal?.aborted) await store.set(ck, spec);
           } catch {
             /* 忽略 */
           }
@@ -386,6 +388,7 @@ function createSpecManager(opts) {
   }
 
   async function init() {
+    if (signal?.aborted) return;
     try {
       index = store.get ? store.get("spec-index") : null;
     } catch {
