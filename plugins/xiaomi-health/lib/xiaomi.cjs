@@ -12,6 +12,7 @@
  */
 
 const { createDecipheriv, createHash, randomBytes } = require("node:crypto");
+const { setTimeout: delay } = require("node:timers/promises");
 
 const API_BASE_CN = "https://hlth.io.mi.com";
 const STS_URL = "https://sts-hlth.io.mi.com/healthapp/sts";
@@ -68,8 +69,8 @@ function parseValue(value) {
     return {};
   }
 }
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms, signal) {
+  return delay(ms, undefined, { signal });
 }
 
 // ── 加密原语：RC4 drop-1024（纯 JS，新版 OpenSSL 已移除 RC4）+ AES 走 node:crypto ──
@@ -226,9 +227,14 @@ function windowArguments(queryDateOrDays, days = 1) {
   if (typeof queryDateOrDays === "number") return [new Date(), Math.max(1, queryDateOrDays)];
   return [queryDateOrDays ?? new Date(), Math.max(1, days)];
 }
+const CN_OFFSET_MS = 8 * 60 * 60 * 1000;
+function chinaDate(date) {
+  return new Date(date.getTime() + CN_OFFSET_MS).toISOString().slice(0, 10);
+}
 function dateWindow(days, queryDate = new Date()) {
+  const cnDate = new Date(queryDate.getTime() + CN_OFFSET_MS);
   const endDate = new Date(
-    Date.UTC(queryDate.getUTCFullYear(), queryDate.getUTCMonth(), queryDate.getUTCDate() + 1, 0, 0, 0),
+    Date.UTC(cnDate.getUTCFullYear(), cnDate.getUTCMonth(), cnDate.getUTCDate() + 1) - CN_OFFSET_MS,
   );
   const end = Math.floor(endDate.getTime() / 1000) - 1;
   const windowDays = Math.max(1, days);
@@ -250,7 +256,7 @@ class XiaomiHttp {
     if (this.cookies.size) headers.set("cookie", [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "));
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), XIAOMI_REQUEST_TIMEOUT_MS);
-    const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
+    const signal = AbortSignal.any([controller.signal, this.signal, init.signal].filter(Boolean));
     try {
       const response = await fetch(url, { ...init, headers, redirect: "manual", signal });
       for (const cookie of response.headers.getSetCookie?.() ?? []) {
@@ -280,7 +286,8 @@ function parseMiResponse(text) {
 
 // ── 认证：扫码登录 + STS 交换 + passToken 刷新 ──────────────────────
 class XiaomiAuth {
-  constructor(token) {
+  constructor(token, options = {}) {
+    this.signal = options.signal;
     this.token = token || {
       user_id: "",
       c_user_id: "",
@@ -290,6 +297,7 @@ class XiaomiAuth {
       device_id: `an_${randomBytes(16).toString("hex")}`,
     };
     this.http = new XiaomiHttp({ "user-agent": LOGIN_UA, "content-type": "application/x-www-form-urlencoded" });
+    this.http.signal = this.signal;
   }
   get isAuthenticated() {
     return Boolean(this.token.service_token && this.token.ssecurity);
@@ -329,9 +337,10 @@ class XiaomiAuth {
       try {
         response = await this.http.request(pollingUrl);
         if (response.status === 200) break;
-        await sleep(2000);
+        await sleep(2000, this.http.signal);
       } catch {
-        await sleep(2000);
+        this.http.signal?.throwIfAborted();
+        await sleep(2000, this.http.signal);
       }
     }
     if (!response || response.status !== 200) throw new XiaomiError("Xiaomi QR login timed out");
@@ -422,6 +431,7 @@ class MiHealthClient {
     this.auth = auth;
     this.baseUrl = baseUrl;
     this.http = new XiaomiHttp({ "user-agent": DEFAULT_UA, region_tag: "cn", handleparams: "true" });
+    this.http.signal = auth.signal;
     this._refreshPromise = undefined;
   }
   async request(method, path, params, retry = true) {
@@ -510,7 +520,7 @@ class MiHealthClient {
       grab(this.getSleep(uid, queryDate)),
       grab(this.getSteps(uid, queryDate)),
     ]);
-    return { date: queryDate.toISOString().slice(0, 10), relative_uid: uid, heart_rate: heartRate, sleep, steps };
+    return { date: chinaDate(queryDate), relative_uid: uid, heart_rate: heartRate, sleep, steps };
   }
 }
 
@@ -525,5 +535,6 @@ module.exports = {
   FamilyMemberNotFoundError,
   XiaomiAuth,
   MiHealthClient,
+  chinaDate,
   __internals: { rc4, signedNonce, encryptedParams, decryptResponse, sha1Base64, signatureMessage },
 };
