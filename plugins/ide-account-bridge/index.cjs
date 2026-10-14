@@ -1966,6 +1966,9 @@ function createQoderShim(options) {
     invalidateCredential,
     region,
     logger,
+    // Called once per request before routing. Absent on the Pi port, which
+    // refreshes from `auth.apiKey.resolve()` instead.
+    refreshCatalog,
     // Endpoint stability. Both are optional so the Pi port keeps its original
     // per-process behaviour; Cyrene persists them so a model profile survives a
     // restart. `preferredPort` is only a preference — a busy port falls back to
@@ -2041,6 +2044,13 @@ function createQoderShim(options) {
     if (!bearerOk(req)) {
       writeError(res, 401, "unauthorized", "missing or invalid Authorization bearer");
       return;
+    }
+    if (typeof refreshCatalog === "function") {
+      try {
+        await refreshCatalog();
+      } catch (error) {
+        logger?.warn?.(`dsh-connect-qoder: ${region.displayName} \u8BF7\u6C42\u524D\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55`, error);
+      }
     }
     const url = req.url ?? "/";
     if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) {
@@ -2365,6 +2375,9 @@ var RegionRuntime = class {
       resolveEnabledIds: () => [],
       invalidateCredential: () => this.credentials.invalidate(),
       logger: this.logger,
+      // Lets a request refresh the directory, mirroring what the Pi port does
+      // from `auth.apiKey.resolve()`. TTL-gated inside `refreshCatalog`.
+      refreshCatalog: () => this.refreshCatalog(),
       ...this.endpoints === void 0 ? {} : {
         secret: this.endpoints.tokenFor(this.region.id),
         preferredPort: this.endpoints.preferredPortFor(this.region.id, this.portIndex)
@@ -3696,6 +3709,7 @@ function readBody2(req) {
 function createTraeShim(options) {
   const injectedSecret = options?.["secret"];
   const preferredPort = options?.["preferredPort"];
+  const refreshCatalog = options?.["refreshCatalog"];
   const secret = typeof injectedSecret === "string" && injectedSecret.length > 0 ? injectedSecret : (0, import_node_crypto5.randomBytes)(32).toString("base64url");
   const sockets = /* @__PURE__ */ new Set();
   const server = (0, import_node_http2.createServer)((req, res) => {
@@ -3745,6 +3759,13 @@ function createTraeShim(options) {
       if (!hostIsLoopback2(req.headers.host)) return writeError2(res, 403, "host_not_allowed", "Host must be loopback");
       if (!originIsLoopback2(req.headers.origin)) return writeError2(res, 403, "origin_not_allowed", "Origin must be loopback");
       if (!bearerOk(req)) return writeError2(res, 401, "unauthorized", "Missing or invalid bearer");
+      if (typeof refreshCatalog === "function") {
+        try {
+          await refreshCatalog();
+        } catch (error) {
+          options?.logger?.warn?.("dsh-connect-trae: \u8BF7\u6C42\u524D\u6A21\u578B\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55", error);
+        }
+      }
       const url = req.url ?? "/";
       if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) return writeJson(res, 200, { ok: true });
       if (req.method === "GET" && (url === "/v1/models" || url === "/v1/models/")) return writeJson(res, 200, {
@@ -4873,10 +4894,12 @@ function toCheckin(status) {
 
 // src/trae/runtime.js
 var REGION_KEYS = ["cn", "ai"];
+var CATALOG_TTL_MS2 = 30 * 60 * 1e3;
 var RegionStack = class {
   constructor(region, logger, cacheRoot, endpoints, portIndex = 0) {
     this.endpoints = endpoints;
     this.portIndex = portIndex;
+    this.modelsDiscoveredAt = 0;
     this.region = region;
     this.logger = logger;
     this.catalog = new TraeCatalog(region);
@@ -4926,6 +4949,9 @@ var RegionStack = class {
       catalog: this.catalog,
       client: this.delegating,
       logger: this.logger,
+      // Lets a request refresh the directory, mirroring what the Pi port does
+      // from `auth.apiKey.resolve()`.
+      refreshCatalog: () => this.refreshCatalog(),
       // Absent on the Pi port, which keeps its original random-per-process
       // behaviour.
       ...this.endpoints === void 0 ? {} : {
@@ -4960,6 +4986,7 @@ var RegionStack = class {
       this.modelsReady = this.discoverModels().then((models) => {
         if (models.length > 0) {
           this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
+          this.modelsDiscoveredAt = Date.now();
         }
         return true;
       }).catch((error) => {
@@ -4970,6 +4997,22 @@ var RegionStack = class {
     }
     await this.modelsReady;
     return shim;
+  }
+  /**
+   * Re-discover the model directory when it has gone stale.
+   *
+   * Called once per request from the shim, the way the Pi port refreshes from
+   * `auth.apiKey.resolve()`. TTL-gated, so inside the window this is a no-op and
+   * costs nothing. On failure `modelsDiscoveredAt` is left alone, so the next
+   * request retries — same "keep the last good directory" behaviour as the
+   * Qoder side.
+   *
+   * @returns the shim when a discovery ran, or `null` when this was a no-op.
+   */
+  async refreshCatalog() {
+    if (this.modelsReady !== void 0 && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
+    this.modelsReady = void 0;
+    return this.ensureReady();
   }
   /**
    * The loopback base URL when the shim is running, or a placeholder.
