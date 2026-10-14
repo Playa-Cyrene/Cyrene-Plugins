@@ -13,6 +13,7 @@
  */
 
 const { createHash, randomBytes } = require("node:crypto");
+const { setTimeout: delay } = require("node:timers/promises");
 
 const ACCOUNT_BASE = "https://account.xiaomi.com";
 const QR_URL = `${ACCOUNT_BASE}/longPolling/loginUrl`;
@@ -50,8 +51,8 @@ function numberValue(value, fallback = 0) {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms, signal) {
+  return delay(ms, undefined, { signal });
 }
 function jsonEncode(data) {
   return JSON.stringify(data);
@@ -146,7 +147,7 @@ class MiHttp {
     if (this.cookies.size) headers.set("cookie", [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const signal = init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal;
+    const signal = AbortSignal.any([controller.signal, this.signal, init.signal].filter(Boolean));
     try {
       const response = await fetch(url, { ...init, headers, redirect: "manual", signal });
       for (const cookie of response.headers.getSetCookie?.() ?? []) {
@@ -154,7 +155,9 @@ class MiHttp {
         const idx = pair.indexOf("=");
         if (idx > 0) this.cookies.set(pair.slice(0, idx), pair.slice(idx + 1));
       }
-      return response;
+      // Keep the timeout and session cancellation active while reading the body.
+      const body = await response.arrayBuffer();
+      return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
     } finally {
       clearTimeout(timer);
     }
@@ -166,7 +169,8 @@ class MiHttp {
 
 // ── 认证：扫码登录（sid=xiaomiio）+ passToken 刷新 ─────────────────────
 class MiCloudAuth {
-  constructor(token) {
+  constructor(token, options = {}) {
+    this.signal = options.signal;
     this.token = token || {
       user_id: "",
       c_user_id: "",
@@ -176,6 +180,7 @@ class MiCloudAuth {
       device_id: `an_${randomBytes(16).toString("hex")}`,
     };
     this.http = new MiHttp({ "user-agent": LOGIN_UA, "content-type": "application/x-www-form-urlencoded" });
+    this.http.signal = this.signal;
   }
   get isAuthenticated() {
     return Boolean(this.token.service_token && this.token.ssecurity && this.token.user_id);
@@ -214,9 +219,10 @@ class MiCloudAuth {
       try {
         resp = await this.http.request(pollingUrl);
         if (resp.status === 200) break;
-        await sleep(2000);
+        await sleep(2000, this.http.signal);
       } catch {
-        await sleep(2000);
+        this.http.signal?.throwIfAborted();
+        await sleep(2000, this.http.signal);
       }
     }
     if (!resp || resp.status !== 200) throw new MiCloudError("Xiaomi QR login timed out");
@@ -281,6 +287,7 @@ class MiCloudClient {
       "x-xiaomi-protocal-flag-cli": "PROTOCAL-HTTP2",
     });
     this._refreshPromise = undefined;
+    this.http.signal = auth.signal;
   }
   _syncCookies() {
     const t = this.auth.token;

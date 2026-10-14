@@ -21,6 +21,7 @@
 const os = require("node:os");
 const path = require("node:path");
 const dgram = require("node:dgram");
+const { createSession } = require("./lib/session.cjs");
 const { MiCloudAuth, MiCloudClient, TokenExpiredError } = require("./lib/micloud.cjs");
 const { createSpecManager } = require("./lib/miot_spec.cjs");
 
@@ -47,6 +48,8 @@ let client = null;
 let pluginWin = null;
 let scanTimer = null;
 let winControlsInstalled = false;
+let removeWindowControls = null;
+let session = null;
 
 const login = { state: "idle", qr: "", loginUrl: "", error: "" };
 const cache = {
@@ -56,6 +59,21 @@ const cache = {
   lastError: "",
   lanIps: [],
 };
+
+function isCurrent(snapshot) {
+  return Boolean(session && snapshot && session.isCurrent(snapshot));
+}
+function renewSession() {
+  const snapshot = session.renew();
+  auth = null;
+  client = null;
+  cache.devices = [];
+  cache.roomMap = {};
+  cache.fetchedAt = 0;
+  cache.lastError = "";
+  cache.lanIps = [];
+  return snapshot;
+}
 
 // ── 偏好 ────────────────────────────────────────────────────────
 function sanitizePrefs(raw) {
@@ -79,7 +97,12 @@ function writePrefs(prefs) {
 // ── token / 客户端 ───────────────────────────────────────────────
 async function loadToken() {
   if (!ctxRef || !ctxRef.deps.secrets) return null;
-  const raw = await ctxRef.deps.secrets.get(TOKEN_SECRET_KEY);
+  const owner = ctxRef;
+  const snapshot = session.capture();
+  await session.drain();
+  if (!isCurrent(snapshot)) return null;
+  const raw = await owner.deps.secrets.get(TOKEN_SECRET_KEY);
+  if (!isCurrent(snapshot)) return null;
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -88,17 +111,21 @@ async function loadToken() {
   }
 }
 async function ensureClient() {
+  const snapshot = session && session.capture();
+  if (!isCurrent(snapshot) || login.state === "connecting" || login.state === "scanning") return null;
   const token = await loadToken();
+  if (!isCurrent(snapshot)) return null;
   if (!token || !token.service_token || !token.ssecurity || !token.user_id) return null;
-  if (!auth) auth = new MiCloudAuth(token);
+  if (!auth) auth = new MiCloudAuth(token, { signal: snapshot.signal });
   if (!client) client = new MiCloudClient(auth);
   return client;
 }
-async function persistToken(token) {
-  if (!token || !ctxRef || !ctxRef.deps.secrets) return;
-  await ctxRef.deps.secrets.set(TOKEN_SECRET_KEY, JSON.stringify(token));
+async function persistToken(token, snapshot) {
+  if (!token || !isCurrent(snapshot)) return false;
+  if (!await session.save(token, snapshot) || !isCurrent(snapshot)) return false;
   auth = null;
   client = null;
+  return true;
 }
 
 // ── 网络 / 蓝牙检测 ───────────────────────────────────────────────
@@ -160,11 +187,12 @@ function normalizeDevice(d, roomMap) {
 }
 
 // ── 云端扫描 ──────────────────────────────────────────────────────
-async function scanCloud() {
+async function scanCloud(snapshot = session && session.capture()) {
   const c = await ensureClient();
-  if (!c) return { ok: false, error: "尚未连接" };
+  if (!c || !isCurrent(snapshot)) return { ok: false, error: "尚未连接" };
   try {
     const [devices, roomMap] = await Promise.all([c.getDevices(), c.getRoomMap()]);
+    if (!isCurrent(snapshot)) return { ok: false, error: "会话已变更，已丢弃旧数据" };
     cache.roomMap = roomMap;
     const norm = devices.map((d) => normalizeDevice(d, roomMap));
     // 合并此前局域网发现的设备（按 did/ip 去重）
@@ -177,19 +205,21 @@ async function scanCloud() {
     cache.lastError = "";
     broadcastDevices();
     if (ctxRef) ctxRef.log(`米家云扫描：${norm.length} 台设备`);
-    void enrichDeviceSpecs(); // 后台按 spec 标注可控性，完成后再次广播
+    void enrichDeviceSpecs(snapshot); // 后台按 spec 标注可控性，完成后再次广播
     return { ok: true, count: norm.length };
   } catch (err) {
+    if (!isCurrent(snapshot)) return { ok: false, error: "请求已取消" };
     cache.lastError = err && err.message ? err.message : String(err);
-    if (err instanceof TokenExpiredError) await persistToken(auth ? auth.token : null);
+    if (err instanceof TokenExpiredError) await persistToken(auth ? auth.token : null, snapshot);
     if (ctxRef) ctxRef.log(`米家云扫描失败：${cache.lastError}`);
     return { ok: false, error: cache.lastError };
   }
 }
 
 // ── 局域网扫描（best-effort：向 54321 广播 miio hello，记录应答 IP）──────
-function scanLan(timeoutMs = 2500) {
+function scanLan(timeoutMs = 2500, snapshot = session && session.capture()) {
   return new Promise((resolve) => {
+    if (!isCurrent(snapshot)) { resolve([]); return; }
     let sock;
     try {
       sock = dgram.createSocket({ type: "udp4", reuseAddr: true });
@@ -198,17 +228,23 @@ function scanLan(timeoutMs = 2500) {
       return;
     }
     const found = new Map();
-    const hello = Buffer.from([0x21, 0x31, 0x00, 0x20, 0xff, 0xff, 0xff, 0xff]);
+    const hello = Buffer.alloc(32, 0xff);
+    hello.writeUInt16BE(0x2131, 0);
+    hello.writeUInt16BE(hello.length, 2);
     let done = false;
+    let timer;
     const finish = () => {
       if (done) return;
       done = true;
+      clearTimeout(timer);
+      snapshot.signal.removeEventListener("abort", finish);
       try {
         sock.close();
       } catch {
         /* 忽略 */
       }
       const list = [...found.values()];
+      if (!isCurrent(snapshot)) { resolve([]); return; }
       cache.lanIps = list.map((x) => x.localip);
       // 把局域网发现但云端没有的设备并入缓存（占位，可后续补全）
       const known = new Set(cache.devices.map((d) => d.localip).filter(Boolean));
@@ -238,7 +274,14 @@ function scanLan(timeoutMs = 2500) {
       }
     });
     sock.on("error", finish);
+    snapshot.signal.addEventListener("abort", finish, { once: true });
+    timer = setTimeout(finish, timeoutMs);
     sock.bind(0, () => {
+      if (done || !isCurrent(snapshot)) {
+        try { sock.close(); } catch { /* bind may complete after cancellation */ }
+        finish();
+        return;
+      }
       try {
         sock.setBroadcast(true);
         sock.send(hello, 0, hello.length, 54321, "255.255.255.255", () => {});
@@ -246,29 +289,33 @@ function scanLan(timeoutMs = 2500) {
         /* 忽略 */
       }
     });
-    setTimeout(finish, timeoutMs);
   });
 }
 
 async function fullScan() {
-  await scanCloud();
-  void scanLan();
+  const snapshot = session && session.capture();
+  const result = await scanCloud(snapshot);
+  if (isCurrent(snapshot)) void scanLan(2500, snapshot);
+  return result;
 }
 
 // ── 按 MIoT-Spec 标注设备可控性（异步、不阻断首屏）──────────────
 // 为每台设备回填 hasControl / noSpec：面板与 AI 清单据此区分“可操控 / 仅展示 / 未知”。
-async function enrichDeviceSpecs() {
-  if (!spec) return;
+async function enrichDeviceSpecs(snapshot = session && session.capture()) {
+  const manager = spec;
+  if (!manager || !isCurrent(snapshot)) return;
   const models = [...new Set(cache.devices.filter((d) => d.source === "cloud" && d.model).map((d) => d.model))];
   if (!models.length) return;
   const descByModel = {};
   for (const m of models) {
+    if (!isCurrent(snapshot)) return;
     try {
-      descByModel[m] = await spec.getSpec(m);
+      descByModel[m] = await manager.getSpec(m);
     } catch {
       /* 单台失败不影响其余 */
     }
   }
+  if (!isCurrent(snapshot)) return;
   let changed = false;
   for (const d of cache.devices) {
     const desc = descByModel[d.model];
@@ -289,13 +336,13 @@ function resolveDevice(query) {
   if (!q) return { error: "未指定设备" };
   const list = cache.devices;
   let hit = list.find((d) => d.did === q);
-  if (!hit) hit = list.find((d) => d.name === q);
-  if (!hit) hit = list.find((d) => d.name.includes(q) || q.includes(d.name));
   if (!hit) {
-    const cands = list.filter((d) => d.name.includes(q) || d.model.includes(q));
+    const exact = list.filter((d) => d.name === q);
+    const cands = exact.length ? exact : list.filter((d) =>
+      (d.name && (d.name.includes(q) || q.includes(d.name))) || d.model.includes(q));
     if (cands.length === 1) hit = cands[0];
     else if (cands.length > 1)
-      return { error: `匹配到多台设备：${cands.map((d) => d.name).join("、")}，请更精确指定` };
+      return { error: `匹配到多台设备：${cands.map((d) => `${d.room}·${d.name}(did=${d.did})`).join("、")}，请用 did 指定` };
   }
   if (!hit) return { error: `未找到设备：${q}` };
   if (hit.source === "lan") return { error: `局域网设备 ${hit.name} 尚未在云端登记，无法下发控制` };
@@ -317,26 +364,30 @@ async function powerOf(model) {
   }
   return { ...DEFAULT_POWER };
 }
-async function setPower(did, on, power) {
+async function setPower(did, on, power, snapshot) {
   const c = await ensureClient();
-  if (!c) return { ok: false, error: "尚未连接米家" };
+  if (!c || !isCurrent(snapshot)) return { ok: false, error: "会话已变更或尚未连接米家" };
   const p = power || DEFAULT_POWER;
   const r = await c.setProp(did, p.siid, p.piid, on);
   const code = r && r.code;
-  return code === 0 || code === undefined
+  return r && code === 0 && isCurrent(snapshot)
     ? { ok: true, value: r && r.value }
-    : { ok: false, error: controlErr(code) };
+    : { ok: false, error: isCurrent(snapshot) ? controlErr(code) : "会话已变更，无法确认结果" };
 }
-async function getPower(did, power) {
+async function getPower(did, power, snapshot) {
   const c = await ensureClient();
-  if (!c) return { ok: false, error: "尚未连接米家" };
+  if (!c || !isCurrent(snapshot)) return { ok: false, error: "会话已变更或尚未连接米家" };
   const p = power || DEFAULT_POWER;
   const [r] = await c.getProps([{ did, siid: p.siid, piid: p.piid }]);
-  return { ok: true, value: r ? r.value : undefined, code: r ? r.code : undefined };
+  if (!isCurrent(snapshot)) return { ok: false, error: "会话已变更" };
+  if (!r || r.code !== 0) return { ok: false, error: controlErr(r && r.code) };
+  if (![true, false, 0, 1].includes(r.value)) return { ok: false, error: "设备开关状态未知" };
+  return { ok: true, value: r.value === true || r.value === 1, code: 0 };
 }
 
 // 把常见米家云错误码翻译成人话（控制失败时展示）。
 function controlErr(code) {
+  if (code === undefined || code === null) return "未收到有效的设备应答，无法确认是否执行成功";
   const s = String(code);
   let hint = "";
   if (s.startsWith("-7040")) hint = "（云端无法送达：蓝牙 / 蓝牙 Mesh 设备需家中「蓝牙网关」在线，或设备当前离线）";
@@ -374,18 +425,19 @@ function startLogin() {
     return { ok: true, state: login.state, alreadyRunning: true };
   }
   resetLogin();
-  auth = new MiCloudAuth();
-  client = null;
+  const snapshot = renewSession();
+  const loginAuth = new MiCloudAuth(undefined, { signal: snapshot.signal });
   login.state = "connecting";
   void (async () => {
     try {
-      const token = await auth.loginQr(async (qrImageUrl, loginUrl) => {
+      const token = await loginAuth.loginQr(async (qrImageUrl, loginUrl) => {
+        if (!isCurrent(snapshot)) return;
         login.qr = qrImageUrl || "";
         login.loginUrl = loginUrl || "";
         login.state = "scanning";
         broadcastLoginState();
       }, 300);
-      await persistToken(token);
+      if (!await persistToken(token, snapshot) || !isCurrent(snapshot)) return;
       auth = null;
       client = null;
       login.state = "connected";
@@ -393,6 +445,7 @@ function startLogin() {
       if (ctxRef) ctxRef.log(`米家扫码登录成功：user_id=${token.user_id}`);
       await fullScan();
     } catch (err) {
+      if (!isCurrent(snapshot)) return;
       login.state = "error";
       login.error = err && err.message ? err.message : String(err);
       broadcastLoginState();
@@ -401,20 +454,20 @@ function startLogin() {
   })();
   return { ok: true, state: login.state };
 }
-function cancelLogin() {
+async function cancelLogin() {
+  renewSession();
   resetLogin();
   broadcastLoginState();
+  await session.drain();
   return { ok: true, state: login.state };
 }
 async function logoutAndClear() {
+  const snapshot = renewSession();
   resetLogin();
   if (ctxRef && ctxRef.deps.secrets) {
-    try {
-      await ctxRef.deps.secrets.delete(TOKEN_SECRET_KEY);
-    } catch {
-      /* 忽略 */
-    }
+    await session.clear();
   }
+  if (!isCurrent(snapshot)) return { ok: true, superseded: true };
   auth = null;
   client = null;
   cache.devices = [];
@@ -490,7 +543,7 @@ function startScanLoop() {
   const prefs = readPrefs();
   if (!prefs.autoScan) return;
   scanTimer = setInterval(() => {
-    void fullScan();
+    void fullScan().catch((err) => { if (ctxRef && !ctxRef.signal.aborted) ctxRef.log(`设备扫描失败：${err.message}`); });
   }, prefs.scanIntervalMin * 60 * 1000);
   if (scanTimer.unref) scanTimer.unref();
   if (ctxRef) ctxRef.log(`米家设备扫描已启动（每 ${prefs.scanIntervalMin} 分钟）`);
@@ -506,41 +559,54 @@ function stopScanLoop() {
 function installWindowControls() {
   if (winControlsInstalled) return;
   const { ipcMain } = require("electron");
-  ipcMain.on(WIN_MIN_CHANNEL, () => {
+  const minimize = () => {
     if (pluginWin && !pluginWin.isDestroyed()) pluginWin.minimize();
-  });
-  ipcMain.on(WIN_MAX_CHANNEL, () => {
+  };
+  const maximize = () => {
     if (!pluginWin || pluginWin.isDestroyed()) return;
     if (pluginWin.isMaximized()) pluginWin.unmaximize();
     else pluginWin.maximize();
-  });
-  ipcMain.on(WIN_CLOSE_CHANNEL, () => {
+  };
+  const close = () => {
     if (pluginWin && !pluginWin.isDestroyed()) pluginWin.close();
-  });
+  };
+  ipcMain.on(WIN_MIN_CHANNEL, minimize);
+  ipcMain.on(WIN_MAX_CHANNEL, maximize);
+  ipcMain.on(WIN_CLOSE_CHANNEL, close);
+  removeWindowControls = () => {
+    ipcMain.removeListener(WIN_MIN_CHANNEL, minimize);
+    ipcMain.removeListener(WIN_MAX_CHANNEL, maximize);
+    ipcMain.removeListener(WIN_CLOSE_CHANNEL, close);
+    winControlsInstalled = false;
+    removeWindowControls = null;
+  };
   winControlsInstalled = true;
 }
 
 // ── 工具执行封装 ──────────────────────────────────────────────────
 async function runControl(args) {
+  const snapshot = session && session.capture();
   const c = await ensureClient();
-  if (!c) return "尚未连接米家。请在插件窗口扫码登录后再试。";
+  if (!c || !isCurrent(snapshot)) return "尚未连接米家。请在插件窗口扫码登录后再试。";
   const resolved = resolveDevice(args.device);
   if (resolved.error) return resolved.error;
   const dev = resolved.device;
   const op = String(args.op || "toggle").toLowerCase();
   const power = await powerOf(dev.model);
+  if (!isCurrent(snapshot)) return "会话已变更，操作已取消。";
   const dbg = `${dev.name}(did=${dev.did} model=${dev.model}) op=${op} power=${JSON.stringify(power)}`;
-  const okCode = (code) => code === 0 || code === undefined;
+  const okCode = (code) => code === 0 && isCurrent(snapshot);
   try {
     if (op === "on" || op === "off") {
-      const r = await setPower(dev.did, op === "on", power);
+      const r = await setPower(dev.did, op === "on", power, snapshot);
       if (ctxRef) ctxRef.log(`[control] ${dbg} setPower(${op === "on"}) => ${JSON.stringify(r)}`);
       return r.ok ? `已${op === "on" ? "打开" : "关闭"}：${dev.name}` : `${dev.name} 操作失败：${r.error}`;
     }
     if (op === "toggle") {
-      const cur = await getPower(dev.did, power);
-      const target = !(cur.ok && cur.value === true);
-      const r = await setPower(dev.did, target, power);
+      const cur = await getPower(dev.did, power, snapshot);
+      if (!cur.ok) return `${dev.name} 状态读取失败，未执行切换：${cur.error}`;
+      const target = !cur.value;
+      const r = await setPower(dev.did, target, power, snapshot);
       if (ctxRef) ctxRef.log(`[control] ${dbg} toggle cur=${JSON.stringify(cur)} => ${JSON.stringify(r)}`);
       return r.ok ? `已将 ${dev.name} ${target ? "打开" : "关闭"}` : `${dev.name} 操作失败：${r.error}`;
     }
@@ -574,6 +640,7 @@ async function runControl(args) {
 const mijiaControlPlugin = {
   register(ctx) {
     ctxRef = ctx;
+    session = createSession(ctx, TOKEN_SECRET_KEY);
 
     ctx.registerTool({
       id: `${PLUGIN_ID}_list_devices`,
@@ -586,9 +653,11 @@ const mijiaControlPlugin = {
       chatBuiltin: true,
       inputSchema: { type: "object", properties: {}, required: [] },
       async execute() {
+        const snapshot = session && session.capture();
         const c = await ensureClient();
-        if (!c) return "尚未连接米家。请在插件窗口扫码登录后再试。";
+        if (!c || !isCurrent(snapshot)) return "尚未连接米家。请在插件窗口扫码登录后再试。";
         if (!cache.devices.length) await scanCloud();
+        if (!isCurrent(snapshot)) return "会话已变更，请重新查询。";
         return describeDevices();
       },
     });
@@ -658,8 +727,9 @@ const mijiaControlPlugin = {
         required: ["device"],
       },
       async execute(args) {
+        const snapshot = session && session.capture();
         const c = await ensureClient();
-        if (!c) return "尚未连接米家。";
+        if (!c || !isCurrent(snapshot)) return "尚未连接米家。";
         const resolved = resolveDevice(args.device);
         if (resolved.error) return resolved.error;
         const dev = resolved.device;
@@ -668,6 +738,7 @@ const mijiaControlPlugin = {
           : [{ siid: DEFAULT_POWER.siid, piid: DEFAULT_POWER.piid }];
         try {
           const rls = await c.getProps(props.map((p) => ({ did: dev.did, siid: p.siid, piid: p.piid })));
+          if (!isCurrent(snapshot)) return "会话已变更，已丢弃旧数据。";
           return `${dev.name}：` + rls.map((r) => `siid=${r.siid} piid=${r.piid} = ${JSON.stringify(r.value)}(code=${r.code})`).join("；");
         } catch (err) {
           return `读取 ${dev.name} 属性失败：${err && err.message ? err.message : String(err)}`;
@@ -694,10 +765,12 @@ const mijiaControlPlugin = {
     ctx.registerIpc("devices", () => devicesSnapshot());
     ctx.registerIpc("netInfo", () => detectNetwork());
     ctx.registerIpc("deviceSpec", async (did) => {
+      const snapshot = session && session.capture();
       const resolved = resolveDevice(did);
       if (resolved.error) return { ok: false, error: resolved.error };
       const dev = resolved.device;
       const c = await ensureClient();
+      if (!c || !isCurrent(snapshot)) return { ok: false, error: "会话已变更或尚未连接" };
       let desc = { model: dev.model, noSpec: true, controls: [], actions: [], power: null, hasControl: false };
       if (spec) {
         try {
@@ -708,6 +781,7 @@ const mijiaControlPlugin = {
       }
       // 读取当前值（仅可读属性，最多 40 个），失败不阻断渲染。
       const values = {};
+      if (!isCurrent(snapshot)) return { ok: false, error: "会话已变更" };
       const wantRead = (desc.controls || []).filter((x) => x.readable).slice(0, 40);
       if (c && wantRead.length) {
         try {
@@ -720,6 +794,7 @@ const mijiaControlPlugin = {
           /* 忽略读取错误 */
         }
       }
+      if (!isCurrent(snapshot)) return { ok: false, error: "会话已变更，已丢弃旧数据" };
       return {
         ok: true,
         device: { did: dev.did, name: dev.name, model: dev.model, room: dev.room, category: dev.category, online: dev.online },
@@ -738,6 +813,7 @@ const mijiaControlPlugin = {
 
     // MIoT-Spec 能力层：用宿主 storage 做索引/单型号落盘缓存，启动即预热索引。
     spec = createSpecManager({
+      signal: ctx.signal,
       storage: { get: (k) => ctx.storage.get(k), set: (k, v) => ctx.storage.set(k, v) },
       log: (m) => ctx.log(m),
     });
@@ -748,8 +824,10 @@ const mijiaControlPlugin = {
       const c = await ensureClient();
       if (c) await fullScan();
       if (!ctx.signal.aborted) startScanLoop();
-    })();
+    })().catch((err) => { if (!ctx.signal.aborted) ctx.log(`米家插件初始化失败：${err.message}`); });
     ctx.onDispose(() => {
+      session?.stop();
+      removeWindowControls?.();
       stopScanLoop();
     });
 
@@ -785,10 +863,12 @@ const mijiaControlPlugin = {
     void (async () => {
       const c = await ensureClient();
       if (c) await fullScan();
-    })();
+    })().catch((err) => { if (ctxRef && !ctxRef.signal.aborted) ctxRef.log(`打开面板扫描失败：${err.message}`); });
   },
 
   unregister() {
+    session?.stop();
+    removeWindowControls?.();
     stopScanLoop();
     if (pluginWin && !pluginWin.isDestroyed()) pluginWin.close();
     ctxRef = null;
@@ -796,6 +876,11 @@ const mijiaControlPlugin = {
     client = null;
     resetLogin();
     cache.devices = [];
+    cache.roomMap = {};
+    cache.fetchedAt = 0;
+    cache.lastError = "";
+    cache.lanIps = [];
+    spec = null;
     cache.profile = null;
   },
 };
