@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN" class="hud-document"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'"><link rel="stylesheet" href="style.css"><title>Cyrene HUD</title></head>
+<body class="overlay"><main class="hud" id="hud">
+  <div class="capsule-dots" id="capsuleDots" aria-hidden="true"><i></i><i></i><i></i></div>
+  <button id="notificationToast" class="notification-toast" type="button" disabled aria-label="打开主动消息">
+    <span class="avatar" aria-hidden="true"></span><span class="notification-copy"><strong>新消息</strong><small id="notificationPreview"></small></span>
+  </button>
+  <div class="hud-content" id="hudContent">
+  <button class="mark" id="avatarAction" type="button" aria-label="头像快捷入口" disabled><span class="avatar" aria-hidden="true"></span></button>
+  <button id="unreadBadge" class="unread-badge" type="button" hidden aria-label="打开未读主动消息"></button>
+  <div id="metrics"></div>
+  <section id="avatarDetail" class="avatar-detail" aria-hidden="true"><div><span>状态</span><strong id="runtimeStatus">—</strong></div><div><span>心情</span><strong id="runtimeFeeling">—</strong></div><small id="runtimeNote"></small></section>
+  <span class="live" id="status" hidden></span>
+  </div>
+</main><script src="metrics.js"></script><script src="hud.js"></script></body></html>
+

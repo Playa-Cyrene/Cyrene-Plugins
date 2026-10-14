@@ -143,6 +143,14 @@
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ide-account-bridge-1.1.0.zip",
       "sha256": "7debad3c8b0002a50adea2b8cbee39979541e1fa8f5f7f3325f633b157835345",
       "downloads": 0
+    },
+    {
+      "id": "cyrene-hud",
+      "name": "昔涟桌面 HUD",
+      "version": "0.8.7",
+      "description": "常驻性能监测&Cyrene状态&自定义快速跳转窗口三合一的仿灵动岛状态栏，可自定义外观",
+      "author": "Noimpty",
+      "homepage": "https://github.com/LZhWi/Cyrene-Agent-Plugin/tree/codex/cyrene-hud-upstream"
     }
   ]
 }

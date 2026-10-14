@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'">
+  <link rel="stylesheet" href="style.css">
+  <title>昔涟 · 桌面状态</title>
+</head>
+<body class="settings">
+  <header class="panel-heading">
+    <span class="heading-icon" aria-hidden="true"><span class="avatar"></span></span>
+    <div><h1>桌面状态</h1><p>在桌面上查看电脑状态，按你的习惯显示。</p></div>
+  </header>
+  <form id="form">
+    <section class="card" aria-labelledby="display-heading">
+      <div class="card-heading"><h2 id="display-heading">显示内容</h2><button type="button" id="displayInfo" class="secondary info-button" aria-label="显示内容说明" aria-expanded="false" aria-controls="displayNotes">ⓘ</button></div>
+      <div class="fields">
+        <div class="metric-selection"><p>性能圆环 · 勾选显示，拖动调整顺序</p><div id="metricList"></div></div>
+        <label>显示方式<select id="mode"><option value="persistent">持续显示</option><option value="hover">顶部胶囊 · 悬停展开</option></select></label>
+        <label>唤出停留时间（秒）<input id="hoverDelay" type="number" min="0" max="10" step="0.05" required></label>
+        <label>移开后显示时长（秒）<input id="displayDuration" type="number" min="0.1" max="60" step="0.1" required></label>
+        <div id="displayNotes" class="display-notes" role="note" hidden>
+          <p class="field-note">顶部中央常驻三点小胶囊，连续悬停后以 0.3 秒缓动展开，开始和结束减速。提前移开会取消；设为 0 秒时立即展开。</p>
+          <p class="field-note">鼠标离开触发区域和 HUD 窗口后开始计时；计时结束缩回小胶囊。返回任一区域会取消计时，收回途中返回会重新展开。</p>
+          <p class="field-note">悬停圆环查看详细数据；悬停头像向侧面显示状态和心情，覆盖的圆环暂时隐藏。</p>
+          <p class="field-note">主动消息在胶囊展开显示 2 秒后缩回；展开 HUD 时，未读数量显示在头像角标上。点击通知或头像数字角标打开主动消息会话并清除对应未读；在其他窗口直接阅读暂不会同步清除。</p>
+          <p class="field-note">GPU 外环显示使用率，有独立显存时内环显示显存使用率；风扇按 CPU、GPU、辅助顺序选择最多两个，显示相对参考转速的百分比。网速圆环的两行数值单位为 MB/s。</p>
+        </div>
+        <div class="fields metric-selection" id="fanReferences" hidden>
+          <label>CPU 风扇 100% 参考转速（RPM）<input id="cpuFanReferenceRpm" type="number" min="1000" max="12000" step="100" required></label>
+          <label>GPU 风扇 100% 参考转速（RPM）<input id="gpuFanReferenceRpm" type="number" min="1000" max="12000" step="100" required></label>
+          <label>辅助风扇 100% 参考转速（RPM）<input id="midFanReferenceRpm" type="number" min="1000" max="12000" step="100" required></label>
+          <p class="field-note">百分比 = 当前转速 ÷ 参考转速，最高显示 100%。接口未提供实际满速值，默认参考值为 6300 RPM；如已知满速转速，可分别填写。此设置仅影响显示，不控制风扇。</p>
+        </div>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="avatar-heading">
+      <h2 id="avatar-heading">头像快捷入口</h2>
+      <div class="fields">
+        <label>点击头像打开<select id="avatarTarget"><option value="none">不操作</option><option value="chat">Chat · 聊天</option><option value="work">Work · 工作</option><option value="code">Code · 编程</option><option value="learn">Learn · 学习</option><option value="settings">设置</option></select></label>
+        <label id="avatarSessionField">打开方式<select id="avatarSession"><option value="new">每次新建会话</option><option value="existing">打开指定会话</option></select></label>
+        <label id="avatarSessionIdField">指定会话<select id="avatarSessionId"><option value="">请选择会话</option></select></label>
+        <p class="field-note" id="avatarNote">仅在点击头像时打开窗口或创建空会话，不会自动发送消息。鼠标穿透开启时头像仍可点击，其余区域继续穿透。</p>
+        <p class="field-note" id="editionNote"></p>
+      </div>
+    </section>
+    <section class="card" aria-labelledby="appearance-heading">
+      <h2 id="appearance-heading">外观与位置</h2>
+      <div class="fields">
+        <label>显示器<select id="displayId"><option value="">主显示器</option></select></label>
+        <label>位置<select id="position"><option value="top-center">顶部居中</option><option value="top-left" disabled>左上角（暂不可用）</option><option value="top-right" disabled>右上角（暂不可用）</option><option value="bottom-center" disabled>底部居中（暂不可用）</option><option value="bottom-left" disabled>左下角（暂不可用）</option><option value="bottom-right" disabled>右下角（暂不可用）</option></select></label>
+        <label>高度（px）<input id="height" type="number" min="60" max="320" step="1" required></label>
+        <label>圆角 <output id="radiusValue" for="radius"></output><input id="radius" type="range" min="0" max="160" step="1"></label>
+        <label>背景效果<select id="background"><option value="solid">珍珠白 · 纯色</option><option value="clear">通透 · 不模糊</option><option value="acrylic">毛玻璃 · 圆角模糊</option><option value="mica">云母 · 壁纸色调</option></select></label>
+        <p class="field-note" id="materialNote" role="status"></p>
+        <p class="field-note">云母在悬停模式下使用圆角毛玻璃，以支持小胶囊变形；持续显示模式保留云母。</p>
+        <label>背景颜色<input id="backgroundColor" type="color" aria-label="背景颜色"></label>
+        <label>背景色不透明度 <output id="tintOpacityValue" for="tintOpacity"></output><input id="tintOpacity" type="range" min="0" max="1" step="0.05"></label>
+        <p class="field-note">纯色模式使用不透明底色；透明、毛玻璃和云母可调背景色透明度，不影响文字。深色底色会自动切换浅色文字。</p>
+        <label>整体缩放 <output id="scaleValue" for="scale"></output><input id="scale" type="range" min="0.7" max="1.4" step="0.05"></label>
+        <label>内容不透明度 <output id="opacityValue" for="opacity"></output><input id="opacity" type="range" min="0.35" max="1" step="0.05"></label>
+        <p class="field-note">收起宽度按圆环数量自动计算；圆环紧凑排列，详情放不下才增加宽度。高度为缩放前尺寸，圆角超过短边一半时呈胶囊形。模糊底层由系统绘制。</p>
+      </div>
+      <label class="check"><span><strong>鼠标穿透</strong><small>让下方窗口正常接收点击</small></span><input type="checkbox" id="clickThrough" role="switch"></label>
+    </section>
+    <section class="card" aria-labelledby="test-heading">
+      <h2 id="test-heading">UI 效果测试</h2>
+      <p class="field-note">使用已保存的外观和圆环顺序，直接在顶部播放动画，无需移动鼠标。测试采用模拟数据，不发送消息、不改变真实未读记录，也不会打开会话。</p>
+      <div class="fields"><label>模拟悬停区域<select id="testRegion"><option value="avatar">头像 · 状态与心情</option></select></label></div>
+      <div class="test-actions">
+        <button type="button" class="secondary" data-test-action="hover">悬停所选区域</button>
+        <button type="button" class="secondary" data-test-action="leave">模拟移开</button>
+        <button type="button" class="secondary" data-test-action="notification">模拟主动消息</button>
+        <button type="button" class="secondary" data-test-action="all">依次演示全部</button>
+        <button type="button" class="secondary" data-test-action="stop">结束测试</button>
+      </div>
+      <p id="testFeedback" class="field-note" role="status" aria-live="polite">模拟通知展示 2 秒后缩回；随后悬停任一区域可查看未读角标。关闭设置页或 60 秒无操作后自动结束测试。</p>
+    </section>
+    <div class="actions"><span id="feedback" role="status" aria-live="polite"></span><button type="button" id="preview" class="secondary">唤出预览</button><button type="submit">保存设置</button></div>
+  </form>
+  <p class="notice">未支持的指标显示为 —。仅选择时间时不采集硬件数据。状态与心情仅读取主程序当前值，不触发模型。</p>
+  <script src="metrics.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>
+
+
