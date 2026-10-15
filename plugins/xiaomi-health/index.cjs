@@ -20,12 +20,14 @@
  */
 
 const path = require("node:path");
+const { createSession } = require("./lib/session.cjs");
 const {
   XiaomiAuth,
   MiHealthClient,
   DataNotSharedError,
   TokenExpiredError,
   FamilyMemberNotFoundError,
+  chinaDate,
 } = require("./lib/xiaomi.cjs");
 
 const PLUGIN_ID = "xiaomi-health";
@@ -57,6 +59,21 @@ const login = { state: "idle", qr: "", loginUrl: "", error: "" };
 let pluginWin = null;
 let syncTimer = null;
 let winControlsInstalled = false;
+let removeWindowControls = null;
+let session = null;
+
+function isCurrent(snapshot) {
+  return Boolean(session && snapshot && session.isCurrent(snapshot));
+}
+function renewSession() {
+  const snapshot = session.renew();
+  auth = null;
+  client = null;
+  cachedUid = 0;
+  cache.summary = null;
+  cache.fetchedAt = 0;
+  return snapshot;
+}
 
 // ── token / 客户端 ──────────────────────────────────────────────
 function uidOf(token) {
@@ -65,7 +82,13 @@ function uidOf(token) {
 
 async function loadToken() {
   if (!ctxRef || !ctxRef.deps.secrets) return null;
-  const raw = await ctxRef.deps.secrets.get(TOKEN_SECRET_KEY);
+  const owner = ctxRef;
+  const snapshot = session.capture();
+  // 等待保存、回滚或删除完成再读，避免把凭据写入中的临时状态当作有效登录。
+  await session.drain();
+  if (!isCurrent(snapshot)) return null;
+  const raw = await owner.deps.secrets.get(TOKEN_SECRET_KEY);
+  if (!isCurrent(snapshot)) return null;
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -75,23 +98,27 @@ async function loadToken() {
 }
 
 async function ensureClient() {
+  const snapshot = session && session.capture();
+  if (!isCurrent(snapshot) || login.state === "connecting" || login.state === "scanning") return null;
   const token = await loadToken();
+  if (!isCurrent(snapshot)) return null;
   if (!token || !token.service_token || !token.ssecurity) return null;
   const uid = uidOf(token);
   if (!uid) return null;
-  if (!auth) auth = new XiaomiAuth(token);
+  if (!auth) auth = new XiaomiAuth(token, { signal: snapshot.signal });
   if (!client) client = new MiHealthClient(auth);
   cachedUid = uid;
   return client;
 }
 
 // 扫码/刷新后 token 会变化，落盘并让客户端按新 token 重建。
-async function persistToken(token) {
-  if (!token || !ctxRef || !ctxRef.deps.secrets) return;
-  await ctxRef.deps.secrets.set(TOKEN_SECRET_KEY, JSON.stringify(token));
+async function persistToken(token, snapshot) {
+  if (!token || !isCurrent(snapshot)) return false;
+  if (!await session.save(token, snapshot) || !isCurrent(snapshot)) return false;
   auth = null;
   client = null;
   cachedUid = uidOf(token);
+  return true;
 }
 
 // ── 用户偏好（存 ctx.storage.prefs；宿主每个键写独立 <key>.json）──────
@@ -143,6 +170,7 @@ function writePrefs(prefs) {
 // ── 每轮对话上下文注入（受 prefs.chatInject 控制；不联网，2s 超时安全）──
 // source 区分场景：conversation/scheduler 有工具循环→强调“必须调用”；
 // moments-post 无工具循环→只供新鲜数据作为发帖灵感。
+// chatInject 只约束自动注入；工具是否可用由宿主控制，不能把此开关当作数据访问授权。
 function buildHealthContext(source) {
   if (!ctxRef || !readPrefs().chatInject) return "";
   if (!client) return ""; // 未连接或已退出登录：不提示工具，避免误导模型
@@ -229,6 +257,8 @@ function morningTaskSpec(prefs) {
   };
 }
 
+// 复用宿主记忆工具，避免在插件内绑定向量库或复制一套记忆存储与检索策略。
+// 写入后的记忆归宿主管理，删除插件任务只停止后续触发，不会清除既有记忆。
 function memoryTaskSpec(prefs) {
   const p = prefs.proactive;
   return {
@@ -301,6 +331,8 @@ async function reconcileSchedulerTasks() {
     }
     for (const spec of desired) {
       const mine = byTitle.get(spec.title);
+      // 只在执行规格变化时更新；宿主会撤销相应授权，新任务也须由用户确认启用。
+      // 不传 enabled 或 toolMode，避免把插件偏好误当成宿主运行授权。
       if (mine) {
         if (specChanged(mine, spec)) await sched.updateTask(mine.id, spec);
       } else {
@@ -313,15 +345,15 @@ async function reconcileSchedulerTasks() {
 }
 
 // ── 退出登录 + 清空本地数据 ─────────────────────────────────────
+// 清理范围限定为插件凭据、缓存、同步元信息和关联任务；保留其他偏好。
+// 宿主聊天、动态与健康记忆不属于这些资源，不能把退出描述为删除所有健康数据。
 async function logoutAndClear() {
+  const snapshot = renewSession();
   resetLogin();
   if (ctxRef && ctxRef.deps.secrets) {
-    try {
-      await ctxRef.deps.secrets.delete(TOKEN_SECRET_KEY);
-    } catch {
-      /* 忽略 */
-    }
+    await session.clear();
   }
+  if (!isCurrent(snapshot)) return { ok: true, superseded: true };
   auth = null;
   client = null;
   cachedUid = 0;
@@ -353,19 +385,22 @@ async function logoutAndClear() {
 
 // ── 同步 ──────────────────────────────────────────────────────
 async function syncNow() {
+  const snapshot = session && session.capture();
   const c = await ensureClient();
-  if (!c) return { ok: false, error: "尚未连接，请先在插件窗口扫码登录" };
+  if (!c || !isCurrent(snapshot)) return { ok: false, error: "尚未连接，请先在插件窗口扫码登录" };
   try {
     const summary = await c.getDailySummary(cachedUid, new Date());
+    if (!isCurrent(snapshot)) return { ok: false, error: "会话已变更，已丢弃旧数据" };
     cache.summary = summary;
     cache.fetchedAt = Date.now();
     if (ctxRef) ctxRef.storage.set("lastSync", { at: cache.fetchedAt, date: summary.date });
     if (ctxRef) ctxRef.log(`健康数据同步完成：${summary.date}`);
     return { ok: true, summary };
   } catch (err) {
+    if (!isCurrent(snapshot)) return { ok: false, error: "请求已取消" };
     if (err instanceof TokenExpiredError) {
       // 401 已在客户端内部尝试 passToken 刷新；刷新后 auth.token 已更新，落盘复用。
-      await persistToken(auth ? auth.token : null);
+      await persistToken(auth ? auth.token : null, snapshot);
     }
     const message = err && err.message ? err.message : String(err);
     if (ctxRef) ctxRef.log(`健康数据同步失败：${message}`);
@@ -377,7 +412,7 @@ function startBackgroundSync() {
   if (syncTimer) return;
   const minutes = ctxRef ? readPrefs().syncIntervalMin : DEFAULT_SYNC_INTERVAL_MIN;
   syncTimer = setInterval(() => {
-    void syncNow();
+    void syncNow().catch((err) => { if (ctxRef && !ctxRef.signal.aborted) ctxRef.log(`健康同步失败：${err.message}`); });
   }, minutes * 60 * 1000);
   if (syncTimer.unref) syncTimer.unref();
   if (ctxRef) ctxRef.log(`健康数据后台同步已启动（每 ${minutes} 分钟）`);
@@ -403,7 +438,7 @@ function fmtMin(min) {
   return h ? `${h} 小时 ${String(m).padStart(2, "0")} 分` : `${m} 分钟`;
 }
 function dayStr(epochSec) {
-  return new Date(epochSec * 1000).toISOString().slice(0, 10);
+  return chinaDate(new Date(epochSec * 1000));
 }
 function describeSummary(summary) {
   const lines = [`【小米健康 · ${summary.date}】`];
@@ -444,22 +479,26 @@ function startLogin() {
     return { ok: true, state: login.state, alreadyRunning: true };
   }
   resetLogin();
-  auth = new XiaomiAuth();
+  const snapshot = renewSession();
+  const loginAuth = new XiaomiAuth(undefined, { signal: snapshot.signal });
   login.state = "connecting";
   void (async () => {
     try {
-      const token = await auth.loginQr(async (qrImageUrl, loginUrl) => {
+      // 二维码回调、凭据保存和后续状态更新都可能跨越取消操作，须各自校验会话。
+      const token = await loginAuth.loginQr(async (qrImageUrl, loginUrl) => {
+        if (!isCurrent(snapshot)) return;
         login.qr = qrImageUrl || "";
         login.loginUrl = loginUrl || "";
         login.state = "scanning";
         broadcastLoginState();
       }, 300);
-      await persistToken(token);
+      if (!await persistToken(token, snapshot) || !isCurrent(snapshot)) return;
       login.state = "connected";
       broadcastLoginState();
       if (ctxRef) ctxRef.log(`小米健康扫码登录成功：user_id=${token.user_id}`);
-      void syncNow();
+      await syncNow();
     } catch (err) {
+      if (!isCurrent(snapshot)) return;
       login.state = "error";
       login.error = err && err.message ? err.message : String(err);
       broadcastLoginState();
@@ -469,9 +508,11 @@ function startLogin() {
   return { ok: true, state: login.state };
 }
 
-function cancelLogin() {
+async function cancelLogin() {
+  renewSession();
   resetLogin();
   broadcastLoginState();
+  await session.drain();
   return { ok: true, state: login.state };
 }
 
@@ -527,31 +568,38 @@ async function readStatus() {
 }
 
 // ── 工具执行封装：统一错误 → 友好文案 ────────────────────────────
+// 工具返回值会进入宿主处理流程；仅在内存缓存并不代表结果不会进入远程模型或历史记录。
 async function runQuery(metric, days) {
+  const snapshot = session && session.capture();
   const c = await ensureClient();
-  if (!c) return "尚未连接小米健康。请在「设置 · 插件」里打开小米健康窗口扫码登录后再试。";
+  if (!c || !isCurrent(snapshot)) return "尚未连接小米健康。请在「设置 · 插件」里打开小米健康窗口扫码登录后再试。";
   const n = Number.isFinite(days) && days > 0 ? Math.min(Math.floor(days), 30) : 1;
   const today = new Date();
   try {
     if (metric === "today" || !metric) {
       const summary = await c.getDailySummary(cachedUid, today);
+      if (!isCurrent(snapshot)) return "会话已变更，已丢弃旧数据。";
       cache.summary = summary;
       cache.fetchedAt = Date.now();
       return describeSummary(summary);
     }
-    if (metric === "steps") return describeSeries(await c.getSteps(cachedUid, n), "步数");
-    if (metric === "sleep") return describeSeries(await c.getSleep(cachedUid, n), "睡眠");
-    if (metric === "heart") return describeSeries(await c.getHeartRate(cachedUid, n), "心率");
+    if (["steps", "sleep", "heart"].includes(metric)) {
+      const [method, label] = { steps: ["getSteps", "步数"], sleep: ["getSleep", "睡眠"], heart: ["getHeartRate", "心率"] }[metric];
+      const items = await c[method](cachedUid, n);
+      return isCurrent(snapshot) ? describeSeries(items, label) : "会话已变更，已丢弃旧数据。";
+    }
     if (metric === "range") {
       const [hr, sl, st] = await Promise.all([
         c.getHeartRate(cachedUid, n).catch(() => null),
         c.getSleep(cachedUid, n).catch(() => null),
         c.getSteps(cachedUid, n).catch(() => null),
       ]);
+      if (!isCurrent(snapshot)) return "会话已变更，已丢弃旧数据。";
       return [describeSeries(st, "步数"), describeSeries(sl, "睡眠"), describeSeries(hr, "心率")].join("\n\n");
     }
     return `未知查询类型：${metric}`;
   } catch (err) {
+    if (!isCurrent(snapshot)) return "请求已取消。";
     if (err instanceof DataNotSharedError) return `该项数据未在小米运动健康中共享（${err.dataType || metric}）。`;
     if (err instanceof FamilyMemberNotFoundError) return "未找到该健康数据成员，请确认扫码账号与设备归属一致。";
     if (err instanceof TokenExpiredError) return "小米登录已过期，请在插件窗口重新扫码登录。";
@@ -563,22 +611,33 @@ async function runQuery(metric, days) {
 function installWindowControls() {
   if (winControlsInstalled) return;
   const { ipcMain } = require("electron");
-  ipcMain.on(WIN_MIN_CHANNEL, () => {
+  const minimize = () => {
     if (pluginWin && !pluginWin.isDestroyed()) pluginWin.minimize();
-  });
-  ipcMain.on(WIN_CLOSE_CHANNEL, () => {
+  };
+  const close = () => {
     if (pluginWin && !pluginWin.isDestroyed()) pluginWin.close();
-  });
+  };
+  ipcMain.on(WIN_MIN_CHANNEL, minimize);
+  ipcMain.on(WIN_CLOSE_CHANNEL, close);
+  // 只移除本次注册的具名处理器，避免误删其他监听器，也防止反复启停累积响应。
+  removeWindowControls = () => {
+    ipcMain.removeListener(WIN_MIN_CHANNEL, minimize);
+    ipcMain.removeListener(WIN_CLOSE_CHANNEL, close);
+    winControlsInstalled = false;
+    removeWindowControls = null;
+  };
   winControlsInstalled = true;
 }
 
 const xiaomiHealthPlugin = {
   register(ctx) {
     ctxRef = ctx;
+    session = createSession(ctx, TOKEN_SECRET_KEY);
 
     ctx.registerTool({
       id: `${PLUGIN_ID}_query`,
       name: "小米健康数据查询",
+      chatBuiltin: true,
       description:
         "查询机主小米运动健康（CN 区）的步数、睡眠、心率数据。当用户问「今天走了多少步」「昨晚睡得怎么样」「最近心率多少」等身体健康/运动数据相关问题时使用。metric=today 返回今天三合一摘要；steps/sleep/heart 返回最近 days 天该指标；range 返回最近 days 天三项汇总。",
       enabled: true,
@@ -609,7 +668,8 @@ const xiaomiHealthPlugin = {
     ctx.registerTool({
       id: `${PLUGIN_ID}_status`,
       name: "小米健康连接状态",
-      description: "查询小米运动健康插件的连接与同步状态（是否已登录、上次同步时间、今日摘要是否已缓存）。用于判断能否查询健康数据。",
+      chatBuiltin: true,
+      description: "查询小米运动健康插件的连接与同步状态；已连接时返回账号 user_id，有缓存时还会返回健康摘要。用于判断能否查询健康数据。",
       enabled: true,
       risk: "safe",
       effectKind: "read",
@@ -670,8 +730,10 @@ const xiaomiHealthPlugin = {
       if (c) await syncNow();
       await reconcileSchedulerTasks();
       if (!ctx.signal.aborted) startBackgroundSync();
-    })();
+    })().catch((err) => { if (!ctx.signal.aborted) ctx.log(`健康插件初始化失败：${err.message}`); });
     ctx.onDispose(() => {
+      session?.stop();
+      removeWindowControls?.();
       stopBackgroundSync();
       void deleteAllTasks();
     });
@@ -706,7 +768,10 @@ const xiaomiHealthPlugin = {
     await pluginWin.loadFile(path.join(__dirname, "ui.html"));
   },
 
+  // 停用保留已保存凭据，便于再次启用；与显式退出分开，清理也允许重复调用。
   unregister() {
+    session?.stop();
+    removeWindowControls?.();
     stopBackgroundSync();
     if (pluginWin && !pluginWin.isDestroyed()) pluginWin.close();
     ctxRef = null;
