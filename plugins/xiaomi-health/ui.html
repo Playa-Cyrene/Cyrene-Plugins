@@ -205,6 +205,7 @@
         <h3 class="section-title">连接账号</h3>
         <p class="hint">使用<b>已登录该小米账号的小米运动健康 App</b> 扫描下方二维码并确认授权。凭证经系统安全存储加密保存，不会明文落盘。</p>
         <p class="note warn">本插件为第三方工具，非小米官方出品；仅读取你本人账号下的健康数据，凭证只加密保存在本机。数据获取基于公开接口，请自行确认符合小米《用户协议》。</p>
+        <p class="note">插件直接请求小米账号及健康服务，也会访问认证流程返回的扫码、轮询和重定向地址。健康摘要和工具查询结果会交给宿主使用；是否发送给远程模型或其他处理服务取决于宿主配置，启用前请确认宿主的数据处理设置。</p>
         <div class="btn-row">
           <button class="btn" id="btn-login">开始扫码登录</button>
           <button class="btn ghost" id="btn-cancel" style="display:none">取消</button>
@@ -231,7 +232,9 @@
           <span class="field__label">对话内健康感知</span>
           <label class="switch"><input type="checkbox" id="pref-chatinject" /><i></i></label>
         </div>
-        <p class="note" style="margin:-2px 0 6px">开启后，昔涟会在日常对话里看到你的健康摘要，并可调用查询工具回答身体相关问题。</p>
+        <p class="note" style="margin:-2px 0 6px">此开关默认开启，仅控制是否自动向宿主上下文提供健康摘要，用于对话、定时任务和动态生成。关闭后，普通聊天仍可通过已启用的健康查询工具读取数据；如需禁止工具访问，请在宿主工具设置中禁用相关工具。</p>
+
+        <p class="note">健康查询（xiaomi-health_query）和连接状态（xiaomi-health_status）工具都可能返回健康摘要，连接状态还包含账号 user_id。摘要和工具结果交给宿主后，是否发送给远程模型或其他处理服务取决于宿主配置。</p>
 
         <div class="divider"></div>
 
@@ -239,6 +242,7 @@
           <span class="field__label">定时主动播报</span>
           <label class="switch"><input type="checkbox" id="pref-proactive" /><i></i></label>
         </div>
+        <p class="note">默认关闭。勾选并保存后创建对应宿主任务，需在宿主「定时任务」面板启用后才开始运行。运行时会查询所选健康数据并交给宿主生成消息；即使选择「自然关心（不报数字）」，查询结果仍会用于生成，是否发送给远程模型取决于宿主配置。</p>
         <div id="proactive-box" style="display:none">
           <div class="field">
             <span class="field__label">播报频率</span>
@@ -281,6 +285,7 @@
           <span class="field__label">早安主动问候</span>
           <label class="switch"><input type="checkbox" id="pref-morning" /><i></i></label>
         </div>
+        <p class="note">默认关闭。勾选并保存后创建对应宿主任务，需在宿主「定时任务」面板启用后才开始运行。选择携带健康信息时，会把健康查询结果或最近的健康记忆交给宿主生成问候；是否发送给远程模型取决于宿主配置。</p>
         <div id="morning-box" style="display:none">
           <div class="field">
             <span class="field__label">早安时间</span>
@@ -290,7 +295,7 @@
             <span class="field__label">问好携带健康信息</span>
             <label class="switch"><input type="checkbox" id="pref-morninginfo" /><i></i></label>
           </div>
-          <div class="note warn" id="morning-note" style="display:none">该选项需在你醒来、且昨夜睡眠数据完成同步后才会带上健康信息；否则当天只发一句简单早安。<button class="linkbtn" id="btn-ack-morning">我已知晓</button></div>
+          <div class="note warn" id="morning-note" style="display:none">该选项会优先查询昨夜睡眠与今日数据；实时数据不可用时，会尝试参考当天或前一天的健康记忆，两者都没有时只发简单早安。<button class="linkbtn" id="btn-ack-morning">我已知晓</button></div>
         </div>
 
         <div class="divider"></div>
@@ -299,6 +304,7 @@
           <span class="field__label">健康写入长期记忆</span>
           <label class="switch"><input type="checkbox" id="pref-remember" /><i></i></label>
         </div>
+        <p class="note">默认关闭。勾选并保存后创建对应宿主任务，需在宿主「定时任务」面板启用后才开始运行。健康数据会交给宿主写入共用的长期记忆（L2），供日后对话与主动寒暄检索；模型处理和语义检索是否使用远程服务取决于宿主配置。关闭并保存后停止后续写入，不会自动删除已有记忆；历史记忆需到宿主「记忆」面板另行删除。</p>
         <div id="remember-box" style="display:none">
           <div class="field">
             <span class="field__label">记忆写入频率</span>
@@ -312,7 +318,6 @@
             </select>
           </div>
           <p class="note">开启后，昔涟会定期把当天健康数据作为一条「对话记忆（L2）」写入长期记忆（逐条追加、不覆盖、可被语义检索）。这样即使没开主动播报，日常对话与主动寒暄在聊到身体/作息时也能自然想起你的近况。此功能与 Agent 的记忆系统共用同一存储。</p>
-          <p class="note warn">注意：这会把健康数据写入与 Agent 共用的长期记忆，可能被日常对话与主动寒暄检索到；若不再需要，可关闭本开关并到 Agent「记忆」面板删除历史记录。</p>
         </div>
 
         <div class="field">
@@ -321,6 +326,7 @@
         </div>
         <p class="note">仅在应用运行期间同步与播报；应用关闭时不会在后台拉起。</p>
 
+        <p class="note">修改已有任务的时间、频率、提示内容或工具范围后，宿主会要求重新确认启用；未改变执行设置的已启用任务会保持原状态。以宿主「定时任务」面板显示为准。</p>
         <div class="note" id="task-note"></div>
 
         <div class="field field--end">
@@ -333,10 +339,11 @@
         <div class="status-row">
           <div>
             <h3 class="section-title" style="margin:0">账号</h3>
-            <div class="meta">退出将清除已加密保存的登录凭证与本地同步数据</div>
+            <div class="meta">退出会删除登录凭据、健康缓存、同步元信息及本插件关联任务；保留其他偏好设置。</div>
           </div>
           <button class="btn danger" id="btn-logout">退出登录</button>
         </div>
+        <p class="note">停用插件会停止请求并清理运行状态，不等于退出登录，保存的凭据与偏好仍会保留。退出或停用都不会删除已经写入宿主的健康记忆、聊天记录或动态，请到宿主对应面板另行删除。</p>
       </div>
 
       <div class="foot">
@@ -499,11 +506,11 @@
       note.className = "note";
       if (!state.hasScheduler) {
         note.className = "note warn";
-        note.textContent = "当前宿主未提供定时任务能力，主动播报不可用。";
+        note.textContent = "当前宿主未提供定时任务能力，播报、早安和健康记忆任务不可用。";
         return;
       }
       const tasks = state.tasks || [];
-      if (!tasks.length) { note.textContent = "保存后将创建播报任务。"; return; }
+      if (!tasks.length) { note.textContent = "当前没有关联任务。勾选播报、早安或健康记忆并保存后才会创建对应任务；新任务需到宿主「定时任务」面板启用。"; return; }
       const lines = tasks.map((t) => {
         const label = (t.title || "").replace(/^小米健康 · /, "");
         if (!t.enabled) return `· ${label}：待你在宿主「定时任务」面板点【启用】`;
@@ -571,7 +578,7 @@
     };
 
     el("btn-logout").onclick = async () => {
-      if (!confirm("确定退出登录？将清除加密保存的小米凭证、本地同步数据与主动播报任务，此操作不可撤销。")) return;
+      if (!confirm("确定退出登录？将删除本插件保存的登录凭据、健康缓存、同步元信息，以及播报、早安和健康记忆任务，并关闭这三个功能。其他偏好设置会保留。已写入宿主的健康记忆、聊天记录和动态不会删除，需到对应面板另行删除。再次连接需重新扫码。")) return;
       const btn = el("btn-logout");
       btn.disabled = true;
       try {

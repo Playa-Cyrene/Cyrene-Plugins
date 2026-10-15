@@ -658,7 +658,7 @@ const xiaomiHealthPlugin = {
       id: `${PLUGIN_ID}_status`,
       name: "小米健康连接状态",
       chatBuiltin: true,
-      description: "查询小米运动健康插件的连接与同步状态（是否已登录、上次同步时间、今日摘要是否已缓存）。用于判断能否查询健康数据。",
+      description: "查询小米运动健康插件的连接与同步状态；已连接时返回账号 user_id，有缓存时还会返回健康摘要。用于判断能否查询健康数据。",
       enabled: true,
       risk: "safe",
       effectKind: "read",
