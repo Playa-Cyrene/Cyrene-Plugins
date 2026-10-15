@@ -84,6 +84,7 @@ async function loadToken() {
   if (!ctxRef || !ctxRef.deps.secrets) return null;
   const owner = ctxRef;
   const snapshot = session.capture();
+  // 等待保存、回滚或删除完成再读，避免把凭据写入中的临时状态当作有效登录。
   await session.drain();
   if (!isCurrent(snapshot)) return null;
   const raw = await owner.deps.secrets.get(TOKEN_SECRET_KEY);
@@ -169,6 +170,7 @@ function writePrefs(prefs) {
 // ── 每轮对话上下文注入（受 prefs.chatInject 控制；不联网，2s 超时安全）──
 // source 区分场景：conversation/scheduler 有工具循环→强调“必须调用”；
 // moments-post 无工具循环→只供新鲜数据作为发帖灵感。
+// chatInject 只约束自动注入；工具是否可用由宿主控制，不能把此开关当作数据访问授权。
 function buildHealthContext(source) {
   if (!ctxRef || !readPrefs().chatInject) return "";
   if (!client) return ""; // 未连接或已退出登录：不提示工具，避免误导模型
@@ -255,6 +257,8 @@ function morningTaskSpec(prefs) {
   };
 }
 
+// 复用宿主记忆工具，避免在插件内绑定向量库或复制一套记忆存储与检索策略。
+// 写入后的记忆归宿主管理，删除插件任务只停止后续触发，不会清除既有记忆。
 function memoryTaskSpec(prefs) {
   const p = prefs.proactive;
   return {
@@ -327,6 +331,8 @@ async function reconcileSchedulerTasks() {
     }
     for (const spec of desired) {
       const mine = byTitle.get(spec.title);
+      // 只在执行规格变化时更新；宿主会撤销相应授权，新任务也须由用户确认启用。
+      // 不传 enabled 或 toolMode，避免把插件偏好误当成宿主运行授权。
       if (mine) {
         if (specChanged(mine, spec)) await sched.updateTask(mine.id, spec);
       } else {
@@ -339,6 +345,8 @@ async function reconcileSchedulerTasks() {
 }
 
 // ── 退出登录 + 清空本地数据 ─────────────────────────────────────
+// 清理范围限定为插件凭据、缓存、同步元信息和关联任务；保留其他偏好。
+// 宿主聊天、动态与健康记忆不属于这些资源，不能把退出描述为删除所有健康数据。
 async function logoutAndClear() {
   const snapshot = renewSession();
   resetLogin();
@@ -476,6 +484,7 @@ function startLogin() {
   login.state = "connecting";
   void (async () => {
     try {
+      // 二维码回调、凭据保存和后续状态更新都可能跨越取消操作，须各自校验会话。
       const token = await loginAuth.loginQr(async (qrImageUrl, loginUrl) => {
         if (!isCurrent(snapshot)) return;
         login.qr = qrImageUrl || "";
@@ -559,6 +568,7 @@ async function readStatus() {
 }
 
 // ── 工具执行封装：统一错误 → 友好文案 ────────────────────────────
+// 工具返回值会进入宿主处理流程；仅在内存缓存并不代表结果不会进入远程模型或历史记录。
 async function runQuery(metric, days) {
   const snapshot = session && session.capture();
   const c = await ensureClient();
@@ -609,6 +619,7 @@ function installWindowControls() {
   };
   ipcMain.on(WIN_MIN_CHANNEL, minimize);
   ipcMain.on(WIN_CLOSE_CHANNEL, close);
+  // 只移除本次注册的具名处理器，避免误删其他监听器，也防止反复启停累积响应。
   removeWindowControls = () => {
     ipcMain.removeListener(WIN_MIN_CHANNEL, minimize);
     ipcMain.removeListener(WIN_CLOSE_CHANNEL, close);
@@ -757,6 +768,7 @@ const xiaomiHealthPlugin = {
     await pluginWin.loadFile(path.join(__dirname, "ui.html"));
   },
 
+  // 停用保留已保存凭据，便于再次启用；与显式退出分开，清理也允许重复调用。
   unregister() {
     session?.stop();
     removeWindowControls?.();

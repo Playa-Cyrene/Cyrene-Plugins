@@ -438,6 +438,7 @@
     }
 
     // ── 设置面板 ───────────────────────────────────────────────
+    // 状态轮询仍会刷新账号数据，但不能覆盖用户尚未保存的表单修改。
     let settingsDirty = false;
 
     function populateSettingsForm(prefs) {
@@ -492,7 +493,7 @@
     function applyMorningVisibility() {
       const on = el("pref-morning").checked;
       el("morning-box").style.display = on ? "" : "none";
-      // 首次开启「问好携带健康信息」时提示：需醒后 + 睡眠同步完成后才真正带上数据。
+      // 确认标记只控制说明是否重复显示，不代表任务授权；数据缺失时仍可能回退到健康记忆。
       const showNote = on && el("pref-morninginfo").checked && !state.morningNoticeAck;
       el("morning-note").style.display = showNote ? "" : "none";
     }
@@ -501,6 +502,7 @@
       el("remember-box").style.display = el("pref-remember").checked ? "" : "none";
     }
 
+    // 显示宿主返回的实际启用状态；勾选插件选项并不代表任务已获得运行授权。
     function renderTaskNote() {
       const note = el("task-note");
       note.className = "note";

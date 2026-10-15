@@ -227,6 +227,7 @@ function windowArguments(queryDateOrDays, days = 1) {
   if (typeof queryDateOrDays === "number") return [new Date(), Math.max(1, queryDateOrDays)];
   return [queryDateOrDays ?? new Date(), Math.max(1, days)];
 }
+// CN 接口按中国日历日聚合，不能使用运行机器的本地日期或直接截取 UTC 日期。
 const CN_OFFSET_MS = 8 * 60 * 60 * 1000;
 function chinaDate(date) {
   return new Date(date.getTime() + CN_OFFSET_MS).toISOString().slice(0, 10);
@@ -236,6 +237,7 @@ function dateWindow(days, queryDate = new Date()) {
   const endDate = new Date(
     Date.UTC(cnDate.getUTCFullYear(), cnDate.getUTCMonth(), cnDate.getUTCDate() + 1) - CN_OFFSET_MS,
   );
+  // 接口使用秒级闭区间：以下一天零点减一秒收尾，避免混入次日数据。
   const end = Math.floor(endDate.getTime() / 1000) - 1;
   const windowDays = Math.max(1, days);
   return [end - 86_400 * windowDays + 1, end, windowDays];
@@ -256,6 +258,7 @@ class XiaomiHttp {
     if (this.cookies.size) headers.set("cookie", [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "));
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), XIAOMI_REQUEST_TIMEOUT_MS);
+    // 超时与会话取消共同约束请求，并持续覆盖响应体读取，避免停用后仍等待传输。
     const signal = AbortSignal.any([controller.signal, this.signal, init.signal].filter(Boolean));
     try {
       const response = await fetch(url, { ...init, headers, redirect: "manual", signal });
@@ -327,6 +330,7 @@ class XiaomiAuth {
     const qr = parseMiResponse(await qrResponse.text());
     const image = stringValue(qr.qr);
     const loginUrl = stringValue(qr.loginUrl);
+    // 扫码资源、轮询及后续 location 来自认证响应，网络范围不止文件顶部的固定域名。
     const pollingUrl = stringValue(qr.lp);
     if (!image || !pollingUrl) throw new XiaomiError("Xiaomi did not return a QR polling URL");
     if (callback) await callback(image, loginUrl);
@@ -339,6 +343,7 @@ class XiaomiAuth {
         if (response.status === 200) break;
         await sleep(2000, this.http.signal);
       } catch {
+        // 网络波动可以退避重试，但取消必须向上传播，不能被重试循环吞掉。
         this.http.signal?.throwIfAborted();
         await sleep(2000, this.http.signal);
       }
