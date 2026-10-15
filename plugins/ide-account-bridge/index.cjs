@@ -4900,6 +4900,8 @@ var RegionStack = class {
     this.endpoints = endpoints;
     this.portIndex = portIndex;
     this.modelsDiscoveredAt = 0;
+    this.modelsReady = false;
+    this.modelsPending = void 0;
     this.region = region;
     this.logger = logger;
     this.catalog = new TraeCatalog(region);
@@ -4982,20 +4984,23 @@ var RegionStack = class {
    */
   async ensureReady() {
     const shim = await this.ensureShim();
-    if (this.modelsReady === void 0) {
-      this.modelsReady = this.discoverModels().then((models) => {
+    if (this.modelsReady === false && this.modelsPending === void 0) {
+      const flight = this.discoverModels().then((models) => {
         if (models.length > 0) {
           this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
           this.modelsDiscoveredAt = Date.now();
+          this.modelsReady = true;
         }
         return true;
       }).catch((error) => {
         this.logger?.warn?.(`trae: model directory discovery failed for ${this.region}`, error);
-        this.modelsReady = void 0;
         return false;
+      }).finally(() => {
+        if (this.modelsPending === flight) this.modelsPending = void 0;
       });
+      this.modelsPending = flight;
     }
-    await this.modelsReady;
+    if (this.modelsPending !== void 0) await this.modelsPending;
     return shim;
   }
   /**
@@ -5010,8 +5015,9 @@ var RegionStack = class {
    * @returns the shim when a discovery ran, or `null` when this was a no-op.
    */
   async refreshCatalog() {
-    if (this.modelsReady !== void 0 && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
-    this.modelsReady = void 0;
+    if (this.modelsPending !== void 0) return this.modelsPending;
+    if (this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
+    this.modelsReady = false;
     return this.ensureReady();
   }
   /**
