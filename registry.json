@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-10-14",
+  "updatedAt": "2026-10-15",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -129,7 +129,9 @@
       "description": "扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均可感知健康数据，支持播报频率 / 风格与独立早安问候配置，可选将健康定期写入长期记忆（L2），退出登录删除插件凭据、健康缓存、同步元信息及关联任务（不删除宿主历史内容）",
       "author": "抽卡保底真君",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
-      "downloads": 1
+      "downloads": 0,
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.4.zip",
+      "sha256": "330779958d0f800744ae327081833023210edc7e688771192e5115f05c2d42e5"
     },
     {
       "id": "ide-account-bridge",
