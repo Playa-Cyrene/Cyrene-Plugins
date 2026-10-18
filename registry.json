@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-10-16",
+  "updatedAt": "2026-10-18",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -109,7 +109,7 @@
       "version": "0.3.1",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.1.zip",
       "sha256": "d851c48d8ee60b71797d36f67a5453c09923b499c129a89cf8580d4a98d90c3f",
-      "downloads": 5
+      "downloads": 6
     },
     {
       "id": "cyrene-browser",
