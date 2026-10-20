@@ -1,0 +1,164 @@
+{
+  "kind": "cyrene-craft-goals",
+  "schemaVersion": 1,
+  "name": "Minecraft 主线 · 末地",
+  "source": "内置示例（1.21 主线，前半段可执行，后半段为占位）",
+  "nodes": [
+    {
+      "id": "get_wood",
+      "title": "取得原木",
+      "kind": "collect",
+      "recipe": "oak_log",
+      "priority": 100,
+      "note": "采集类，会自动找最近的树"
+    },
+    {
+      "id": "craft_wooden_pickaxe",
+      "title": "做出木镐",
+      "kind": "craft",
+      "recipe": "wooden_pickaxe",
+      "priority": 95,
+      "requires": ["get_wood"],
+      "note": "缺工作台时规划层会自己做一张"
+    },
+    {
+      "id": "get_cobblestone",
+      "title": "取得圆石",
+      "kind": "collect",
+      "recipe": "cobblestone",
+      "priority": 90,
+      "requires": ["craft_wooden_pickaxe"],
+      "note": "木镐能挖圆石"
+    },
+    {
+      "id": "craft_stone_pickaxe",
+      "title": "做出石镐",
+      "kind": "craft",
+      "recipe": "stone_pickaxe",
+      "priority": 85,
+      "requires": ["get_cobblestone"],
+      "note": "需要 3 圆石 + 2 木棍"
+    },
+    {
+      "id": "get_iron",
+      "title": "取得铁矿石",
+      "kind": "collect",
+      "recipe": "iron_ore",
+      "priority": 80,
+      "requires": ["craft_stone_pickaxe"],
+      "note": "石镐可挖铁矿石"
+    },
+    {
+      "id": "smelt_iron",
+      "title": "烧出铁锭",
+      "kind": "manual",
+      "priority": 75,
+      "requires": ["get_iron"],
+      "note": "占位：需要熔炉 + 燃料，当前没有熔炉目标链"
+    },
+    {
+      "id": "craft_iron_pickaxe",
+      "title": "做出铁镐",
+      "kind": "manual",
+      "priority": 70,
+      "requires": ["smelt_iron"],
+      "note": "占位：配方表还没有 iron_pickaxe"
+    },
+    {
+      "id": "get_diamond",
+      "title": "取得钻石",
+      "kind": "manual",
+      "priority": 65,
+      "requires": ["craft_iron_pickaxe"],
+      "note": "占位：需要深层挖矿与岩浆规避"
+    },
+    {
+      "id": "get_obsidian",
+      "title": "取得黑曜石",
+      "kind": "manual",
+      "priority": 60,
+      "requires": ["get_diamond"],
+      "note": "占位：需要水桶 + 钻石镐"
+    },
+    {
+      "id": "build_nether_portal",
+      "title": "搭建下界传送门",
+      "kind": "manual",
+      "priority": 55,
+      "requires": ["get_obsidian"],
+      "note": "占位：需要摆 10 块黑曜石并点燃"
+    },
+    {
+      "id": "enter_nether",
+      "title": "进入下界",
+      "kind": "manual",
+      "priority": 50,
+      "requires": ["build_nether_portal"],
+      "note": "占位：需要要塞/传送门导航"
+    },
+    {
+      "id": "get_blaze_rods",
+      "title": "取得烈焰棒",
+      "kind": "manual",
+      "priority": 45,
+      "requires": ["enter_nether"],
+      "note": "占位：需要打烈焰人，战斗走位尚未实现"
+    },
+    {
+      "id": "get_ender_pearls",
+      "title": "取得末影珍珠",
+      "kind": "manual",
+      "priority": 40,
+      "requires": ["enter_nether"],
+      "note": "占位：需要打末影人"
+    },
+    {
+      "id": "craft_eyes_of_ender",
+      "title": "合成末影之眼",
+      "kind": "manual",
+      "priority": 35,
+      "requires": ["get_blaze_rods", "get_ender_pearls"],
+      "note": "占位：烈焰粉 + 末影珍珠"
+    },
+    {
+      "id": "find_stronghold",
+      "title": "找到要塞",
+      "kind": "manual",
+      "priority": 30,
+      "requires": ["craft_eyes_of_ender"],
+      "note": "占位：需要投掷末影之眼定位"
+    },
+    {
+      "id": "activate_end_portal",
+      "title": "激活末地传送门",
+      "kind": "manual",
+      "priority": 25,
+      "requires": ["find_stronghold"],
+      "note": "占位：需要把 12 个末影之眼放满框架"
+    },
+    {
+      "id": "enter_end",
+      "title": "进入末地",
+      "kind": "manual",
+      "priority": 20,
+      "requires": ["activate_end_portal"],
+      "note": "占位"
+    },
+    {
+      "id": "destroy_end_crystals",
+      "title": "摧毁末地水晶",
+      "kind": "manual",
+      "priority": 15,
+      "requires": ["enter_end"],
+      "note": "占位：需要远程攻击或搭塔"
+    },
+    {
+      "id": "defeat_ender_dragon",
+      "title": "击败末影龙",
+      "kind": "manual",
+      "priority": 10,
+      "requires": ["destroy_end_crystals"],
+      "note": "占位：最后一战，需要战斗走位与床炸/弓箭策略"
+    }
+  ]
+}

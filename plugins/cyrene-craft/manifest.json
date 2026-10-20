@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "cyrene-craft",
+  "name": "Cyrene Craft",
+  "version": "1.0.0",
+  "description": "把昔涟接入 Minecraft：机器人在线对话，支持采集/建造/战斗与自主任务，带本能反射、类脑决策、技能沉淀和 3D 脑图训练面板",
+  "author": "Cyrene, Mori",
+  "entry": "index.cjs",
+  "defaultEnabled": false,
+  "deps": ["channels", "llm", "secrets", "workspace"]
+}

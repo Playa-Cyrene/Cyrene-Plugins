@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>Cyrene Craft 设置</title>
+<style>
+  :root {
+    --bg: #1a1620;
+    --panel: #241e2e;
+    --panel-2: #2d2638;
+    --line: #3a3145;
+    --text: #ece7f2;
+    --muted: #9b90a8;
+    --pink: #f07fb5;
+    --pink-dim: #c85f92;
+    --green: #5fd3a0;
+    --amber: #e8b75c;
+    --red: #e8737a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.6;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* 自绘标题栏：整条可拖，按钮必须豁免 */
+  .titlebar {
+    -webkit-app-region: drag;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .titlebar .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--pink);
+    box-shadow: 0 0 8px var(--pink);
+  }
+  .titlebar h1 { font-size: 14px; font-weight: 600; letter-spacing: .3px; }
+  .titlebar .ver { color: var(--muted); font-size: 11px; margin-left: 2px; }
+  .titlebar .spacer { flex: 1; }
+  .titlebar button {
+    -webkit-app-region: no-drag;
+    width: 30px; height: 26px;
+    border: none; border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 15px;
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .titlebar button:hover { background: var(--panel-2); color: var(--text); }
+  .titlebar button.close:hover { background: var(--red); color: #fff; }
+
+  main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  main::-webkit-scrollbar { width: 8px; }
+  main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card h2 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pink);
+    letter-spacing: .5px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .card h2::before {
+    content: "";
+    width: 3px; height: 12px;
+    border-radius: 2px;
+    background: var(--pink);
+  }
+  .card h2 .hint { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 11px; }
+
+  .row { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 10px; flex-wrap: wrap; }
+  .row:last-child { margin-bottom: 0; }
+
+  .field { flex: 1; min-width: 130px; }
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  input[type="text"], input[type="number"] {
+    width: 100%;
+    padding: 7px 10px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input[type="text"]:focus, input[type="number"]:focus { border-color: var(--pink-dim); }
+  input::placeholder { color: #6a6076; }
+
+  button.btn {
+    padding: 7px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--pink);
+    color: #241019;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: filter .15s, opacity .15s;
+    white-space: nowrap;
+  }
+  button.btn:hover { filter: brightness(1.1); }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  button.btn.ghost {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-weight: 400;
+  }
+  button.btn.ghost:hover { border-color: var(--pink-dim); }
+  button.btn.danger { background: var(--red); color: #fff; }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+  }
+  .stat {
+    background: var(--panel-2);
+    border-radius: 7px;
+    padding: 8px 10px;
+  }
+  .stat .k { font-size: 10px; color: var(--muted); }
+  .stat .v { font-size: 13px; margin-top: 2px; word-break: break-all; }
+  .v.ok { color: var(--green); }
+  .v.warn { color: var(--amber); }
+  .v.err { color: var(--red); }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 0;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle input { display: none; }
+  .toggle .track {
+    width: 36px; height: 20px;
+    border-radius: 10px;
+    background: var(--line);
+    position: relative;
+    transition: background .2s;
+    flex-shrink: 0;
+  }
+  .toggle .track::after {
+    content: "";
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #9b90a8;
+    transition: transform .2s, background .2s;
+  }
+  .toggle input:checked + .track { background: rgba(240, 127, 181, .35); }
+  .toggle input:checked + .track::after { transform: translateX(16px); background: var(--pink); }
+  .toggle .label { font-size: 12px; }
+  .toggle .desc { font-size: 10px; color: var(--muted); margin-left: auto; text-align: right; }
+
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--panel-2);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .item .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .sub { font-size: 10px; color: var(--muted); }
+  .item .del {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 4px;
+  }
+  .item .del:hover { color: var(--red); }
+
+  .empty { color: var(--muted); font-size: 11px; padding: 6px 0; }
+
+  pre.log {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 9px 11px;
+    font-size: 11px;
+    font-family: Consolas, "Courier New", monospace;
+    color: var(--muted);
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%) translateY(12px);
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--pink);
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 12px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    max-width: 80%;
+    z-index: 99;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { border-left-color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="dot"></span>
+  <h1>Cyrene Craft</h1>
+  <span class="ver" id="version">…</span>
+  <span class="spacer"></span>
+  <button id="btn-min" title="最小化">—</button>
+  <button id="btn-close" class="close" title="关闭">✕</button>
+</div>
+
+<main>
+
+  <!-- 状态 -->
+  <section class="card">
+    <h2>当前状态 <span class="hint" id="refresh-hint">每 2 秒刷新</span></h2>
+    <div class="status-grid">
+      <div class="stat"><div class="k">连接</div><div class="v" id="st-state">—</div></div>
+      <div class="stat"><div class="k">服务器</div><div class="v" id="st-server">—</div></div>
+      <div class="stat"><div class="k">角色</div><div class="v" id="st-user">—</div></div>
+      <div class="stat"><div class="k">坐标</div><div class="v" id="st-pos">—</div></div>
+      <div class="stat"><div class="k">生命 / 饥饿</div><div class="v" id="st-hp">—</div></div>
+      <div class="stat"><div class="k">运行时</div><div class="v" id="st-rt">—</div></div>
+    </div>
+  </section>
+
+  <!-- 连接 -->
+  <section class="card">
+    <h2>连接服务器</h2>
+    <div class="row">
+      <div class="field" style="flex:2">
+        <label>服务器地址</label>
+        <input type="text" id="in-address" placeholder="localhost 或 mc.example.com:25566" />
+      </div>
+      <div class="field">
+        <label>游戏角色名</label>
+        <input type="text" id="in-username" placeholder="Cyrene" maxlength="16" />
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="btn-connect">连接</button>
+      <button class="btn ghost" id="btn-disconnect">断开</button>
+      <button class="btn ghost" id="btn-stop">停止当前动作</button>
+    </div>
+  </section>
+
+  <!-- 唤醒 -->
+  <section class="card">
+    <h2>游戏内唤醒 <span class="hint">每次唤醒 = 一轮完整对话</span></h2>
+
+    <label class="toggle">
+      <input type="checkbox" id="sw-wake" />
+      <span class="track"></span>
+      <span class="label">开启唤醒</span>
+      <span class="desc">默认关闭，避免刷爆对话轮次</span>
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" id="sw-all" />
+      <span class="track"></span>
+      <span class="label">响应所有游戏聊天</span>
+      <span class="desc">关闭时只响应点名</span>
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" id="sw-inject" />
+      <span class="track"></span>
+      <span class="label">注入实时游戏状态</span>
+      <span class="desc">每轮自动带上坐标/血量/背包</span>
+    </label>
+
+    <div class="row" style="margin-top:6px">
+      <div class="field">
+        <label>点名关键词（逗号分隔）</label>
+        <input type="text" id="in-mentions" placeholder="昔涟, cyrene, 小昔" />
+      </div>
+      <div class="field" style="max-width:130px">
+        <label>冷却（秒）</label>
+        <input type="number" id="in-cooldown" min="10" max="3600" step="10" />
+      </div>
+      <div class="field" style="max-width:130px">
+        <label>低血阈值</label>
+        <input type="number" id="in-lowhp" min="1" max="19" />
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btn-save-wake">保存唤醒设置</button>
+    </div>
+  </section>
+
+  <!-- 账户 -->
+  <section class="card">
+    <h2>游戏账户 <span class="hint">密码不落本地文件</span></h2>
+    <div class="list" id="account-list">
+      <div class="empty">还没有账户。</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field">
+        <label>新账户角色名</label>
+        <input type="text" id="in-acc-name" placeholder="Steve" maxlength="16" />
+      </div>
+      <div class="field">
+        <label>常用服务器（可选）</label>
+        <input type="text" id="in-acc-server" placeholder="mc.example.com" />
+      </div>
+      <button class="btn ghost" id="btn-acc-add">添加</button>
+    </div>
+  </section>
+
+  <!-- 文件分享 -->
+  <section class="card">
+    <h2>文件分享 <span class="hint">只监听 127.0.0.1</span></h2>
+    <div class="row">
+      <div class="field" style="max-width:150px">
+        <label>端口</label>
+        <input type="number" id="in-share-port" min="1024" max="65535" />
+      </div>
+      <button class="btn" id="btn-share-start">启动</button>
+      <button class="btn ghost" id="btn-share-stop">停止</button>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>当前地址</label>
+        <input type="text" id="in-share-url" readonly />
+      </div>
+    </div>
+  </section>
+
+  <!-- 训练面板 -->
+  <section class="card">
+    <h2>训练面板 <span class="hint">实时看训练数据与技能库</span></h2>
+    <div class="row">
+      <div class="field" style="max-width:150px">
+        <label>端口</label>
+        <input type="number" id="in-panel-port" min="1024" max="65535" />
+      </div>
+      <button class="btn" id="btn-panel-open">打开面板</button>
+      <button class="btn ghost" id="btn-panel-start">启动</button>
+      <button class="btn ghost" id="btn-panel-stop">停止</button>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>当前地址</label>
+        <input type="text" id="in-panel-url" readonly />
+      </div>
+    </div>
+    <p class="hint" style="margin:8px 0 0">
+      面板里有轨迹实时流、技能成功率、导入导出别人训练好的技能。
+    </p>
+  </section>
+
+  <!-- 诊断 -->
+  <section class="card">
+    <h2>诊断</h2>
+    <div class="row">
+      <button class="btn ghost" id="btn-diag">刷新诊断信息</button>
+      <button class="btn ghost" id="btn-open-memory">记忆树位置</button>
+    </div>
+    <pre class="log" id="diag">点上面的按钮查看。</pre>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const { ipcRenderer } = require("electron");
+
+  const IPC = (name) => `plugin:cyrene-craft:${name}`;
+
+  /* ------------------------------ 工具函数 ------------------------------ */
+
+  let toastTimer = null;
+  function toast(text, isError) {
+    const el = document.getElementById("toast");
+    el.textContent = text;
+    el.className = "toast show" + (isError ? " err" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.className = "toast";
+    }, 2600);
+  }
+
+  const $ = (id) => document.getElementById(id);
+
+  function setV(id, text, cls) {
+    const el = $(id);
+    el.textContent = text;
+    el.className = "v" + (cls ? " " + cls : "");
+  }
+
+  /* ------------------------------ 渲染 ------------------------------ */
+
+  let lastSnapshot = null;
+  let dirty = false; // 用户正在改输入框时不要被轮询覆盖
+
+  function render(snap) {
+    if (!snap) return;
+    lastSnapshot = snap;
+
+    $("version").textContent = "v" + snap.version;
+
+    const s = snap.status || {};
+    const stateText = { connected: "已连接", connecting: "连接中", starting: "启动中", disconnected: "未连接", stopping: "停止中" };
+    const stateCls = s.state === "connected" ? "ok" : s.state === "disconnected" ? "err" : "warn";
+    setV("st-state", stateText[s.state] || s.state || "—", stateCls);
+
+    setV("st-server", s.host ? `${s.host}:${s.port}` : "—");
+    setV("st-user", s.username || "—");
+
+    if (s.position) {
+      setV("st-pos", `${Math.round(s.position.x)}, ${Math.round(s.position.y)}, ${Math.round(s.position.z)}`);
+    } else {
+      setV("st-pos", "—");
+    }
+
+    if (s.health != null) {
+      setV("st-hp", `${Math.round(s.health)} / ${Math.round(s.food ?? 0)}`, s.health <= 6 ? "err" : "");
+    } else {
+      setV("st-hp", "—");
+    }
+
+    const rt = snap.runtime || {};
+    setV("st-rt", rt.ok ? `mineflayer ${rt.version || "?"}` : "未就绪", rt.ok ? "ok" : "err");
+
+    // 只在用户没在打字时回填输入框
+    if (!dirty) {
+      const last = snap.lastServer;
+      if (last && !$("in-address").value) {
+        $("in-address").value = `${last.host}${last.port && last.port !== 25565 ? ":" + last.port : ""}`;
+        $("in-username").value = last.username || "";
+      } else if (!$("in-address").value) {
+        $("in-username").value = (snap.settings && snap.settings.defaultUsername) || "Cyrene";
+      }
+    }
+
+    // 开关
+    const st = snap.settings || {};
+    $("sw-wake").checked = st.wakeEnabled === true;
+    $("sw-all").checked = st.respondToAll === true;
+    $("sw-inject").checked = st.injectGameState !== false;
+    if (!dirty) {
+      $("in-mentions").value = (st.mentions || []).join(", ");
+      $("in-cooldown").value = Math.round((st.wakeCooldownMs || 90000) / 1000);
+      $("in-lowhp").value = st.lowHealthThreshold || 6;
+      $("in-share-port").value = st.sharePort || 16050;
+      $("in-panel-port").value = st.panelPort || 16051;
+    }
+
+    // 分享
+    const share = snap.share || {};
+    $("in-share-url").value = share.running ? share.url || "" : "未启动";
+
+    // 训练面板
+    const panel = snap.panel || {};
+    $("in-panel-url").value = panel.running ? panel.url || "" : "未启动";
+
+    // 账户
+    renderAccounts(snap.accounts || []);
+  }
+
+  function renderAccounts(list) {
+    const box = $("account-list");
+    if (!list.length) {
+      box.innerHTML = '<div class="empty">还没有账户。用下面的输入框添加一个。</div>';
+      return;
+    }
+    box.innerHTML = list
+      .map((a) => {
+        const type = a.type === "yggdrasil" ? "皮肤站" : "离线";
+        const srv = a.server ? `${a.server.host}:${a.server.port}` : "";
+        return `<div class="item">
+          <span class="grow">${escapeHtml(a.name)}<span class="sub"> · ${type}${srv ? " · " + escapeHtml(srv) : ""}</span></span>
+          <button class="del" data-id="${escapeHtml(a.id)}" title="删除">✕</button>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  /* ------------------------------ 轮询 ------------------------------ */
+
+  async function tick() {
+    try {
+      const snap = await ipcRenderer.invoke(IPC("snapshot"));
+      render(snap);
+    } catch {
+      /* 单次失败静默，下轮再试 */
+    }
+  }
+
+  setInterval(tick, 2000);
+  tick();
+
+  // 输入框聚焦时标记 dirty，失焦后恢复轮询回填
+  const inputs = document.querySelectorAll("input[type=text], input[type=number]");
+  for (const el of inputs) {
+    el.addEventListener("focus", () => { dirty = true; });
+    el.addEventListener("blur", () => { setTimeout(() => { dirty = false; }, 300); });
+  }
+
+  /* ------------------------------ 交互 ------------------------------ */
+
+  $("btn-min").addEventListener("click", () => {
+    ipcRenderer.send(IPC("win-minimize"));
+  });
+
+  $("btn-close").addEventListener("click", () => {
+    ipcRenderer.send(IPC("win-close"));
+  });
+
+  $("btn-connect").addEventListener("click", async () => {
+    const address = $("in-address").value.trim();
+    const username = $("in-username").value.trim();
+    if (!address) {
+      toast("服务器地址不能为空", true);
+      return;
+    }
+
+    const btn = $("btn-connect");
+    btn.disabled = true;
+    btn.textContent = "连接中…";
+    try {
+      const status = await ipcRenderer.invoke(IPC("connect"), { address, username });
+      toast(status && status.username ? `已进入 ${status.host}:${status.port}` : "连接成功");
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "连接";
+    }
+  });
+
+  $("btn-disconnect").addEventListener("click", async () => {
+    try {
+      await ipcRenderer.invoke(IPC("disconnect"));
+      toast("已断开");
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("btn-stop").addEventListener("click", async () => {
+    // 停止动作走工具那条路，这里只给个提示，避免和工具重复实现
+    toast("在对话里让昔涟停下，或直接点断开");
+  });
+
+  $("btn-save-wake").addEventListener("click", async () => {
+    const mentions = $("in-mentions").value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const patch = {
+      wakeEnabled: $("sw-wake").checked,
+      respondToAll: $("sw-all").checked,
+      injectGameState: $("sw-inject").checked,
+      mentions,
+      wakeCooldownMs: Math.max(10, Number($("in-cooldown").value) || 90) * 1000,
+      lowHealthThreshold: Math.max(1, Math.min(19, Number($("in-lowhp").value) || 6)),
+      panelPort: Math.max(1024, Math.min(65535, Number($("in-panel-port").value) || 16051)),
+    };
+
+    try {
+      await ipcRenderer.invoke(IPC("settings"), patch);
+      toast("唤醒设置已保存");
+      dirty = false;
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  // 三个开关单独改动也立刻生效
+  for (const [id, key] of [
+    ["sw-wake", "wakeEnabled"],
+    ["sw-all", "respondToAll"],
+    ["sw-inject", "injectGameState"],
+  ]) {
+    $(id).addEventListener("change", async () => {
+      try {
+        await ipcRenderer.invoke(IPC("settings"), { [key]: $(id).checked });
+      } catch (e) {
+        toast(String(e && e.message ? e.message : e), true);
+      }
+    });
+  }
+
+  $("btn-acc-add").addEventListener("click", async () => {
+    const name = $("in-acc-name").value.trim();
+    if (!name) {
+      toast("角色名不能为空", true);
+      return;
+    }
+    try {
+      const list = await ipcRenderer.invoke(IPC("accounts"), {
+        action: "add",
+        name,
+        server: $("in-acc-server").value.trim(),
+      });
+      renderAccounts(list);
+      $("in-acc-name").value = "";
+      $("in-acc-server").value = "";
+      toast("账户已添加");
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("account-list").addEventListener("click", async (event) => {
+    const btn = event.target.closest("button.del");
+    if (!btn) return;
+    const id = btn.getAttribute("data-id");
+    try {
+      const list = await ipcRenderer.invoke(IPC("accounts"), { action: "remove", id });
+      renderAccounts(list);
+      toast("账户已删除");
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("btn-share-start").addEventListener("click", async () => {
+    const port = Number($("in-share-port").value) || 16050;
+    try {
+      const result = await ipcRenderer.invoke(IPC("share"), { action: "start", port });
+      if (result && result.ok === false) {
+        toast("启动失败：" + (result.error || "端口被占用"), true);
+      } else {
+        toast("文件分享已启动：" + (result.url || ""));
+      }
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("btn-share-stop").addEventListener("click", async () => {
+    try {
+      await ipcRenderer.invoke(IPC("share"), { action: "stop" });
+      toast("文件分享已停止");
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  /* ---- 训练面板 ---- */
+
+  /** 拿当前面板地址；没起来就先启动再返回，起不来返回 null */
+  async function ensurePanelUrl() {
+    const snap = await ipcRenderer.invoke(IPC("snapshot"));
+    const panel = snap.panel || {};
+    if (panel.running && panel.url) return panel.url;
+
+    const port = Number($("in-panel-port").value) || 16051;
+    const result = await ipcRenderer.invoke(IPC("panel"), { action: "start", port });
+    if (result && result.ok === false) {
+      toast("面板启动失败：" + (result.error || "端口被占用"), true);
+      return null;
+    }
+    return result && result.url ? result.url : null;
+  }
+
+  $("btn-panel-open").addEventListener("click", async () => {
+    try {
+      const url = await ensurePanelUrl();
+      if (!url) return;
+
+      // 设置窗口能直接 require electron，用 shell.openExternal 最稳
+      let opened = false;
+      try {
+        const { shell } = require("electron");
+        if (shell && typeof shell.openExternal === "function") {
+          await shell.openExternal(url);
+          opened = true;
+          toast("已在浏览器打开训练面板");
+        }
+      } catch {
+        /* 降级到下面 */
+      }
+
+      if (!opened) {
+        // 兜底：复制到剪贴板，用户自己粘
+        try {
+          await navigator.clipboard.writeText(url);
+          toast("面板地址已复制：" + url);
+        } catch {
+          toast("请手动打开：" + url);
+        }
+      }
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("btn-panel-start").addEventListener("click", async () => {
+    const port = Number($("in-panel-port").value) || 16051;
+    try {
+      const result = await ipcRenderer.invoke(IPC("panel"), { action: "start", port });
+      if (result && result.ok === false) {
+        toast("启动失败：" + (result.error || "端口被占用"), true);
+      } else {
+        toast("训练面板已启动：" + (result.url || ""));
+      }
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("btn-panel-stop").addEventListener("click", async () => {
+    try {
+      await ipcRenderer.invoke(IPC("panel"), { action: "stop" });
+      toast("训练面板已停止");
+      tick();
+    } catch (e) {
+      toast(String(e && e.message ? e.message : e), true);
+    }
+  });
+
+  $("btn-diag").addEventListener("click", async () => {
+    const box = $("diag");
+    box.textContent = "读取中…";
+    try {
+      const snap = await ipcRenderer.invoke(IPC("snapshot"));
+      box.textContent = JSON.stringify(
+        {
+          version: snap.version,
+          runtime: snap.runtime,
+          status: snap.status,
+          share: snap.share,
+          memoryRoot: snap.memoryRoot,
+          toolCount: snap.toolCount,
+          settings: snap.settings,
+        },
+        null,
+        2,
+      );
+    } catch (e) {
+      box.textContent = "读取失败：" + String(e && e.message ? e.message : e);
+    }
+  });
+
+  $("btn-open-memory").addEventListener("click", async () => {
+    try {
+      const snap = await ipcRenderer.invoke(IPC("snapshot"));
+      $("diag").textContent = "记忆树位置：\n" + (snap.memoryRoot || "未知");
+    } catch (e) {
+      $("diag").textContent = "读取失败：" + String(e && e.message ? e.message : e);
+    }
+  });
+</script>
+</body>
+</html>

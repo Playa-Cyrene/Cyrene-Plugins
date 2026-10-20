@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>昔涟 · 脑图 3D</title>
+<style>
+  :root {
+    --pink: #ff8fb1;
+    --pink-deep: #e8608f;
+    --accent: #ff5b8a;
+    --ink: #2b2230;
+    --ink-soft: #8e8391;
+    --ink-dim: #b9b0bd;
+    --line: #f2e6ec;
+    --bg: #fffafc;
+    --card: #ffffff;
+    --ok: #4bb377;
+    --warn: #e8a33d;
+    --err: #e06060;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: radial-gradient(1400px 900px at 42% -12%, #fff0f6 0%, #fffafc 58%, #fdf7fb 100%);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.6;
+    overflow: hidden;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 22px;
+    background: linear-gradient(120deg, rgba(255,245,248,.92), rgba(255,233,240,.92));
+    border-bottom: 1px solid var(--line);
+    position: relative; z-index: 30;
+    backdrop-filter: blur(8px);
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: .3px; }
+  header h1 span { color: var(--pink-deep); }
+  .nav { display: flex; gap: 4px; margin-left: 8px; }
+  .nav a {
+    font-size: 12px; color: var(--ink-soft); text-decoration: none;
+    padding: 4px 10px; border-radius: 999px; transition: .18s;
+  }
+  .nav a:hover { background: #ffe4ee; color: var(--pink-deep); }
+  .nav a.on { background: var(--pink-deep); color: #fff; }
+  .conn {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    font-size: 12px; color: var(--ink-soft);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; transition: .3s; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(75,179,119,.18); animation: pulse 2.4s infinite; }
+  .dot.off { background: var(--err); }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+
+  /* ---------- 布局 ---------- */
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 392px;
+    height: calc(100vh - 53px);
+  }
+  @media (max-width: 1080px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 58vh 1fr; }
+  }
+
+  /* ---------- 3D 舞台 ---------- */
+  .stage {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(700px 520px at 50% 48%, rgba(255,214,231,.55) 0%, rgba(255,250,252,0) 72%);
+  }
+  #brainCanvas {
+    width: 100%; height: 100%; display: block;
+    cursor: grab;
+    touch-action: none;
+  }
+  #brainCanvas:active { cursor: grabbing; }
+
+  /* 叠加层：联动连线画在这上面，永远盖在模型之上 */
+  #fxCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  /* 舞台角落的提示 */
+  .stage-hint {
+    position: absolute; left: 20px; bottom: 16px;
+    font-size: 11px; color: var(--ink-dim);
+    pointer-events: none; user-select: none;
+  }
+  .stage-top {
+    position: absolute; left: 20px; top: 16px; right: 20px;
+    display: flex; align-items: flex-start; gap: 10px;
+    pointer-events: none; user-select: none;
+  }
+  .stage-top .title {
+    font-size: 12px; letter-spacing: 1.6px; color: var(--ink-dim);
+  }
+  .stage-top .mode {
+    margin-left: auto; font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    background: rgba(255,255,255,.75); border: 1px solid var(--line); color: var(--ink-soft);
+  }
+
+  /* 加载遮罩 */
+  .loading {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; background: rgba(255,250,252,.86);
+    transition: opacity .5s; z-index: 5;
+  }
+  .loading.hide { opacity: 0; pointer-events: none; }
+  .loading .ring {
+    width: 46px; height: 46px; border-radius: 50%;
+    border: 3px solid #ffe0ea; border-top-color: var(--pink-deep);
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .loading .t { font-size: 13px; color: var(--ink-soft); }
+  .loading .s { font-size: 11px; color: var(--ink-dim); }
+
+  /* ---------- 区标签（跟随 3D 投影） ---------- */
+  .tagLayer { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+  .rtag {
+    position: absolute; transform: translate(-50%, -50%);
+    padding: 5px 11px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+    border: 1.5px solid; background: rgba(255,255,255,.82);
+    backdrop-filter: blur(6px);
+    transition: opacity .25s, box-shadow .25s;
+    pointer-events: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .rtag .num {
+    font-size: 10px; font-weight: 700; opacity: .7;
+  }
+  .rtag .bar {
+    width: 26px; height: 3px; border-radius: 2px;
+    background: rgba(0,0,0,.1); overflow: hidden;
+  }
+  .rtag .bar > i { display: block; height: 100%; border-radius: 2px; transition: width .4s; }
+
+  /* ---------- 右侧 HUD ---------- */
+  aside {
+    border-left: 1px solid var(--line);
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(10px);
+    overflow-y: auto; padding: 16px 18px 40px;
+  }
+  aside::-webkit-scrollbar { width: 6px; }
+  aside::-webkit-scrollbar-thumb { background: #f0dde5; border-radius: 3px; }
+
+  .intent {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 14px;
+    background: linear-gradient(135deg, #fff 0%, #fff6fa 100%);
+  }
+  .intent::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: linear-gradient(180deg, var(--accent), #9b6bff);
+  }
+  .intent .label {
+    font-size: 10px; letter-spacing: 1.6px; color: var(--ink-dim); margin-bottom: 5px;
+  }
+  .intent .thought {
+    font-size: 19px; font-weight: 600; line-height: 1.45; color: #241a2b;
+    min-height: 28px;
+  }
+  .intent .thought .cursor {
+    display: inline-block; width: 2px; height: 18px;
+    background: var(--accent); margin-left: 2px; vertical-align: -3px;
+    animation: blink 1.1s step-end infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: 0 } }
+  .intent .meta { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .chip {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    background: #fff0f5; color: var(--pink-deep); border: 1px solid #ffdce8;
+    white-space: nowrap;
+  }
+  .chip.dim { background: #f7f5f8; color: var(--ink-soft); border-color: #eee9f1; }
+  .chip.ok { background: #eefaf3; color: #2c8a58; border-color: #d3f0e1; }
+  .chip.warn { background: #fff8ec; color: #b07a1e; border-color: #ffe9c7; }
+
+  h2.sect {
+    font-size: 12px; font-weight: 600; margin: 16px 0 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2.sect .hint { font-weight: 400; font-size: 11px; color: var(--ink-dim); }
+
+  /* 区能量条 */
+  .eregion {
+    display: grid; grid-template-columns: 10px 62px minmax(0,1fr) 40px;
+    gap: 9px; align-items: center;
+    padding: 7px 9px; border-radius: 9px; margin-bottom: 4px;
+    transition: background .2s;
+  }
+  .eregion:hover { background: #fff5f9; }
+  .eregion .sw {
+    width: 10px; height: 10px; border-radius: 3px;
+  }
+  .eregion .nm { font-size: 12px; font-weight: 600; }
+  .eregion .nm small { display: block; font-size: 9px; font-weight: 400; color: var(--ink-dim); }
+  .eregion .bar {
+    height: 6px; border-radius: 3px; background: #f4eaf0; overflow: hidden;
+  }
+  .eregion .bar > i {
+    display: block; height: 100%; border-radius: 3px;
+    transition: width .45s cubic-bezier(.22,1,.36,1);
+  }
+  .eregion .pct { font-size: 10px; color: var(--ink-dim); text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* 候选 */
+  .cand { display: flex; flex-direction: column; gap: 7px; }
+  .cand-row {
+    display: grid; grid-template-columns: 22px minmax(0,1fr) auto;
+    gap: 9px; align-items: center;
+    padding: 8px 10px; border-radius: 9px;
+    border: 1px solid var(--line); background: #fffcfd;
+    transition: .18s;
+  }
+  .cand-row:hover { border-color: var(--pink-soft); background: #fff6fa; }
+  .cand-row.top { border-color: var(--pink); background: #fff4f8; }
+  .cand-row .rank { font-size: 11px; font-weight: 700; color: var(--ink-dim); text-align: center; }
+  .cand-row.top .rank { color: var(--pink-deep); }
+  .cand-row .name { font-size: 12px; font-weight: 600; }
+  .cand-row .sub { font-size: 10px; color: var(--ink-soft); }
+  .cand-row .bar-wrap { width: 54px; }
+  .cand-row .bar { height: 4px; border-radius: 2px; background: #f4eaf0; overflow: hidden; }
+  .cand-row .bar > i { display: block; height: 100%; background: linear-gradient(90deg,#ffd6e3,var(--accent)); }
+  .cand-row .score { font-size: 9px; color: var(--ink-dim); text-align: right; }
+
+  .empty { text-align: center; padding: 26px 10px; color: var(--ink-soft); font-size: 12px; }
+  .blocked-row {
+    display: flex; align-items: center; gap: 8px; font-size: 11px;
+    padding: 6px 9px; border-radius: 7px; background: #fffbee;
+    border: 1px solid #fdefd2; margin-bottom: 4px; color: var(--ink-soft);
+  }
+  .blocked-row .b-tool { font-weight: 600; color: #8a6a2a; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { background: #fffafc; border: 1px solid var(--line); border-radius: 9px; padding: 8px; text-align: center; }
+  .stat .v { font-size: 17px; font-weight: 600; }
+  .stat .k { font-size: 9px; color: var(--ink-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>昔涟 · <span>脑图 3D</span></h1>
+  <nav class="nav">
+    <a href="/">训练面板</a>
+    <a href="/brain.html" class="on">脑图</a>
+  </nav>
+  <div class="conn">
+    <span class="dot" id="dot"></span>
+    <span id="connText">连接中…</span>
+  </div>
+</header>
+
+<main>
+  <!-- 3D 舞台 -->
+  <section class="stage">
+    <canvas id="brainCanvas"></canvas>
+    <!-- 叠加层：在 3D 之上画联动连线与光点，避免被模型体积遮住 -->
+    <canvas id="fxCanvas" class="fx"></canvas>
+    <div class="tagLayer" id="tagLayer"></div>
+
+    <div class="stage-top">
+      <div class="title">PREFERRED PATH · 此刻的脑</div>
+      <div class="mode" id="modeTag">扩散</div>
+    </div>
+
+    <div class="stage-hint">拖动旋转 · 滚轮缩放 · 点右侧区域聚焦</div>
+
+    <div class="loading" id="loading">
+      <div class="ring"></div>
+      <div class="t">正在装载脑模型…</div>
+      <div class="s" id="loadPct">4.4 MB 解剖数据</div>
+    </div>
+  </section>
+
+  <!-- HUD -->
+  <aside>
+    <div class="intent">
+      <div class="label">意图 · INTENT</div>
+      <div class="thought" id="intentText">正在读取…</div>
+      <div class="meta" id="intentMeta"></div>
+    </div>
+
+    <h2 class="sect">区域能量 <span class="hint">点一行聚焦该区</span></h2>
+    <div id="regionList"></div>
+
+    <h2 class="sect">下一步 <span class="hint">能量扩散候选</span></h2>
+    <div class="cand" id="candList">
+      <div class="empty">还在等信号…</div>
+    </div>
+
+    <h2 class="sect">被挡住的念头</h2>
+    <div id="blockedList"><div class="empty" style="padding:16px 0;">没有被门禁拦下</div></div>
+
+    <h2 class="sect">图规模</h2>
+    <div class="stats" id="statGrid"></div>
+  </aside>
+</main>
+
+<script type="module">
+import { Brain3D, REGIONS } from "./brain3d.js";
+
+const SVG_NS = null;
+const COLORS = Object.fromEntries(
+  REGIONS.map((r) => [r.id, `#${r.color.toString(16).padStart(6, "0")}`]),
+);
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("brainCanvas");
+const tagLayer = $("tagLayer");
+
+let brain = null;
+let state = {
+  regions: [],
+  nodes: [],
+  edges: [],
+  intent: null,
+  candidates: [],
+  blocked: [],
+  stats: {},
+  note: "",
+  energyMode: "diffuse",
+};
+
+/* ============================================================
+   启动
+   ============================================================ */
+
+async function boot() {
+  brain = new Brain3D(canvas, {
+    onProgress: (p) => {
+      $("loadPct").textContent = `已载入 ${Math.round(p * 100)}%`;
+    },
+    onReady: () => {
+      $("loading").classList.add("hide");
+      setTimeout(() => { $("loading").style.display = "none"; }, 600);
+      buildRegionList();
+
+      // 诊断：把每区分到多少网格写进标题，便于快速确认分区是否生效
+      const st = brain.stats();
+      const parts = st.map((r) => `${r.id}:${r.meshes}`);
+      document.title = `脑图3D [${parts.join(" ")}] links=${brain.links?.length ?? 0} hidden=${brain.hiddenCount ?? "?"}`;
+      console.log("[brain] regions", st);
+      console.log("[brain] links", brain.links?.map((l) => `${l.from}-${l.to}`));
+    },
+    onError: (e) => {
+      $("loading").innerHTML =
+        `<div class="t" style="color:var(--err)">模型加载失败</div><div class="s">${e?.message || e}</div>`;
+      console.error(e);
+    },
+  });
+
+  try {
+    await brain.load("/vendor/brain.glb");
+  } catch (e) {
+    console.error("GLB 加载失败", e);
+  }
+
+  poll();
+  setInterval(poll, 2000);
+}
+
+/* ============================================================
+   数据
+   ============================================================ */
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function setConn(on, text) {
+  $("dot").className = "dot " + (on ? "on" : "off");
+  $("connText").textContent = text;
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/api/brain?limit=6", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+
+    state = {
+      regions: data.regions || [],
+      nodes: data.nodes || [],
+      edges: data.edges || [],
+      intent: data.intent,
+      candidates: data.candidates || [],
+      blocked: data.blocked || [],
+      stats: data.stats || {},
+      note: data.note || "",
+      energyMode: data.energyMode || "diffuse",
+    };
+
+    setConn(true, data.empty ? "等待轨迹" : "在线 · 实时");
+
+    brain?.setState({
+      regions: state.regions,
+      nodes: state.nodes,
+      edges: state.edges,
+      current: data.current,
+      energyMode: state.energyMode,
+    });
+
+    $("modeTag").textContent = state.energyMode === "global" ? "全局评分" : "能量扩散";
+
+    paintIntent();
+    paintRegionList();
+    paintCandidates();
+    paintBlocked();
+    paintStats();
+  } catch (e) {
+    setConn(false, "断开：" + e.message);
+  }
+}
+
+/* ============================================================
+   意图
+   ============================================================ */
+
+let typeTimer = null;
+function paintIntent() {
+  const textEl = $("intentText");
+  const metaEl = $("intentMeta");
+  if (typeTimer) clearInterval(typeTimer);
+  metaEl.innerHTML = "";
+
+  const intent = state.intent;
+  if (!intent) {
+    textEl.innerHTML = '<span style="color:var(--ink-dim);font-size:15px;">此刻没有明确的意图</span>';
+    metaEl.innerHTML = `<span class="chip dim">${escapeHtml(state.note || "图还太稀疏")}</span>`;
+    return;
+  }
+
+  const full = intent.text;
+  let i = 0;
+  textEl.innerHTML = '<span class="cursor"></span>';
+  typeTimer = setInterval(() => {
+    i += 2;
+    textEl.innerHTML = escapeHtml(full.slice(0, i)) + (i < full.length ? '<span class="cursor"></span>' : "");
+    if (i >= full.length) { clearInterval(typeTimer); typeTimer = null; }
+  }, 36);
+
+  const chips = [`<span class="chip">${escapeHtml(intent.tool)}</span>`];
+  if (intent.runs != null) chips.push(`<span class="chip dim">跑过 ${intent.runs} 次</span>`);
+  if (intent.successRate != null) {
+    const pct = Math.round(intent.successRate * 100);
+    chips.push(`<span class="chip ${pct >= 80 ? "ok" : pct >= 50 ? "warn" : ""}">成功率 ${pct}%</span>`);
+  }
+  chips.push(`<span class="chip dim">能量 ${intent.score}</span>`);
+  metaEl.innerHTML = chips.join("");
+}
+
+/* ============================================================
+   区域列表（同时驱动 3D 聚焦）
+   ============================================================ */
+
+let focusId = null;
+
+function buildRegionList() {
+  const box = $("regionList");
+  const stats = brain ? brain.stats() : [];
+  box.innerHTML = stats
+    .map((r) => {
+      const pct = Math.round(r.target * 100);
+      return `
+        <div class="eregion" data-rid="${r.id}">
+          <div class="sw" style="background:${r.color}"></div>
+          <div class="nm">${r.name}<small>${r.lobe}</small></div>
+          <div class="bar"><i style="width:${pct}%;background:${r.color}"></i></div>
+          <div class="pct">${pct}%</div>
+        </div>`;
+    })
+    .join("");
+
+  box.querySelectorAll(".eregion").forEach((el) => {
+    el.addEventListener("click", () => {
+      const rid = el.dataset.rid;
+      focusId = focusId === rid ? null : rid;
+      brain?.spotlight(focusId);
+      paintRegionList();
+    });
+  });
+}
+
+function paintRegionList() {
+  const box = $("regionList");
+  if (!box.children.length) return;
+  const stats = brain ? brain.stats() : [];
+
+  for (const r of stats) {
+    const el = box.querySelector(`.eregion[data-rid="${r.id}"]`);
+    if (!el) continue;
+    const pct = Math.round(r.target * 100);
+    el.querySelector(".bar > i").style.width = pct + "%";
+    el.querySelector(".pct").textContent = pct + "%";
+    el.style.background = focusId === r.id ? "#fff0f6" : "";
+    el.style.opacity = focusId && focusId !== r.id ? ".45" : "1";
+  }
+}
+
+/* ============================================================
+   候选 / 拦截 / 统计
+   ============================================================ */
+
+function paintCandidates() {
+  const box = $("candList");
+  if (!state.candidates.length) {
+    box.innerHTML = `<div class="empty">${escapeHtml(state.note || "没有可走的路")}</div>`;
+    return;
+  }
+  const max = Math.max(0.0001, ...state.candidates.map((c) => c.score));
+
+  box.innerHTML = state.candidates
+    .map((c, i) => {
+      const pct = Math.round((c.score / max) * 100);
+      const rate = Math.round((c.successRate || 0) * 100);
+      const args = Object.entries(c.args || {})
+        .filter(([k, v]) => v != null && !["radius", "x", "y", "z"].includes(k))
+        .slice(0, 2).map(([k, v]) => `${k}=${v}`).join(" ");
+      const via = c.via ? `← ${c.via.split(":")[0]}` : "起点";
+      return `
+        <div class="cand-row ${i === 0 ? "top" : ""}">
+          <div class="rank">${i + 1}</div>
+          <div>
+            <div class="name">${escapeHtml(c.tool)}${args ? ` <span style="font-weight:400;color:var(--ink-soft);font-size:10px">${escapeHtml(args)}</span>` : ""}</div>
+            <div class="sub">${escapeHtml(via)} · ${c.runs}次 · ${rate}%</div>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar"><i style="width:${pct}%"></i></div>
+            <div class="score">${c.score}</div>
+          </div>
+        </div>`;
+    })
+    .join("");
+}
+
+function paintBlocked() {
+  const box = $("blockedList");
+  if (!state.blocked.length) {
+    box.innerHTML = `<div class="empty" style="padding:16px 0;">没有被门禁拦下</div>`;
+    return;
+  }
+  box.innerHTML = state.blocked
+    .map((b) => `<div class="blocked-row"><span class="b-tool">${escapeHtml(b.tool)}</span><span>${escapeHtml(b.reason)}</span></div>`)
+    .join("");
+}
+
+function paintStats() {
+  const s = state.stats || {};
+  const rows = [
+    { k: "动作节点", v: s.nodes || 0 },
+    { k: "转移边", v: s.edges || 0 },
+    { k: "经历段", v: s.episodes || 0 },
+  ];
+  $("statGrid").innerHTML = rows
+    .map((r) => `<div class="stat"><div class="v">${r.v}</div><div class="k">${r.k}</div></div>`)
+    .join("");
+}
+
+/* ============================================================
+   区标签跟随 3D 投影 + 2D 联动特效
+   ------------------------------------------------------------
+   为什么连线画在 2D 叠加层而不是 3D 里：
+   3D 里的细线在 WebGL 下几乎不可见（linewidth 还被多数平台忽略），
+   管状几何体在这个缩放比例下也只有一两像素。改在 2D canvas 上画，
+   线宽是真实像素，无论怎么旋转缩放都清晰。
+   ============================================================ */
+
+const tagEls = new Map();
+const fxCanvas = document.getElementById("fxCanvas");
+const fxCtx = fxCanvas.getContext("2d");
+
+/** 世界坐标 → 屏幕像素。返回 null 表示在相机背后。 */
+function project(vec3) {
+  if (!brain || !brain.ready) return null;
+  const p = vec3.clone();
+  brain.holder.localToWorld(p);
+  p.project(brain.camera);
+  if (p.z > 1) return null; // 相机背后
+
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  return {
+    x: (p.x * 0.5 + 0.5) * w,
+    y: (-p.y * 0.5 + 0.5) * h,
+    z: p.z,
+  };
+}
+
+/** 每区能量 0..1 */
+function energyOf(id) {
+  const r = brain?.regions.get(id);
+  return r ? r.energy : 0;
+}
+
+/** 区的屏幕中心 */
+function screenCenter(id) {
+  const r = brain?.regions.get(id);
+  return r ? project(r.center) : null;
+}
+
+let fxTime = 0;
+
+function drawFx(dt) {
+  if (!brain || !brain.ready) return;
+
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  // 尺寸同步（只在变化时重置，避免每帧清空 canvas 导致闪烁）
+  if (fxCanvas.width !== Math.round(w * dpr) || fxCanvas.height !== Math.round(h * dpr)) {
+    fxCanvas.width = Math.round(w * dpr);
+    fxCanvas.height = Math.round(h * dpr);
+  }
+
+  fxCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fxCtx.clearRect(0, 0, w, h);
+
+  fxTime += dt;
+
+  // ---- 区与区之间的联动光带 ----
+  const links = brain.links || [];
+  for (const link of links) {
+    const wgt = link.weight;
+    if (wgt < 0.02) continue;
+
+    const a = screenCenter(link.from);
+    const b = screenCenter(link.to);
+    if (!a || !b) continue;
+
+    // 控制点：中点向屏幕外法线方向偏移，形成弧
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+
+    // 朝向屏幕中心的反方向外扩，避免弧线穿过脑子正中
+    const cx0 = w / 2;
+    const cy0 = h / 2;
+    const outward = { x: mx - cx0, y: my - cy0 };
+    const olen = Math.hypot(outward.x, outward.y) || 1;
+    const bend = 46 + 58 * wgt;
+    const cxp = mx + (outward.x / olen) * bend;
+    const cyp = my + (outward.y / olen) * bend;
+
+    const cA = COLORS[link.from];
+    const cB = COLORS[link.to];
+
+    // 外层柔光
+    fxCtx.save();
+    fxCtx.globalCompositeOperation = "lighter";
+    fxCtx.lineCap = "round";
+
+    const grad = fxCtx.createLinearGradient(a.x, a.y, b.x, b.y);
+    grad.addColorStop(0, cA);
+    grad.addColorStop(1, cB);
+
+    // 粗柔光（3 层，从粗到细叠加，形成霓虹感）
+    for (const [width, alpha] of [[13, 0.05], [7, 0.1], [3.2, 0.22]]) {
+      fxCtx.beginPath();
+      fxCtx.moveTo(a.x, a.y);
+      fxCtx.quadraticCurveTo(cxp, cyp, b.x, b.y);
+      fxCtx.strokeStyle = grad;
+      fxCtx.globalAlpha = alpha * (0.4 + wgt * 0.6);
+      fxCtx.lineWidth = width * (0.7 + wgt * 0.9);
+      fxCtx.stroke();
+    }
+
+    // 亮芯
+    fxCtx.beginPath();
+    fxCtx.moveTo(a.x, a.y);
+    fxCtx.quadraticCurveTo(cxp, cyp, b.x, b.y);
+    fxCtx.strokeStyle = grad;
+    fxCtx.globalAlpha = 0.35 + wgt * 0.55;
+    fxCtx.lineWidth = 1.2 + wgt * 1.6;
+    fxCtx.stroke();
+
+    // ---- 沿曲线流动的光点 ----
+    const DOT_COUNT = 6;
+    const speed = 0.24 + wgt * 0.42;
+
+    for (let i = 0; i < DOT_COUNT; i++) {
+      // 每颗点错开相位
+      const phase = (fxTime * speed + i / DOT_COUNT) % 1;
+
+      // 二次贝塞尔求点
+      const t1 = 1 - phase;
+      const px = t1 * t1 * a.x + 2 * t1 * phase * cxp + phase * phase * b.x;
+      const py = t1 * t1 * a.y + 2 * t1 * phase * cyp + phase * phase * b.y;
+
+      // 两端淡，中间亮
+      const fade = Math.sin(phase * Math.PI);
+      const dotR = (1.6 + wgt * 3.4) * (0.45 + fade * 0.85);
+
+      const dg = fxCtx.createRadialGradient(px, py, 0, px, py, dotR * 3.2);
+      dg.addColorStop(0, phase < 0.5 ? cA : cB);
+      dg.addColorStop(0.35, phase < 0.5 ? cA : cB);
+      dg.addColorStop(1, "rgba(0,0,0,0)");
+
+      fxCtx.globalAlpha = (0.5 + fade * 0.5) * (0.35 + wgt * 0.65);
+      fxCtx.beginPath();
+      fxCtx.arc(px, py, dotR * 3.2, 0, Math.PI * 2);
+      fxCtx.fillStyle = dg;
+      fxCtx.fill();
+
+      // 高亮核心
+      fxCtx.globalAlpha = 0.75 + fade * 0.25;
+      fxCtx.beginPath();
+      fxCtx.arc(px, py, dotR * 0.7, 0, Math.PI * 2);
+      fxCtx.fillStyle = "#fff";
+      fxCtx.fill();
+    }
+
+    fxCtx.restore();
+  }
+
+  // ---- 区能量光环：能量高的区，外围扩散一圈脉冲 ----
+  for (const region of brain.regions.values()) {
+    const e = region.energy;
+    if (e < 0.1) continue;
+
+    const c = screenCenter(region.id);
+    if (!c) continue;
+
+    // 半径按 3D 包围盒投影粗略估算
+    const baseR = 42 + e * 34;
+    const phase = (fxTime * (0.5 + e * 0.7) + (region.center.x + 3) * 0.3) % 1;
+    const r = baseR * (0.55 + phase * 0.9);
+    const alpha = (1 - phase) * e * 0.55;
+
+    fxCtx.save();
+    fxCtx.globalCompositeOperation = "lighter";
+    fxCtx.globalAlpha = alpha;
+    fxCtx.beginPath();
+    fxCtx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    fxCtx.strokeStyle = COLORS[region.id];
+    fxCtx.lineWidth = 2 + e * 3.5;
+    fxCtx.shadowBlur = 18;
+    fxCtx.shadowColor = COLORS[region.id];
+    fxCtx.stroke();
+
+    // 第二圈，相位错开，形成连续脉冲
+    fxCtx.globalAlpha = alpha * 0.5;
+    fxCtx.beginPath();
+    fxCtx.arc(c.x, c.y, r * 0.68, 0, Math.PI * 2);
+    fxCtx.lineWidth = 1 + e * 2;
+    fxCtx.stroke();
+    fxCtx.restore();
+  }
+}
+
+function updateTags() {
+  if (!brain || !brain.ready) return;
+
+  for (const region of brain.regions.values()) {
+    let el = tagEls.get(region.id);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "rtag";
+      el.innerHTML = `<span class="num"></span><span class="tname"></span><span class="bar"><i></i></span>`;
+      tagLayer.appendChild(el);
+      tagEls.set(region.id, el);
+    }
+
+    const p = project(region.center);
+    const visible = !!p;
+    const e = region.energy;
+
+    if (p) {
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+    }
+    el.style.opacity = visible ? String(0.42 + e * 0.58) : "0";
+
+    el.style.borderColor = COLORS[region.id];
+    el.style.color = COLORS[region.id];
+    el.style.boxShadow = e > 0.12 ? `0 0 ${8 + e * 26}px ${COLORS[region.id]}66` : "none";
+    el.style.transform = `translate(-50%,-50%) scale(${1 + e * 0.14})`;
+
+    el.querySelector(".num").textContent = region.count || "";
+    el.querySelector(".tname").textContent = region.def.name;
+    const bar = el.querySelector(".bar > i");
+    bar.style.width = Math.round(region.target * 100) + "%";
+    bar.style.background = COLORS[region.id];
+  }
+}
+
+/* 每帧更新：先更新 3D（brain 自己的 raf），这里负责 2D 叠加 */
+let lastT = performance.now();
+function raf() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+
+  updateTags();
+  drawFx(dt);
+  requestAnimationFrame(raf);
+}
+
+/* ============================================================
+   启动
+   ============================================================ */
+
+boot().then(() => raf());
+</script>
+</body>
+</html>

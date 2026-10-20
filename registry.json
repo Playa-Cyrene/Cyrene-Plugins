@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-10-18",
+  "updatedAt": "2026-10-20",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -154,6 +154,14 @@
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-hud-0.8.7.zip",
       "sha256": "0dc5de056802360b971a6f35fb8a5145de5cb9af567ad288dcc1fb0ef4cc0fd3",
       "downloads": 0
+    },
+    {
+      "id": "cyrene-craft",
+      "name": "Cyrene Craft",
+      "version": "1.0.0",
+      "description": "把昔涟接入 Minecraft：机器人在线对话，支持采集/建造/战斗与自主任务，带本能反射、类脑决策、技能沉淀和 3D 脑图训练面板",
+      "author": "Cyrene, Mori",
+      "homepage": "https://github.com/morisukesu/cyrene-craft"
     }
   ]
 }

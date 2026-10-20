@@ -1,0 +1,1238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>昔涟 · 训练面板</title>
+<style>
+  :root {
+    --pink: #ff8fb1;
+    --pink-soft: #ffd6e3;
+    --pink-deep: #e8608f;
+    --ink: #2b2230;
+    --ink-soft: #6b5f70;
+    --line: #f0dde5;
+    --bg: #fffafc;
+    --card: #ffffff;
+    --ok: #4bb377;
+    --warn: #e8a33d;
+    --err: #e06060;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 22px;
+    background: linear-gradient(120deg, #fff5f8, #ffe9f0);
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; }
+  header h1 span { color: var(--pink-deep); }
+  .nav { display: flex; gap: 4px; margin-left: 8px; }
+  .nav a {
+    font-size: 12px; color: var(--ink-soft); text-decoration: none;
+    padding: 4px 10px; border-radius: 999px; transition: .18s;
+  }
+  .nav a:hover { background: #ffe4ee; color: var(--pink-deep); }
+  .nav a.on { background: var(--pink-deep); color: #fff; }
+  .conn {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    font-size: 12px; color: var(--ink-soft);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px rgba(75,179,119,.18); }
+  .dot.off { background: var(--err); }
+  main { padding: 18px 22px 60px; max-width: 1180px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .stat .label { font-size: 12px; color: var(--ink-soft); }
+  .stat .value { font-size: 24px; font-weight: 600; margin-top: 2px; }
+  .stat .value small { font-size: 12px; font-weight: 400; color: var(--ink-soft); }
+  section { margin-bottom: 26px; }
+  section > h2 {
+    font-size: 14px; font-weight: 600; margin: 0 0 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  section > h2 .hint { font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+  .toolbar { margin-left: auto; display: flex; gap: 8px; }
+  button {
+    font: inherit; font-size: 13px; cursor: pointer;
+    border-radius: 8px; border: 1px solid var(--line);
+    background: #fff; color: var(--ink); padding: 5px 12px;
+    transition: .15s;
+  }
+  button:hover { border-color: var(--pink); background: #fff7fa; }
+  button.primary { background: var(--pink); border-color: var(--pink); color: #fff; }
+  button.primary:hover { background: var(--pink-deep); border-color: var(--pink-deep); }
+  button.danger { color: var(--err); border-color: #f2c9c9; }
+  button.danger:hover { background: #fff4f4; border-color: var(--err); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .empty { color: var(--ink-soft); font-size: 13px; padding: 18px; text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 500; color: var(--ink-soft); font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+  code {
+    font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+    background: #fff2f6; padding: 1px 5px; border-radius: 4px; color: var(--pink-deep);
+  }
+  .badge {
+    display: inline-block; padding: 1px 7px; border-radius: 20px;
+    font-size: 11px; border: 1px solid var(--line); background: #fff;
+  }
+  .badge.ok { color: var(--ok); border-color: #cfeadd; background: #f2fbf6; }
+  .badge.warn { color: var(--warn); border-color: #f2e2c7; background: #fffaf0; }
+  .badge.err { color: var(--err); border-color: #f2c9c9; background: #fff4f4; }
+  .badge.lv { color: var(--pink-deep); border-color: var(--pink-soft); background: #fff5f9; }
+  .steps { font-size: 12px; color: var(--ink-soft); margin-top: 6px; }
+  .skill-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .skill-name { font-weight: 600; font-family: ui-monospace, Consolas, monospace; }
+  .skill-desc { color: var(--ink-soft); font-size: 12px; }
+  .trace-row.ok { border-left: 3px solid var(--ok); }
+  .trace-row.fail { border-left: 3px solid var(--err); }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--ink-soft); }
+  .log {
+    background: #fff9fb; border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; max-height: 260px; overflow-y: auto;
+    font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.75;
+  }
+  .log .t { color: #b4a7b8; }
+  .log .ok { color: var(--ok); }
+  .log .fail { color: var(--err); }
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: #fff; padding: 9px 18px; border-radius: 20px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: .25s; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: var(--err); }
+  .filters { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filters label { font-size: 12px; color: var(--ink-soft); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  dialog {
+    border: none; border-radius: 14px; padding: 0; width: min(620px, 92vw);
+    box-shadow: 0 20px 60px rgba(120,70,95,.22);
+  }
+  dialog::backdrop { background: rgba(60,40,50,.35); }
+  dialog .dlg-body { padding: 18px 20px; }
+  dialog h3 { margin: 0 0 10px; font-size: 15px; }
+  dialog pre {
+    background: #fff9fb; border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px; overflow: auto; max-height: 380px; font-size: 12px; margin: 0;
+  }
+  dialog .dlg-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 0 20px 16px; }
+  .drop {
+    border: 2px dashed var(--pink-soft); border-radius: 12px; padding: 24px;
+    text-align: center; color: var(--ink-soft); font-size: 13px; cursor: pointer;
+    transition: .15s; background: #fffdfe;
+  }
+  .drop.dragging { border-color: var(--pink); background: #fff5f9; }
+  select {
+    font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 8px;
+    border: 1px solid var(--line); background: #fff;
+  }
+
+  /* ---------------------------- 目标驾驶舱 ---------------------------- */
+  .goal-grid {
+    display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 12px; align-items: start;
+  }
+  @media (max-width: 900px) { .goal-grid { grid-template-columns: 1fr; } }
+  .goal-grid > .card { margin-bottom: 10px; }
+  .goal-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .goal-title { font-weight: 600; }
+  .goal-sub { font-size: 12px; color: var(--ink-soft); }
+  .bar { height: 7px; border-radius: 99px; background: #ffeaf1; overflow: hidden; margin: 8px 0 6px; }
+  .bar > i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--pink), var(--pink-deep)); transition: width .35s; }
+  .goal-current { border-left: 3px solid var(--pink); }
+  .goal-current .big { font-size: 16px; font-weight: 600; margin: 2px 0; }
+  .goal-graph + .goal-graph { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 12px; }
+  .tree { margin-top: 8px; }
+  .tree-node { position: relative; padding: 5px 8px 5px 10px; border-left: 2px solid #f4e2ea; margin: 2px 0 2px 2px; }
+  .tree-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .tree-title { font-size: 13px; }
+  .tree-meta { font-size: 11px; color: var(--ink-soft); font-family: ui-monospace, Consolas, monospace; }
+  .tree-node .chips { margin-top: 3px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { font-size: 10px; padding: 0 6px; border-radius: 99px; background: #fff3f8; color: var(--pink-deep); border: 1px solid var(--pink-soft); }
+  .st { font-size: 10px; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--ink-soft); background: #fff; white-space: nowrap; }
+  .st.done { color: var(--ok); border-color: #cfeadd; background: #f2fbf6; }
+  .st.active { color: #fff; border-color: var(--pink-deep); background: var(--pink-deep); }
+  .st.ready { color: #3f7fd8; border-color: #cfe0f7; background: #f3f8ff; }
+  .st.blocked { color: #9a8fa0; background: #faf7fa; }
+  .st.manual { color: var(--warn); border-color: #f2e2c7; background: #fffaf0; border-style: dashed; }
+  .goal-list { display: flex; flex-direction: column; gap: 8px; }
+  .goal-item { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .goal-item.active { border-color: var(--pink); background: #fff7fa; }
+  .goal-item .line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .goal-item .name { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .goal-item .bar { margin: 6px 0 2px; }
+  .steps-feed { max-height: 330px; overflow: auto; }
+  .step-row { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); font-size: 12px; align-items: flex-start; }
+  .step-row:last-child { border-bottom: none; }
+  .step-row .t { color: #b4a7b8; font-family: ui-monospace, Consolas, monospace; min-width: 58px; }
+  .step-row .act { font-family: ui-monospace, Consolas, monospace; }
+  .step-row .goal { color: var(--pink-deep); }
+  .step-row.fail .act { color: var(--err); }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tabs button.on { background: var(--pink-deep); color: #fff; border-color: var(--pink-deep); }
+  #goalText {
+    width: 100%; font: 12px/1.6 ui-monospace, Consolas, monospace;
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+    resize: vertical; background: #fffdfe; color: var(--ink);
+  }
+  .preview-box { margin-top: 10px; font-size: 12px; }
+  .preview-list { max-height: 180px; overflow: auto; margin-top: 6px; }
+  .preview-errors { color: var(--err); background: #fff4f4; border: 1px solid #f2c9c9; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+  .preview-ok { color: var(--ok); }
+  .warn-line { color: var(--warn); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>昔涟 · <span>训练面板</span></h1>
+  <nav class="nav">
+    <a href="/" class="on">训练面板</a>
+    <a href="/brain.html">脑图</a>
+  </nav>
+  <div class="conn">
+    <span class="dot" id="dot"></span>
+    <span id="connText">连接中…</span>
+  </div>
+</header>
+
+<main>
+  <div class="grid">
+    <div class="stat"><div class="label">轨迹条数</div><div class="value" id="sTrace">–</div></div>
+    <div class="stat"><div class="label">技能数量</div><div class="value" id="sSkill">–</div></div>
+    <div class="stat"><div class="label">技能执行</div><div class="value" id="sRuns">–</div></div>
+    <div class="stat"><div class="label">成功率</div><div class="value" id="sRate">–</div></div>
+    <div class="stat"><div class="label">可编译段落</div><div class="value" id="sCompile">–</div></div>
+    <div class="stat"><div class="label">游戏状态</div><div class="value" id="sGame" style="font-size:15px">–</div></div>
+  </div>
+
+  <section>
+    <h2>目标驾驶舱 <span class="hint">大目标 · 小目标 · 节点树 · 每一步</span>
+      <span class="toolbar">
+        <button class="primary" id="btnGoalImport">导入攻略 / 提纯</button>
+        <button id="btnGoalRefresh">刷新</button>
+      </span>
+    </h2>
+    <div class="card goal-current" id="goalCurrent">
+      <div class="empty">正在读取目标…</div>
+    </div>
+    <div class="goal-grid">
+      <div class="card" id="goalGraphs"></div>
+      <div class="card" id="goalList"></div>
+    </div>
+    <div class="card" id="goalSteps"></div>
+  </section>
+
+  <section>
+    <h2>类脑决策 <span class="hint">此刻在想什么、下一步做什么</span>
+      <span class="toolbar">
+        <button class="primary" id="btnBrain">打开 3D 脑图</button>
+      </span>
+    </h2>
+    <div class="card" id="brainTeaser"></div>
+  </section>
+
+  <section>
+    <h2>技能库 <span class="hint" id="skillHint"></span>
+      <span class="toolbar">
+        <button id="btnImport">导入文件</button>
+        <button id="btnExport">导出全部</button>
+      </span>
+    </h2>
+    <div id="skillList"></div>
+  </section>
+
+  <section>
+    <h2>工具使用分布 <span class="hint">哪些动作产生了训练数据</span></h2>
+    <div class="card" id="toolStats"></div>
+  </section>
+
+  <section>
+    <h2>实时轨迹 <span class="hint">SSE 推送，最新在上</span>
+      <span class="toolbar">
+        <label class="mono"><input type="checkbox" id="onlyFail" /> 只看失败</label>
+        <button class="danger" id="btnClearTraces">清空轨迹</button>
+      </span>
+    </h2>
+    <div class="card" id="traceList"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- 导入对话框 -->
+<dialog id="dlgImport">
+  <div class="dlg-body">
+    <h3>导入他人训练数据</h3>
+    <p style="font-size:13px;color:var(--ink-soft);margin:0 0 12px">
+      支持导出文件（cyrene-skills-*.json）或单个技能 JSON。
+    </p>
+    <div class="drop" id="dropZone">
+      点击选择文件，或把文件拖到这里<br />
+      <span class="mono">.json，最大 4MB</span>
+    </div>
+    <input type="file" id="fileInput" accept=".json,application/json" hidden />
+    <div style="margin-top:14px;display:flex;align-items:center;gap:10px;font-size:13px">
+      <span>同名技能</span>
+      <select id="conflictMode">
+        <option value="skip">跳过（保留本地）</option>
+        <option value="overwrite">覆盖本地</option>
+        <option value="rename">改名并存</option>
+      </select>
+    </div>
+    <div id="importResult" style="margin-top:12px;font-size:13px"></div>
+  </div>
+  <div class="dlg-foot">
+    <button id="btnImportCancel">关闭</button>
+    <button class="primary" id="btnImportSubmit" disabled>开始导入</button>
+  </div>
+</dialog>
+
+<!-- 技能详情对话框 -->
+<dialog id="dlgSkill">
+  <div class="dlg-body">
+    <h3 id="skillTitle">技能详情</h3>
+    <pre id="skillBody"></pre>
+  </div>
+  <div class="dlg-foot">
+    <button id="btnSkillClose">关闭</button>
+    <button id="btnSkillExport">导出这个技能</button>
+    <button class="danger" id="btnSkillDelete">删除</button>
+  </div>
+</dialog>
+
+<!-- 目标攻略导入 / 提纯 -->
+<dialog id="dlgGoal">
+  <div class="dlg-body">
+    <h3>导入大目标攻略</h3>
+    <div class="tabs">
+      <button data-goal-mode="outline" class="on">大纲提纯</button>
+      <button data-goal-mode="json">JSON 导入</button>
+    </div>
+    <p class="skill-desc" id="goalHelp">
+      每行一个节点，缩进表示前置。<br />
+      <code># 主线</code><br />
+      <code>- 取得原木 [collect oak_log]</code><br />
+      <code>&nbsp;&nbsp;- 做出木镐 [craft wooden_pickaxe]</code><br />
+      没写 <code>[类型 产物]</code> 的节点会作为占位（manual），不进入执行链。
+    </p>
+    <textarea id="goalText" rows="10" placeholder="在这里粘贴大纲"></textarea>
+    <input type="file" id="goalFile" accept=".json,.md,.txt" hidden />
+    <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+      <button id="btnGoalFile">选择文件</button>
+      <span class="mono" id="goalFileHint"></span>
+    </div>
+    <div id="goalPreview" class="preview-box"></div>
+  </div>
+  <div class="dlg-foot">
+    <button id="btnGoalCancel">关闭</button>
+    <button id="btnGoalPreview">预览</button>
+    <button class="primary" id="btnGoalSubmit" disabled>导入</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+/* ---------------------------- 小工具 ---------------------------- */
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.toggle("err", Boolean(isErr));
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+const fmtMs = (ms) => (ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : Math.round(ms) + "ms");
+const fmtTime = (ts) => {
+  const d = new Date(ts);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+};
+const fmtRate = (r) => (r === null || r === undefined ? "—" : Math.round(r * 100) + "%");
+
+/* ---------------------------- 状态 ---------------------------- */
+
+let state = { skills: [], traces: [], overview: null, onlyFail: false };
+let evtSource = null;
+
+/* ---------------------------- 渲染 ---------------------------- */
+
+function renderStats(ov) {
+  const s = ov.stats || {};
+  $("sTrace").textContent = s.traceCount ?? 0;
+  $("sSkill").textContent = s.skillCount ?? 0;
+  $("sRuns").innerHTML = `${s.totalRuns ?? 0} <small>成功 ${s.totalSuccess ?? 0}</small>`;
+  $("sRate").textContent = fmtRate(s.successRate);
+  $("sCompile").textContent = s.compilableEpisodes ?? 0;
+
+  const snap = ov.snapshot || {};
+  const st = snap.status || {};
+  $("sGame").textContent =
+    st.state === "connected" ? `在线 ${st.username || ""}` : "未连接";
+}
+
+function renderToolStats(list) {
+  if (!list || !list.length) {
+    $("toolStats").innerHTML = '<div class="empty">还没有轨迹数据。先在游戏里跑几个任务吧♪</div>';
+    return;
+  }
+  const rows = list
+    .slice(0, 12)
+    .map(
+      (t) => `<tr>
+        <td><code>${esc(t.tool)}</code></td>
+        <td>${t.count}</td>
+        <td>${t.ok}</td>
+        <td>${t.fail ? `<span style="color:var(--err)">${t.fail}</span>` : 0}</td>
+        <td class="mono">${fmtMs(t.avgMs)}</td>
+      </tr>`,
+    )
+    .join("");
+  $("toolStats").innerHTML = `<table>
+    <thead><tr><th>工具</th><th>次数</th><th>成功</th><th>失败</th><th>平均耗时</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function renderSkills() {
+  const list = state.skills;
+  $("skillHint").textContent = list.length ? `${list.length} 个` : "还没有技能";
+
+  if (!list.length) {
+    $("skillList").innerHTML =
+      '<div class="card empty">技能库是空的。<br />先在游戏里完整跑一次任务，再用 <code>cyrene-craft_skill</code> 的 compile 把它编成技能。</div>';
+    return;
+  }
+
+  $("skillList").innerHTML = list
+    .map((s) => {
+      const rate = s.stats?.successRate;
+      const rateBadge =
+        rate === null || rate === undefined
+          ? '<span class="badge">未运行</span>'
+          : rate >= 0.9
+            ? `<span class="badge ok">${fmtRate(rate)}</span>`
+            : rate >= 0.5
+              ? `<span class="badge warn">${fmtRate(rate)}</span>`
+              : `<span class="badge err">${fmtRate(rate)}</span>`;
+
+      const steps = (s.steps || []).map((st) => st.cmd).join(" → ");
+      const dur = s.stats?.medianMs ? `中位 ${fmtMs(s.stats.medianMs)}` : "";
+
+      return `<div class="card" data-skill="${esc(s.name)}">
+        <div class="skill-head">
+          <span class="skill-name">${esc(s.name)}</span>
+          <span class="badge lv">L${s.level || 1}</span>
+          ${rateBadge}
+          <span class="mono">跑 ${s.stats?.runs ?? 0} 次</span>
+          ${dur ? `<span class="mono">· ${dur}</span>` : ""}
+          <span class="toolbar">
+            <button data-act="detail" data-name="${esc(s.name)}">详情</button>
+            <button data-act="export" data-name="${esc(s.name)}">导出</button>
+            <button class="danger" data-act="delete" data-name="${esc(s.name)}">删除</button>
+          </span>
+        </div>
+        <div class="skill-desc">${esc(s.description || "（无说明）")}</div>
+        <div class="steps">步骤：${esc(steps || "（空）")}</div>
+      </div>`;
+    })
+    .join("");
+}
+
+function renderTraces() {
+  const list = state.onlyFail ? state.traces.filter((t) => !t.ok) : state.traces;
+
+  if (!list.length) {
+    $("traceList").innerHTML =
+      `<div class="empty">${state.onlyFail ? "没有失败的轨迹。" : "还没有轨迹。游戏里跑点东西就来了。"}</div>`;
+    return;
+  }
+
+  const rows = list
+    .slice(0, 120)
+    .map((t) => {
+      const args = t.args ? JSON.stringify(t.args) : "";
+      const shortArgs = args.length > 90 ? args.slice(0, 90) + "…" : args;
+      return `<tr class="trace-row ${t.ok ? "ok" : "fail"}">
+        <td class="mono">${fmtTime(t.ts)}</td>
+        <td><code>${esc(t.tool)}</code></td>
+        <td class="mono">${esc(shortArgs)}</td>
+        <td class="mono">${fmtMs(t.ms)}</td>
+        <td>${t.ok ? '<span class="badge ok">成功</span>' : `<span class="badge err">${esc((t.error || "失败").slice(0, 40))}</span>`}</td>
+        <td class="mono">${esc(t.origin || "")}</td>
+      </tr>`;
+    })
+    .join("");
+
+  $("traceList").innerHTML = `<table>
+    <thead><tr><th>时间</th><th>工具</th><th>参数</th><th>耗时</th><th>结果</th><th>来源</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+/* ---------------------------- 目标驾驶舱 ---------------------------- */
+
+const GOAL_STATUS_LABEL = {
+  done: "已完成",
+  active: "进行中",
+  ready: "可执行",
+  blocked: "被卡住",
+  manual: "占位",
+};
+
+const GOAL_KIND_LABEL = { collect: "采集", craft: "合成", manual: "占位" };
+
+let goalView = null;
+let goalMode = "outline";
+let goalPreviewOk = false;
+let goalLoadTimer = null;
+
+function argText(args, max = 46) {
+  if (!args || typeof args !== "object") return "";
+  const parts = Object.entries(args).map(([k, v]) => {
+    const value = v && typeof v === "object" ? JSON.stringify(v) : String(v);
+    return `${k}=${value}`;
+  });
+  const text = parts.join(" ");
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
+}
+
+function renderGoalCurrent(view) {
+  const box = $("goalCurrent");
+  const c = view.current;
+
+  if (!c) {
+    box.innerHTML =
+      `<div class="goal-head"><span class="goal-title">当前没有小目标</span>` +
+      `<span class="goal-sub">大目标 ${view.bigGoals.length} 张</span></div>` +
+      `<div class="goal-sub">等目标层生成，或者导入一张攻略。</div>`;
+    return;
+  }
+
+  const name = c.title || `${GOAL_KIND_LABEL[c.kind] || c.kind} ${c.target}`;
+  const pct = c.count ? Math.min(100, Math.round((c.progress / c.count) * 100)) : 0;
+  const source =
+    c.source === "guide" ? "来自攻略" : c.source === "manual" ? "手动" : "状态差";
+
+  box.innerHTML =
+    `<div class="goal-head">` +
+    `<span class="goal-title">当前小目标</span>` +
+    `<span class="badge lv">${esc(c.status)}</span>` +
+    `<span class="goal-sub">${esc(source)}｜优先级 ${c.priority}</span>` +
+    `</div>` +
+    `<div class="big">${esc(name)}</div>` +
+    `<div class="goal-sub"><code>${esc(c.id)}</code>` +
+    `${c.graphName ? `｜大目标：${esc(c.graphName)}` : ""}</div>` +
+    `<div class="bar"><i style="width:${pct}%"></i></div>` +
+    `<div class="goal-sub">进度 ${c.progress}/${c.count}` +
+    `${c.failures ? `｜失败 ${c.failures} 次` : ""}</div>`;
+}
+
+function renderBigGoals(view) {
+  const box = $("goalGraphs");
+
+  if (!view.bigGoals.length) {
+    box.innerHTML =
+      `<div class="goal-head"><span class="goal-title">大目标</span></div>` +
+      `<div class="empty">还没有导入目标图。点右上角「导入攻略 / 提纯」。</div>`;
+    return;
+  }
+
+  box.innerHTML = view.bigGoals
+    .map((graph) => {
+      const nodes = (graph.nodes || []).slice().sort((a, b) => a.depth - b.depth);
+      const rows = nodes
+        .map((n) => {
+          const chips = [];
+          for (const req of n.requires || []) {
+            chips.push(`<span class="chip">← ${esc(req)}</span>`);
+          }
+          if (n.goalId) chips.push(`<span class="chip">${n.progress}/${n.count}</span>`);
+          if (n.checkpoint === false) chips.push(`<span class="chip">不沉淀</span>`);
+
+          const kindText = GOAL_KIND_LABEL[n.kind] || n.kind;
+          return (
+            `<div class="tree-node" style="margin-left:${n.depth * 16}px">` +
+            `<div class="tree-row">` +
+            `<span class="st ${esc(n.status)}">${GOAL_STATUS_LABEL[n.status] || esc(n.status)}</span>` +
+            `<span class="tree-title">${esc(n.title)}</span>` +
+            `<span class="tree-meta">${esc(n.id)}</span>` +
+            (n.recipe
+              ? `<code>${esc(kindText)} ${esc(n.recipe)}</code>`
+              : `<span class="tree-meta">${esc(kindText)}</span>`) +
+            `</div>` +
+            (chips.length ? `<div class="chips">${chips.join("")}</div>` : "") +
+            `</div>`
+          );
+        })
+        .join("");
+
+      return (
+        `<div class="goal-graph">` +
+        `<div class="goal-head">` +
+        `<span class="goal-title">${esc(graph.name)}</span>` +
+        `<span class="goal-sub">${graph.done}/${graph.total}｜${graph.percent}%</span>` +
+        (graph.next
+          ? `<span class="badge lv">下一个：${esc(graph.next.title)}</span>`
+          : `<span class="badge ok">已完成</span>`) +
+        `</div>` +
+        `<div class="bar"><i style="width:${graph.percent}%"></i></div>` +
+        (graph.source ? `<div class="goal-sub">来源：${esc(graph.source)}</div>` : "") +
+        `<div class="tree">${rows}</div>` +
+        `</div>`
+      );
+    })
+    .join("");
+}
+
+function renderSmallGoals(view) {
+  const box = $("goalList");
+  const goals = view.smallGoals || [];
+
+  if (!goals.length) {
+    box.innerHTML =
+      `<div class="goal-head"><span class="goal-title">小目标</span></div>` +
+      `<div class="empty">还没有小目标。</div>`;
+    return;
+  }
+
+  const items = goals
+    .map((g) => {
+      const active = view.current && g.id === view.current.id;
+      const title = g.title || `${GOAL_KIND_LABEL[g.kind] || g.kind} ${g.target}`;
+      const pct = g.count ? Math.min(100, Math.round((g.progress / g.count) * 100)) : 0;
+      const badgeClass =
+        g.status === "active" ? "lv" : g.status === "done" ? "ok" : g.status === "failed" ? "err" : "";
+
+      return (
+        `<div class="goal-item ${active ? "active" : ""}">` +
+        `<div class="line">` +
+        `<span class="badge ${badgeClass}">${esc(g.status)}</span>` +
+        `<span class="tree-title">${esc(title)}</span>` +
+        `<span class="goal-sub">优先级 ${g.priority}</span>` +
+        `</div>` +
+        `<div class="name">${esc(g.id)}</div>` +
+        `<div class="bar"><i style="width:${pct}%"></i></div>` +
+        `<div class="goal-sub">${g.progress}/${g.count}` +
+        `${g.failures ? `｜失败 ${g.failures} 次` : ""}` +
+        `${g.graphName ? `｜${esc(g.graphName)}` : ""}</div>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const history = Array.isArray(view.history)
+    ? view.history.slice().reverse().slice(0, 6)
+    : [];
+  const historyRows = history
+    .map((h) => {
+      const pct = h.count ? Math.min(100, Math.round((h.progress / h.count) * 100)) : 0;
+      const badgeClass = h.status === "done" ? "ok" : h.status === "failed" ? "err" : "";
+      const name = `${GOAL_KIND_LABEL[h.kind] || h.kind} ${h.target}`;
+
+      return (
+        `<div class="goal-item">` +
+        `<div class="line">` +
+        `<span class="badge ${badgeClass}">${esc(h.status)}</span>` +
+        `<span class="tree-title">${esc(name)}</span>` +
+        `<span class="goal-sub">${h.progress}/${h.count}</span>` +
+        `</div>` +
+        `<div class="bar"><i style="width:${pct}%"></i></div>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const counts = view.counts || {};
+  box.innerHTML =
+    `<div class="goal-head"><span class="goal-title">小目标</span>` +
+    `<span class="goal-sub">进行 ${counts.active || 0}｜等待 ${counts.pending || 0}｜` +
+    `完成 ${counts.done || 0}｜失败 ${counts.failed || 0}</span></div>` +
+    `<div class="goal-list">${items}</div>` +
+    (historyRows
+      ? `<div class="goal-head" style="margin-top:10px"><span class="goal-title">最近结束</span>` +
+        `<span class="goal-sub">${history.length} 条</span></div>` +
+        `<div class="goal-list">${historyRows}</div>`
+      : "");
+}
+
+function renderGoalSteps(view) {
+  const box = $("goalSteps");
+  const steps = (view.stepLog || []).slice().reverse().slice(0, 50);
+
+  if (!steps.length) {
+    box.innerHTML =
+      `<div class="goal-head"><span class="goal-title">每一步</span></div>` +
+      `<div class="empty">还没有自主执行的步骤。开服后这里会实时滚动。</div>`;
+    return;
+  }
+
+  const rows = steps
+    .map((s) => {
+      const goals = s.goals || [];
+      const goalText = goals.length
+        ? goals
+            .map(
+              (g) =>
+                `<span class="goal">→ ${esc(g.title || g.id)} ${g.progress}/${g.count}</span>`,
+            )
+            .join(" ")
+        : `<span class="goal-sub">无目标认领</span>`;
+      const origin = s.origin ? `<span class="badge">${esc(s.origin)}</span>` : "";
+      const args = argText(s.args);
+      const ap = s.approach || null;
+      const apText = ap
+        ? `<span class="goal-sub">接近：${esc(ap.strategy || "无")}` +
+          (ap.tried && ap.tried.length ? `｜试了 ${ap.tried.length} 条` : "") +
+          (ap.reason ? `｜${esc(ap.reason)}` : "") +
+          `</span>`
+        : "";
+
+      return (
+        `<div class="step-row ${s.ok === false ? "fail" : ""}">` +
+        `<span class="t">${fmtTime(s.at)}</span>` +
+        `<span class="act">${esc(s.tool)}${args ? ` ${esc(args)}` : ""}</span>` +
+        origin +
+        (s.ok === false ? `<span class="badge err">失败</span>` : "") +
+        goalText +
+        apText +
+        `</div>`
+      );
+    })
+    .join("");
+
+  box.innerHTML =
+    `<div class="goal-head"><span class="goal-title">每一步</span>` +
+    `<span class="goal-sub">最新在上｜共 ${steps.length} 条</span></div>` +
+    `<div class="steps-feed">${rows}</div>`;
+}
+
+function renderGoals(view) {
+  goalView = view;
+
+  if (!view || view.ok === false) {
+    $("goalCurrent").innerHTML = `<div class="empty">${esc(
+      view && view.error ? view.error : "目标接口未接线",
+    )}</div>`;
+    return;
+  }
+
+  renderGoalCurrent(view);
+  renderBigGoals(view);
+  renderSmallGoals(view);
+  renderGoalSteps(view);
+}
+
+async function loadGoals() {
+  try {
+    const r = await fetch("/api/goals");
+    const data = await r.json();
+    renderGoals(data);
+  } catch (e) {
+    $("goalCurrent").innerHTML = `<div class="empty">目标加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------------------------- 攻略导入 / 提纯 ---------------------------- */
+
+function goalPayload() {
+  const text = $("goalText").value;
+  return goalMode === "outline" ? { outline: text } : { graph: text };
+}
+
+function setGoalMode(mode) {
+  goalMode = mode;
+  document.querySelectorAll("[data-goal-mode]").forEach((btn) => {
+    btn.classList.toggle("on", btn.dataset.goalMode === mode);
+  });
+
+  $("goalText").placeholder =
+    mode === "outline"
+      ? "在这里粘贴大纲：\n# 主线\n- 取得原木 [collect oak_log]\n  - 做出木镐 [craft wooden_pickaxe]"
+      : '把目标图 JSON 粘贴在这里（kind 为 "cyrene-craft-goals"）';
+
+  $("goalHelp").innerHTML =
+    mode === "outline"
+      ? "每行一个节点，缩进表示前置。<br />" +
+        "<code># 主线</code><br />" +
+        "<code>- 取得原木 [collect oak_log]</code><br />" +
+        "<code>&nbsp;&nbsp;- 做出木镐 [craft wooden_pickaxe]</code><br />" +
+        "没写 <code>[类型 产物]</code> 的节点会作为占位（manual），不进入执行链。"
+      : "直接粘贴目标图 JSON。预览会做重复 id、悬空依赖与环检测，通过后才允许导入。";
+
+  goalPreviewOk = false;
+  $("btnGoalSubmit").disabled = true;
+  $("goalPreview").innerHTML = "";
+}
+
+function renderGoalPreview(result) {
+  const box = $("goalPreview");
+  goalPreviewOk = Boolean(result && result.ok);
+
+  if (!result) {
+    box.innerHTML = "";
+    return;
+  }
+
+  if (!result.ok) {
+    const errors = result.errors && result.errors.length ? result.errors : [result.error || "预览失败"];
+    box.innerHTML = `<div class="preview-errors">${errors.map(esc).join("<br />")}</div>`;
+    $("btnGoalSubmit").disabled = true;
+    return;
+  }
+
+  const graph = result.graph;
+  const nodes = (graph.nodes || []).slice();
+  const lines = nodes
+    .map((n) => {
+      const requires = n.requires && n.requires.length ? ` ← ${n.requires.map(esc).join(", ")}` : "";
+      const kind = n.kind ? ` [${esc(n.kind)}${n.recipe ? ` ${esc(n.recipe)}` : ""}]` : "";
+      return `<div class="mono">${esc(n.title)} <span style="color:#b4a7b8">${esc(n.id)}</span>${requires}${kind}</div>`;
+    })
+    .join("");
+
+  box.innerHTML =
+    `<div class="preview-ok">✅ ${esc(graph.name)}｜${result.stats.nodes} 个节点` +
+    `${result.stats.depth ? `｜${result.stats.depth} 层` : ""}</div>` +
+    (result.stats.overwrite
+      ? `<div class="warn-line">⚠ 同名目标图已存在，导入会覆盖它。</div>`
+      : "") +
+    `<div class="preview-list">${lines}</div>`;
+
+  $("btnGoalSubmit").disabled = false;
+}
+
+async function previewGoal() {
+  const text = $("goalText").value.trim();
+  if (!text) {
+    toast("先粘贴大纲或 JSON", true);
+    return;
+  }
+
+  $("btnGoalPreview").disabled = true;
+  try {
+    const r = await fetch("/api/goals/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(goalPayload()),
+    });
+    renderGoalPreview(await r.json());
+  } catch (e) {
+    toast("预览失败：" + e.message, true);
+  } finally {
+    $("btnGoalPreview").disabled = false;
+  }
+}
+
+async function importGoal() {
+  if (!goalPreviewOk) {
+    toast("先预览并通过校验", true);
+    return;
+  }
+
+  $("btnGoalSubmit").disabled = true;
+  try {
+    const r = await fetch("/api/goals/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(goalPayload()),
+    });
+    const data = await r.json();
+
+    if (!data.ok) {
+      renderGoalPreview(data);
+      toast((data.errors || ["导入失败"]).join("；"), true);
+      return;
+    }
+
+    toast(`已导入「${data.name}」${data.overwritten ? "（覆盖同名图）" : ""}`);
+    $("dlgGoal").close();
+    await loadGoals();
+  } catch (e) {
+    toast("导入失败：" + e.message, true);
+  } finally {
+    $("btnGoalSubmit").disabled = false;
+  }
+}
+
+/* ---------------------------- 类脑决策入口 ---------------------------- */
+
+/** 拉一次 /api/brain，把意图摘要放到面板上，点按钮进 3D 脑图 */
+async function loadBrainTeaser() {
+  const box = $("brainTeaser");
+  try {
+    const r = await fetch("/api/brain?limit=4");
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || "加载失败");
+
+    if (data.empty) {
+      box.innerHTML = `<div class="empty">${esc(data.reason || "还没有轨迹")}</div>`;
+      return;
+    }
+
+    const intent = data.intent?.text || "还没有明确的意图";
+    const nextTool = data.next?.tool ? `<code>${esc(data.next.tool)}</code>` : "—";
+    const regions = (data.regions || [])
+      .map((rg) => {
+        const pct = Math.round((rg.energy || 0) * 100);
+        return `<div style="flex:1;min-width:96px">
+          <div class="mono" style="display:flex;justify-content:space-between">
+            <span>${esc(rg.name)}</span><span>${pct}%</span>
+          </div>
+          <div style="height:6px;border-radius:3px;background:#f4e7ee;margin-top:3px">
+            <div style="height:6px;border-radius:3px;width:${pct}%;background:${esc(rg.color)}"></div>
+          </div>
+        </div>`;
+      })
+      .join("");
+
+    box.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:9px">
+        <span class="mono">意图</span>
+        <strong style="font-size:14px">${esc(intent)}</strong>
+        <span class="mono">下一步 ${nextTool}</span>
+        <span class="badge ${data.energyMode === "global" ? "warn" : "ok"}">${
+          data.energyMode === "global" ? "全局评分" : "能量扩散"
+        }</span>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">${regions}</div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="empty">脑图接口取不到：${esc(e.message)}</div>`;
+  }
+}
+
+$("btnBrain").onclick = () => {
+  window.location.href = "/brain.html";
+};
+
+/* ---------------------------- 数据加载 ---------------------------- */
+
+async function loadOverview() {
+  try {
+    const r = await fetch("/api/overview");
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || "加载失败");
+    state.overview = data;
+    state.skills = data.skills || [];
+    state.traces = (data.recentTraces || []).slice();
+    renderStats(data);
+    renderToolStats(data.toolStats);
+    renderSkills();
+    renderTraces();
+  } catch (e) {
+    toast("概览加载失败：" + e.message, true);
+  }
+}
+
+/* ---------------------------- SSE ---------------------------- */
+
+function connectStream() {
+  if (evtSource) evtSource.close();
+
+  evtSource = new EventSource("/api/stream");
+  const dot = $("dot");
+  const text = $("connText");
+
+  evtSource.addEventListener("open", () => {
+    dot.className = "dot on";
+    text.textContent = "实时同步中";
+  });
+
+  evtSource.addEventListener("hello", (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      state.overview = data;
+      state.skills = data.skills || [];
+      state.traces = (data.recentTraces || []).slice();
+      renderStats(data);
+      renderToolStats(data.toolStats);
+      renderSkills();
+      renderTraces();
+    } catch {
+      /* 忽略坏包 */
+    }
+  });
+
+  evtSource.addEventListener("goals", (ev) => {
+    try {
+      renderGoals(JSON.parse(ev.data));
+    } catch {
+      /* 忽略坏包 */
+    }
+  });
+
+  evtSource.addEventListener("trace", (ev) => {
+    try {
+      const row = JSON.parse(ev.data);
+      state.traces.unshift(row);
+      if (state.traces.length > 400) state.traces.length = 400;
+      renderTraces();
+      // 概览里的数字也跟着动
+      if (state.overview?.stats) {
+        state.overview.stats.traceCount += 1;
+        renderStats(state.overview);
+      }
+      // 轨迹先到、目标记账后到：防抖拉一次目标视图
+      clearTimeout(goalLoadTimer);
+      goalLoadTimer = setTimeout(() => void loadGoals(), 300);
+    } catch {
+      /* 忽略坏包 */
+    }
+  });
+
+  // 技能变了（导入/删除）就重新拉一次概览
+  evtSource.addEventListener("skills-changed", () => {
+    void loadOverview();
+  });
+
+  evtSource.addEventListener("traces-cleared", () => {
+    state.traces = [];
+    renderTraces();
+    void loadOverview();
+  });
+
+  evtSource.addEventListener("error", () => {
+    dot.className = "dot off";
+    text.textContent = "连接断开，重连中…";
+    // EventSource 自带重连，这里不手动 close
+  });
+}
+
+/* ---------------------------- 交互 ---------------------------- */
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const act = btn.dataset.act;
+  const name = btn.dataset.name;
+
+  if (act === "detail") {
+    const skill = state.skills.find((s) => s.name === name);
+    if (!skill) return;
+    $("skillTitle").textContent = skill.name;
+    $("skillBody").textContent = JSON.stringify(skill, null, 2);
+    $("dlgSkill").dataset.name = name;
+    $("dlgSkill").showModal();
+  }
+
+  if (act === "export") {
+    window.location.href = `/api/export?names=${encodeURIComponent(name)}`;
+  }
+
+  if (act === "delete") {
+    if (!confirm(`确定删除技能 ${name}？这个操作不可撤销。`)) return;
+    try {
+      const r = await fetch("/api/delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, confirmToken: `delete:${name}` }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || "删除失败");
+      toast(`已删除 ${name}`);
+      await loadOverview();
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+});
+
+$("btnSkillClose").onclick = () => $("dlgSkill").close();
+
+$("btnSkillExport").onclick = () => {
+  const name = $("dlgSkill").dataset.name;
+  if (name) window.location.href = `/api/export?names=${encodeURIComponent(name)}`;
+};
+
+$("btnSkillDelete").onclick = () => {
+  const name = $("dlgSkill").dataset.name;
+  if (!name) return;
+  $("dlgSkill").close();
+  const btn = document.querySelector(`button[data-act="delete"][data-name="${CSS.escape(name)}"]`);
+  if (btn) btn.click();
+};
+
+$("btnExport").onclick = () => {
+  window.location.href = "/api/export";
+};
+
+$("onlyFail").onchange = (e) => {
+  state.onlyFail = e.target.checked;
+  renderTraces();
+};
+
+$("btnClearTraces").onclick = async () => {
+  if (!confirm("清空全部轨迹数据？技能不会受影响，归档文件也会保留。")) return;
+  try {
+    const r = await fetch("/api/delete-traces", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmToken: "clear-traces" }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || "清空失败");
+    toast("轨迹已清空");
+  } catch (e) {
+    toast(e.message, true);
+  }
+};
+
+/* ---------------------------- 导入 ---------------------------- */
+
+let pendingFile = null;
+
+$("btnImport").onclick = () => {
+  pendingFile = null;
+  $("importResult").textContent = "";
+  $("fileInput").value = "";
+  $("btnImportSubmit").disabled = true;
+  $("dlgImport").showModal();
+};
+
+$("btnImportCancel").onclick = () => $("dlgImport").close();
+
+$("dropZone").onclick = () => $("fileInput").click();
+
+$("fileInput").onchange = (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  pendingFile = f;
+  $("dropZone").innerHTML =
+    `已选择：<strong>${esc(f.name)}</strong><br /><span class="mono">${(f.size / 1024).toFixed(1)} KB</span>`;
+  $("btnImportSubmit").disabled = false;
+};
+
+const dz = $("dropZone");
+["dragenter", "dragover"].forEach((ev) =>
+  dz.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dz.classList.add("dragging");
+  }),
+);
+["dragleave", "drop"].forEach((ev) =>
+  dz.addEventListener(ev, (e) => {
+    e.preventDefault();
+    dz.classList.remove("dragging");
+  }),
+);
+dz.addEventListener("drop", (e) => {
+  const f = e.dataTransfer?.files?.[0];
+  if (!f) return;
+  pendingFile = f;
+  dz.innerHTML = `已选择：<strong>${esc(f.name)}</strong><br /><span class="mono">${(f.size / 1024).toFixed(1)} KB</span>`;
+  $("btnImportSubmit").disabled = false;
+});
+
+$("btnImportSubmit").onclick = async () => {
+  if (!pendingFile) return;
+  const mode = $("conflictMode").value;
+  $("btnImportSubmit").disabled = true;
+  $("importResult").textContent = "导入中…";
+
+  try {
+    const text = await pendingFile.text();
+    const r = await fetch(`/api/import?onConflict=${mode}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: text,
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || "导入失败");
+
+    const parts = [];
+    if (data.added.length) parts.push(`新增 ${data.added.length} 个：${data.added.join("、")}`);
+    if (data.overwritten.length) parts.push(`覆盖 ${data.overwritten.length} 个：${data.overwritten.join("、")}`);
+    if (data.renamed.length) parts.push(`改名 ${data.renamed.length} 个：${data.renamed.join("、")}`);
+    if (data.skipped.length) parts.push(`跳过 ${data.skipped.length} 个（同名）`);
+    if (data.errors.length) parts.push(`错误 ${data.errors.length} 条`);
+
+    $("importResult").innerHTML =
+      `<div style="color:var(--ok)">导入完成</div>` +
+      parts.map((p) => `<div class="mono">${esc(p)}</div>`).join("") +
+      (data.errors.length
+        ? `<details style="margin-top:8px"><summary class="mono">查看错误</summary><div class="mono">${data.errors.map(esc).join("<br />")}</div></details>`
+        : "");
+
+    toast("导入完成");
+    await loadOverview();
+  } catch (e) {
+    $("importResult").innerHTML = `<div style="color:var(--err)">${esc(e.message)}</div>`;
+    toast(e.message, true);
+    $("btnImportSubmit").disabled = false;
+  }
+};
+
+/* ---------------------------- 目标驾驶舱交互 ---------------------------- */
+
+$("btnGoalRefresh").onclick = () => void loadGoals();
+
+$("btnGoalImport").onclick = () => {
+  setGoalMode("outline");
+  $("goalText").value = "";
+  $("goalFile").value = "";
+  $("goalFileHint").textContent = "";
+  $("dlgGoal").showModal();
+};
+
+$("btnGoalCancel").onclick = () => $("dlgGoal").close();
+$("btnGoalPreview").onclick = () => void previewGoal();
+$("btnGoalSubmit").onclick = () => void importGoal();
+$("btnGoalFile").onclick = () => $("goalFile").click();
+
+$("goalFile").onchange = async () => {
+  const file = $("goalFile").files[0];
+  if (!file) return;
+
+  $("goalFileHint").textContent = file.name;
+  $("goalText").value = await file.text();
+  goalPreviewOk = false;
+  $("btnGoalSubmit").disabled = true;
+  $("goalPreview").innerHTML = "";
+};
+
+document.querySelectorAll("[data-goal-mode]").forEach((btn) => {
+  btn.onclick = () => setGoalMode(btn.dataset.goalMode);
+});
+
+/* ---------------------------- 启动 ---------------------------- */
+
+void loadOverview();
+void loadGoals();
+void loadBrainTeaser();
+connectStream();
+
+// 页面隐藏时保留连接，切回来立刻可用
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) {
+    void loadOverview();
+    void loadGoals();
+    void loadBrainTeaser();
+  }
+});
+</script>
+</body>
+</html>
