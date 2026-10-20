@@ -11,7 +11,8 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 - 主程序：[Cyrene-Agent](https://gitee.com/playa0/cyrene-agent)
 - SDK：[@playa0v0/cyrene-plugin-sdk](https://www.npmjs.com/package/@playa0v0/cyrene-plugin-sdk)
 - 开发指南：[docs/plugins/plugin-dev-guide.md](https://gitee.com/playa0/cyrene-agent/blob/master/docs/plugins/plugin-dev-guide.md)
-
+- Reviewer：[组织成员与维护者](./docs/MAINTAINERS.md)
+- PR贡献收录在 [贡献者](./docs/CONTRIBUTORS.md) 感谢贡献
 ---
 
 ## 已收录插件
