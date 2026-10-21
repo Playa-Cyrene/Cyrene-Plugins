@@ -2362,6 +2362,7 @@ var RegionRuntime = class {
     });
     this.shim = void 0;
     this.disposed = false;
+    this.catalogPending = void 0;
   }
   /** Start the loopback shim; called only when a session or a request needs it. */
   startShim() {
@@ -2421,9 +2422,34 @@ var RegionRuntime = class {
   entryFor(modelId) {
     return this.catalog.current().find((entry) => entry.id === modelId);
   }
-  /** Fetch a fresh catalog and keep the last good one on failure. */
+  /**
+   * Fetch a fresh catalog and keep the last good one on failure.
+   *
+   * Single-flight. An empty catalog or an expired TTL used to make every
+   * concurrent caller run its own `fetchModels`, and the two results raced:
+   * the fetch that *started* first could *finish* last and overwrite the newer
+   * directory, which was then re-cached for another 30 minutes. Reusing the
+   * in-flight promise removes the race by construction — there is only ever
+   * one result to land.
+   *
+   * The signal is honoured only by the flight that creates the slot. A caller
+   * that joins mid-flight is waiting on someone else's fetch and has no claim
+   * on its cancellation; letting a joiner abort it would turn one caller's
+   * timeout into everyone's. In practice the creator is either the warm-up
+   * (which passes `ctx.signal` + `WARM_TIMEOUT_MS`) or the request path (which
+   * passes nothing, and `fetchModels` then applies its own 30s ceiling).
+   */
   async refreshCatalog(signal) {
+    if (this.catalogPending !== void 0) return this.catalogPending;
     if (this.catalog.fresh()) return;
+    const flight = this.fetchCatalog(signal).finally(() => {
+      if (this.catalogPending === flight) this.catalogPending = void 0;
+    });
+    this.catalogPending = flight;
+    return flight;
+  }
+  /** One catalog fetch. Split out so `refreshCatalog` owns only the slot. */
+  async fetchCatalog(signal) {
     const credential = await this.resolveCredential();
     if (credential === void 0) return;
     try {
