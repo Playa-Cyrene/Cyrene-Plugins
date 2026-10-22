@@ -1966,8 +1966,8 @@ function createQoderShim(options) {
     invalidateCredential,
     region,
     logger,
-    // Called once per request before routing. Absent on the Pi port, which
-    // refreshes from `auth.apiKey.resolve()` instead.
+    // Called before the two directory-reading routes. Absent on the Pi port,
+    // which refreshes from `auth.apiKey.resolve()` instead.
     refreshCatalog,
     // Endpoint stability. Both are optional so the Pi port keeps its original
     // per-process behaviour; Cyrene persists them so a model profile survives a
@@ -2045,14 +2045,15 @@ function createQoderShim(options) {
       writeError(res, 401, "unauthorized", "missing or invalid Authorization bearer");
       return;
     }
-    if (typeof refreshCatalog === "function") {
+    const url = req.url ?? "/";
+    const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
+    if (catalogRoute && typeof refreshCatalog === "function") {
       try {
         await refreshCatalog();
       } catch (error) {
         logger?.warn?.(`dsh-connect-qoder: ${region.displayName} \u8BF7\u6C42\u524D\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55`, error);
       }
     }
-    const url = req.url ?? "/";
     if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) {
       sendJson(res, 200, { ok: true });
       return;
@@ -2438,10 +2439,15 @@ var RegionRuntime = class {
    * timeout into everyone's. In practice the creator is either the warm-up
    * (which passes `ctx.signal` + `WARM_TIMEOUT_MS`) or the request path (which
    * passes nothing, and `fetchModels` then applies its own 30s ceiling).
+   *
+   * `force` skips the TTL check so the panel's explicit "refresh" button can
+   * pick up new models inside the 30-minute window. An in-flight fetch is still
+   * shared: it is already asking upstream, so a second one would only duplicate
+   * the call.
    */
-  async refreshCatalog(signal) {
+  async refreshCatalog(signal, { force = false } = {}) {
     if (this.catalogPending !== void 0) return this.catalogPending;
-    if (this.catalog.fresh()) return;
+    if (!force && this.catalog.fresh()) return;
     const flight = this.fetchCatalog(signal).finally(() => {
       if (this.catalogPending === flight) this.catalogPending = void 0;
     });
@@ -3785,14 +3791,15 @@ function createTraeShim(options) {
       if (!hostIsLoopback2(req.headers.host)) return writeError2(res, 403, "host_not_allowed", "Host must be loopback");
       if (!originIsLoopback2(req.headers.origin)) return writeError2(res, 403, "origin_not_allowed", "Origin must be loopback");
       if (!bearerOk(req)) return writeError2(res, 401, "unauthorized", "Missing or invalid bearer");
-      if (typeof refreshCatalog === "function") {
+      const url = req.url ?? "/";
+      const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
+      if (catalogRoute && typeof refreshCatalog === "function") {
         try {
           await refreshCatalog();
         } catch (error) {
           options?.logger?.warn?.("dsh-connect-trae: \u8BF7\u6C42\u524D\u6A21\u578B\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55", error);
         }
       }
-      const url = req.url ?? "/";
       if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) return writeJson(res, 200, { ok: true });
       if (req.method === "GET" && (url === "/v1/models" || url === "/v1/models/")) return writeJson(res, 200, {
         object: "list",
@@ -4159,7 +4166,8 @@ var TraeSoloUpstreamClient = class {
       this.collectModels(list, directoryFunction, byId);
     }
     const models = [...byId.values()];
-    if (models.length === 0) throw new Error(`Trae SOLO models response contained no models (${failures.join("; ") || "empty directory"})`);
+    if (failures.length > 0) throw new Error(`Trae SOLO models directory incomplete (${failures.join("; ")})`);
+    if (models.length === 0) throw new Error("Trae SOLO models response contained no models (empty directory)");
     return models;
   }
   /** Merge one function's config list into the shared catalogue (first wins). */
@@ -5038,11 +5046,14 @@ var RegionStack = class {
    * request retries — same "keep the last good directory" behaviour as the
    * Qoder side.
    *
+   * `force` skips the TTL check so the panel's explicit "refresh" button can
+   * pick up new models inside the 30-minute window.
+   *
    * @returns the shim when a discovery ran, or `null` when this was a no-op.
    */
-  async refreshCatalog() {
+  async refreshCatalog({ force = false } = {}) {
     if (this.modelsPending !== void 0) return this.modelsPending;
-    if (this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
+    if (!force && this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
     this.modelsReady = false;
     return this.ensureReady();
   }
@@ -5434,13 +5445,13 @@ var plugin = {
     }
     const deadline = () => AbortSignal.any([ctx.signal, AbortSignal.timeout(WARM_TIMEOUT_MS)]);
     let warmPromise = Promise.resolve();
-    const startWarm = () => {
+    const startWarm = (force = false) => {
       warmPromise = (async () => {
         for (const runtime of qoderRuntimes) {
           try {
             const credential = await runtime.resolveCredential();
             if (!isCredentialUsable(credential)) continue;
-            await runtime.refreshCatalog(deadline());
+            await runtime.refreshCatalog(deadline(), { force });
             await runtime.ensureShim();
           } catch (error) {
             logger.warn(`qoder ${runtime.region.id}: \u9884\u70ED\u5931\u8D25`, error instanceof Error ? error.message : String(error));
@@ -5450,7 +5461,8 @@ var plugin = {
           try {
             const credential = await stack.store.resolve().catch(() => void 0);
             if (credential === void 0) continue;
-            await stack.ensureReady();
+            await stack.ensureShim();
+            await stack.refreshCatalog({ force });
           } catch (error) {
             logger.warn(`trae ${stack.region}: \u9884\u70ED\u5931\u8D25`, error instanceof Error ? error.message : String(error));
           }
@@ -5479,7 +5491,7 @@ var plugin = {
       return readState();
     });
     ctx.registerIpc(IPC.REFRESH, async () => {
-      await startWarm();
+      await startWarm(true);
       return readState();
     });
     ctx.registerIpc(IPC.USAGE, async () => ({
