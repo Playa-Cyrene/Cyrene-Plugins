@@ -2048,11 +2048,16 @@ function createQoderShim(options) {
     const url = req.url ?? "/";
     const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
     if (catalogRoute && typeof refreshCatalog === "function") {
-      try {
-        await refreshCatalog();
-      } catch (error) {
-        logger?.warn?.(`dsh-connect-qoder: ${region.displayName} \u8BF7\u6C42\u524D\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55`, error);
-      }
+      const haveModels = resolveModels().length > 0;
+      const refreshed = (async () => {
+        try {
+          return await refreshCatalog();
+        } catch (error) {
+          logger?.warn?.(`dsh-connect-qoder: ${region.displayName} \u8BF7\u6C42\u524D\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55`, error);
+          return void 0;
+        }
+      })();
+      if (!haveModels) await refreshed;
     }
     if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) {
       sendJson(res, 200, { ok: true });
@@ -2345,6 +2350,7 @@ var CatalogStore = class {
 };
 
 // src/qoder/runtime.js
+var CATALOG_RETRY_AFTER_FAILURE_MS = 60 * 1e3;
 var RegionRuntime = class {
   constructor(region, logger, cacheRoot, endpoints, portIndex = 0) {
     this.region = region;
@@ -2364,6 +2370,7 @@ var RegionRuntime = class {
     this.shim = void 0;
     this.disposed = false;
     this.catalogPending = void 0;
+    this.catalogFailedAt = 0;
   }
   /** Start the loopback shim; called only when a session or a request needs it. */
   startShim() {
@@ -2441,13 +2448,14 @@ var RegionRuntime = class {
    * passes nothing, and `fetchModels` then applies its own 30s ceiling).
    *
    * `force` skips the TTL check so the panel's explicit "refresh" button can
-   * pick up new models inside the 30-minute window. An in-flight fetch is still
-   * shared: it is already asking upstream, so a second one would only duplicate
-   * the call.
+   * pick up new models inside the 30-minute window, and the 60-second failure
+   * backoff. An in-flight fetch is still shared: it is already asking upstream,
+   * so a second one would only duplicate the call.
    */
   async refreshCatalog(signal, { force = false } = {}) {
     if (this.catalogPending !== void 0) return this.catalogPending;
     if (!force && this.catalog.fresh()) return;
+    if (!force && Date.now() - this.catalogFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS) return;
     const flight = this.fetchCatalog(signal).finally(() => {
       if (this.catalogPending === flight) this.catalogPending = void 0;
     });
@@ -2456,13 +2464,16 @@ var RegionRuntime = class {
   }
   /** One catalog fetch. Split out so `refreshCatalog` owns only the slot. */
   async fetchCatalog(signal) {
+    this.credentials.invalidate();
     const credential = await this.resolveCredential();
     if (credential === void 0) return;
     try {
       const raw = await fetchModels(this.region, credential, signal);
       const entries = raw.map(normalizeEntry);
       if (entries.length > 0) this.catalog.replace(entries);
+      this.catalogFailedAt = 0;
     } catch (error) {
+      this.catalogFailedAt = Date.now();
       this.logger?.warn?.(
         `dsh-connect-qoder[pi]: ${this.region.displayName} catalog refresh failed; serving cached catalog`,
         error
@@ -3794,11 +3805,16 @@ function createTraeShim(options) {
       const url = req.url ?? "/";
       const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
       if (catalogRoute && typeof refreshCatalog === "function") {
-        try {
-          await refreshCatalog();
-        } catch (error) {
-          options?.logger?.warn?.("dsh-connect-trae: \u8BF7\u6C42\u524D\u6A21\u578B\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55", error);
-        }
+        const haveWire = options.wire?.resolved === true;
+        const refreshed = (async () => {
+          try {
+            return await refreshCatalog();
+          } catch (error) {
+            options?.logger?.warn?.("dsh-connect-trae: \u8BF7\u6C42\u524D\u6A21\u578B\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55", error);
+            return void 0;
+          }
+        })();
+        if (!haveWire) await refreshed;
       }
       if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) return writeJson(res, 200, { ok: true });
       if (req.method === "GET" && (url === "/v1/models" || url === "/v1/models/")) return writeJson(res, 200, {
@@ -4929,6 +4945,7 @@ function toCheckin(status) {
 // src/trae/runtime.js
 var REGION_KEYS = ["cn", "ai"];
 var CATALOG_TTL_MS2 = 30 * 60 * 1e3;
+var CATALOG_RETRY_AFTER_FAILURE_MS2 = 60 * 1e3;
 var RegionStack = class {
   constructor(region, logger, cacheRoot, endpoints, portIndex = 0) {
     this.endpoints = endpoints;
@@ -4936,6 +4953,7 @@ var RegionStack = class {
     this.modelsDiscoveredAt = 0;
     this.modelsReady = false;
     this.modelsPending = void 0;
+    this.modelsFailedAt = 0;
     this.region = region;
     this.logger = logger;
     this.catalog = new TraeCatalog(region);
@@ -4985,6 +5003,9 @@ var RegionStack = class {
       catalog: this.catalog,
       client: this.delegating,
       logger: this.logger,
+      // Lets the shim tell "no directory worth serving from" (block on the
+      // discovery) from "cache available" (refresh in the background).
+      wire: this.wire,
       // Lets a request refresh the directory, mirroring what the Pi port does
       // from `auth.apiKey.resolve()`.
       refreshCatalog: () => this.refreshCatalog(),
@@ -5024,10 +5045,12 @@ var RegionStack = class {
           this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
           this.modelsDiscoveredAt = Date.now();
           this.modelsReady = true;
+          this.modelsFailedAt = 0;
         }
         return true;
       }).catch((error) => {
         this.logger?.warn?.(`trae: model directory discovery failed for ${this.region}`, error);
+        this.modelsFailedAt = Date.now();
         return false;
       }).finally(() => {
         if (this.modelsPending === flight) this.modelsPending = void 0;
@@ -5054,6 +5077,7 @@ var RegionStack = class {
   async refreshCatalog({ force = false } = {}) {
     if (this.modelsPending !== void 0) return this.modelsPending;
     if (!force && this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
+    if (!force && Date.now() - this.modelsFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS2) return null;
     this.modelsReady = false;
     return this.ensureReady();
   }
