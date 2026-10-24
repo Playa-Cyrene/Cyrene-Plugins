@@ -142,7 +142,7 @@ button { font: inherit; }
   content: "";
 }
 
-/* 回放控件（§14）：宿主顶部中间放的是模式胶囊，这里换成三个动作胶囊。
+/* 回放与清空控件（§14）：宿主顶部中间放的是模式胶囊，这里换成动作胶囊。
    样式取宿主的胶囊 token（浅粉底 + 粉描边 + 深玫瑰字）。 */
 .titlebar-tools {
   display: flex;
@@ -321,6 +321,8 @@ body.art-board .board-art {
 body.art-board .board-art-body {
   z-index: 0;
   background-image: url("assets/board.png");
+  --board-drop-shadow: drop-shadow(6px 6px 4px rgba(43, 31, 48, 0.38));
+  filter: brightness(1) saturate(1) var(--board-drop-shadow);
 }
 
 /* 上层：只留边框，中间镂空；板书滚到框外时由它压住 */
@@ -370,31 +372,31 @@ body.art-board .board-surface {
 .board-surface::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.34); }
 
 /* 板书内容：只用标准 markdown，强调一律 **加粗**（§8.2） */
-.board-surface :first-child { margin-top: 0; }
-.board-surface :last-child { margin-bottom: 0; }
-.board-surface h1, .board-surface h2, .board-surface h3, .board-surface h4 {
+.markdown-content :first-child { margin-top: 0; }
+.markdown-content :last-child { margin-bottom: 0; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4 {
   margin: 1.1em 0 0.5em;
   font-weight: 700;
   line-height: 1.35;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
-.board-surface h1 { font-size: 1.5em; }
-.board-surface h2 { font-size: 1.28em; }
-.board-surface h3 { font-size: 1.12em; }
-.board-surface p { margin: 0.55em 0; }
-.board-surface strong { color: var(--chalk-strong); font-weight: 800; } /* 加粗即强调 */
-.board-surface em { color: var(--chalk-strong); }
-.board-surface del { color: var(--chalk-dim); }
-.board-surface ul, .board-surface ol { margin: 0.55em 0; padding-left: 1.5em; }
-.board-surface li { margin: 0.2em 0; }
-.board-surface blockquote {
+.markdown-content h1 { font-size: 1.5em; }
+.markdown-content h2 { font-size: 1.28em; }
+.markdown-content h3 { font-size: 1.12em; }
+.markdown-content p { margin: 0.55em 0; }
+.markdown-content strong { color: var(--chalk-strong); font-weight: 800; } /* 加粗即强调 */
+.markdown-content em { color: var(--chalk-strong); }
+.markdown-content del { color: var(--chalk-dim); }
+.markdown-content ul, .markdown-content ol { margin: 0.55em 0; padding-left: 1.5em; }
+.markdown-content li { margin: 0.2em 0; }
+.markdown-content blockquote {
   margin: 0.7em 0;
   padding: 0.1em 0 0.1em 0.9em;
   border-left: 3px solid var(--chalk-strong);
   color: var(--chalk-strong);
   font-size: 1.06em;
 }
-.board-surface code {
+.markdown-content code {
   padding: 0.1em 0.4em;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.1);
@@ -402,37 +404,41 @@ body.art-board .board-surface {
   font-family: var(--font-mono);
   font-size: 0.94em;
 }
-.board-surface pre {
+.markdown-content pre {
   overflow-x: auto; /* 横向滚动是长代码的唯一正解（§8.5） */
   margin: 0.7em 0;
   padding: 0.75em 0.9em;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.32);
 }
-.board-surface pre code { padding: 0; background: none; color: var(--chalk); }
-.board-surface table {
+.markdown-content pre code { padding: 0; background: none; color: var(--chalk); }
+.markdown-content table {
   width: max-content;
   max-width: none;
   margin: 0.7em 0;
   border-collapse: collapse;
   font-size: 0.95em;
 }
-.board-surface th, .board-surface td {
+.markdown-content th, .markdown-content td {
   padding: 0.35em 0.7em;
   border: 1px solid rgba(255, 255, 255, 0.18);
   text-align: left;
 }
-.board-surface hr { margin: 1em 0; border: none; border-top: 1px solid rgba(255, 255, 255, 0.16); }
-.board-surface a { color: var(--cy-pill-border); } /* 宿主的 pink-200，在墨绿板面上读得清 */
+.markdown-content hr { margin: 1em 0; border: none; border-top: 1px solid rgba(255, 255, 255, 0.16); }
 
 /* 数学公式（KaTeX）：行内公式跟着正文走；$$...$$ 是块级元素，参与黑板滚动与行级动画标注。
    KaTeX 的输出不写死颜色，会继承板面的粉笔白。 */
-.board-surface .katex,
+.markdown-content .katex,
 .dialog-text .katex {
   letter-spacing: normal; /* 全局 0.7px 字距会破坏公式内部的排版度量 */
 }
-.board-surface .bl-math-display { display: block; }
-.board-surface .bl-math-display > .katex-display { margin: 0.55em 0; }
+.markdown-content .bl-math-display { display: block; }
+.markdown-content .bl-math-display > .katex-display { margin: 0.55em 0; }
+.bl-math-fallback {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
 
 /* 行级动画（§8.2）：由 ui.html 按"哪几行变了"点到具体块级元素上 */
 .board-surface .bl-enter { animation: bl-enter 260ms ease both; }
@@ -449,13 +455,19 @@ body.art-board .board-surface {
 
 /* 整块擦除（boardClear 与过渡帧）：给板面一次擦过感，而不是内容突然消失。
    有素材时只闪底层板面（board-art-body），顶层边框（board-boundary）不参与。 */
-.board-frame.bl-cleared,
-.board-art-body.bl-cleared { animation: bl-cleared 420ms ease both; }
+.board-frame.bl-cleared { animation: bl-cleared 420ms ease-in-out both; }
+.board-art-body.bl-cleared { animation: bl-cleared-art 420ms ease-in-out both; }
 
 @keyframes bl-cleared {
-  0% { filter: brightness(1); }
-  35% { filter: brightness(1.5) saturate(0.6); }
-  100% { filter: brightness(1); }
+  0% { filter: brightness(1) saturate(1); }
+  40% { filter: brightness(1.24) saturate(0.88); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+@keyframes bl-cleared-art {
+  0% { filter: brightness(1) saturate(1) var(--board-drop-shadow); }
+  40% { filter: brightness(1.24) saturate(0.88) var(--board-drop-shadow); }
+  100% { filter: brightness(1) saturate(1) var(--board-drop-shadow); }
 }
 
 .board-empty {
@@ -680,10 +692,63 @@ body.art-dialog .dialog-box {
 
 .notice[hidden] { display: none; }
 
+/* 当前 BLS 回看：左侧 3/4 全高抽屉，右侧 1/4 只负责收起。 */
+.review-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+  transition: visibility 0s linear 260ms;
+  -webkit-app-region: no-drag;
+}
+
+.review-overlay[data-open="1"] {
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.review-drawer {
+  flex: 0 0 75%;
+  height: 100%;
+  overflow: auto;
+  padding: clamp(18px, 3vw, 36px);
+  transform: translateX(-100%);
+  background: rgba(5, 10, 9, 0.86);
+  box-shadow: 12px 0 28px rgba(0, 0, 0, 0.3);
+  color: var(--chalk);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+  transition: transform 260ms ease;
+}
+
+.review-overlay[data-open="1"] .review-drawer { transform: translateX(0); }
+
+.review-content {
+  font-size: clamp(14px, 1.55vw, 19px);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+}
+
+.review-content .review-empty { color: var(--chalk-dim); }
+
+.review-dismiss {
+  flex: 0 0 25%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
 /* ---------------------------------------------------------------- 窄窗口适配 */
 
 /* 半屏 + 系统缩放后可能只剩 700px 左右，此时把立绘收窄并允许被黑板压住（§11.1），
-   顶部的三个回放胶囊也收紧一点，把宽度让给标题。 */
+   顶部的动作胶囊也收紧一点，把宽度让给标题。 */
 @media (max-width: 900px) {
   .board { width: 82%; height: 60%; }
   .figure-talk { bottom: -62px; height: 58.8%; } /* 42% × 1.4；底边仍在舞台下方 */

@@ -3,7 +3,7 @@
   "id": "better-lessons",
   "name": "神悟课堂",
   "version": "0.1.0",
-  "description": "learn 模式下的课堂演出：把讲解写成 BLS 剧本，在独立教室窗口里点击逐帧演出，支持插话打断、断点续讲与整节课回放",
+  "description": "learn 模式课堂演出：BLS 剧本在独立窗口逐帧播放，支持键鼠推进、插话续讲、对白回看、回放与清空",
   "author": "yuzu-tanuki",
   "entry": "index.cjs",
   "defaultEnabled": false,

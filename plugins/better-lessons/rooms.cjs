@@ -25,6 +25,8 @@ function createRoom(conversationId) {
     boardOwner: null, // 当前 room.board 反映的是哪一层的增量；null = 空板
     lessonFiles: [], // 本节课推过的剧本文件，按推送顺序 —— 回放的播放列表
     lessonPaths: {}, // 文件名 → 绝对路径。只记"用户从文件选择器里挑过"的那些（§14g）
+    review: { layerId: null, file: "", says: [] }, // 当前已展示 BLS 的对白快照
+    clearEpoch: 0, // 使清空前已启动的异步回放失效；只在本次运行中使用
     updatedAt: Date.now(),
   };
 }
@@ -81,7 +83,7 @@ function makeTransition(kind, text, title) {
   return { type: "transition", kind, text: text || "", title: title || "" };
 }
 
-/** 过渡文案：模型可给 hint，否则用默认话术。 */
+/** 返回上一层的过渡文案可由模型指定；进入新层时使用默认话术。 */
 function transitionText(kind, hint) {
   if (hint) return String(hint);
   return kind === "out" ? "好，我们回到刚才那里。" : "先看一个补充。";
@@ -134,7 +136,7 @@ function pushLayer(room, layer, mode, maxFrames) {
 
   if (interrupt && head && head.type === "layer") {
     // cursor 一直在 layer 对象上，不需要额外快照
-    room.frames.unshift(makeTransition("in", transitionText("in", layer.transitionHint)));
+    room.frames.unshift(makeTransition("in", transitionText("in", "")));
     room.frames.splice(1, 0, { type: "layer", layer });
   } else if (interrupt && head) {
     room.frames.splice(1, 0, { type: "layer", layer });
@@ -162,8 +164,18 @@ function resetForReplay(room) {
   room.frames = [];
   room.board = board.createBoard();
   room.boardOwner = null;
+  room.review = { layerId: null, file: "", says: [] };
   room.updatedAt = Date.now();
   return 0;
+}
+
+/** 清空当前课堂的播放现场和回放索引，磁盘上的剧本文件不受影响。 */
+function clearRoom(room) {
+  resetForReplay(room);
+  room.lessonFiles = [];
+  room.lessonPaths = {};
+  room.restoreNotice = "";
+  room.clearEpoch += 1;
 }
 
 /**
@@ -195,6 +207,21 @@ function replayAll(room, layers) {
     dropped += pushLayer(room, layer, "append", budget).dropped;
   }
   return { frameCount: room.frames.length, dropped };
+}
+
+/** 当前屏幕所处 BLS 的 say。切回旧层时从断点前重建，不混入插话层。 */
+function recordDisplayedStep(room, layer, stepIndex) {
+  if (room.review.layerId !== layer.id) {
+    room.review = {
+      layerId: layer.id,
+      file: layer.file,
+      says: layer.steps.slice(0, stepIndex)
+        .filter((step) => step.kind === "say")
+        .map((step) => step.text),
+    };
+  }
+  const step = layer.steps[stepIndex];
+  if (step.kind === "say") room.review.says.push(step.text);
 }
 
 /**
@@ -233,10 +260,10 @@ function advance(room) {
 
     const layer = head.layer;
     if (layer.cursor >= layer.steps.length) {
-      // 本层结束：弹出；还有后续层就补一个 transition(out) 让"回到刚才"有个交代
+      // 本层结束：弹出；还有后续层就用本层保留的 hint 生成 transition(out)
       room.frames.shift();
       if (room.frames.length) {
-        room.frames.unshift(makeTransition("out", transitionText("out", "")));
+        room.frames.unshift(makeTransition("out", transitionText("out", layer.transitionHint)));
       }
       continue;
     }
@@ -249,6 +276,7 @@ function advance(room) {
     }
     layer.cursor += 1;
     board.apply(step, room.board); // say 不动黑板，返回 false 是正常情况
+    recordDisplayedStep(room, layer, layer.cursor - 1);
     room.updatedAt = Date.now();
 
     return {
@@ -285,11 +313,12 @@ const PERSIST_LAYER_LIMIT = 3;
 /**
  * 一个房间 → 可写进 storage 的纯数据。
  *
- * **只存"怎么摆这些剧本"**：帧的文件名 + cursor + 过渡文案（§13）。`steps` 与 `boardOps`
+ * 存帧的文件名 + cursor + 过渡文案（§13）。`steps` 与 `boardOps`
  * 一律不存——它们只是文件内容的投影，读盘重新解析即可；存下来反而可能与磁盘上的剧本不一致。
  *
  * 黑板存**行数组**（而不是让窗口等到第一次点击才重绘）：重开窗口时要立刻看到"回到刚才那块板"。
  * `lessonPaths` 也一并存：用户从文件选择器挑的剧本在工作区外，不存路径就重读不到它（§14g）。
+ * `review` 存当前已展示 BLS 的 say 快照；过渡帧和课程结束后也能回看当时说过的话。
  */
 function serializeRoom(room) {
   const frames = [];
@@ -313,14 +342,15 @@ function serializeRoom(room) {
     board: room.board.lines.slice(),
     lessonFiles: room.lessonFiles.slice(),
     lessonPaths: Object.assign({}, room.lessonPaths),
+    review: { file: room.review.file, says: room.review.says.slice() },
     updatedAt: room.updatedAt,
   };
 }
 
-/** 全部房间 → storage 形态。没帧、也没推过剧本的空房间不存。 */
+/** 全部房间 → storage 形态。没帧、剧本索引和回看内容的空房间不存。 */
 function serializeRooms(limit = PERSIST_ROOM_LIMIT) {
   const picked = Array.from(rooms.values())
-    .filter((room) => room.frames.length > 0 || room.lessonFiles.length > 0)
+    .filter((room) => room.frames.length > 0 || room.lessonFiles.length > 0 || room.review.says.length > 0)
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, limit);
   const out = {};
@@ -349,6 +379,12 @@ function restoreRooms(snapshot, resolveLayer) {
     room.lessonFiles = Array.isArray(state.lessonFiles) ? state.lessonFiles.slice() : [];
     room.lessonPaths =
       state.lessonPaths && typeof state.lessonPaths === "object" ? Object.assign({}, state.lessonPaths) : {};
+    if (state.review && typeof state.review === "object") {
+      room.review.file = typeof state.review.file === "string" ? state.review.file : "";
+      room.review.says = Array.isArray(state.review.says)
+        ? state.review.says.filter((text) => typeof text === "string").slice(0, 200)
+        : [];
+    }
     room.updatedAt = Number(state.updatedAt) || Date.now();
     if (Array.isArray(state.board)) room.board = { lines: state.board.slice() };
 
@@ -386,6 +422,13 @@ function restoreRooms(snapshot, resolveLayer) {
     // 其余情况（板空、队首是过渡帧）置 null，让第一次点击走瞬时重绘，别跳过重绘。
     const head = room.frames[0];
     room.boardOwner = head && head.type === "layer" && room.board.lines.length ? head.layer.id : null;
+    if (!state.review && head && head.type === "layer" && head.layer.cursor > 0) {
+      // 升级旧存档：那时还没有 review 字段，能从当前层的断点补出已展示的对白。
+      room.review.file = head.layer.file;
+      room.review.says = head.layer.steps.slice(0, head.layer.cursor)
+        .filter((step) => step.kind === "say")
+        .map((step) => step.text);
+    }
 
     rooms.set(conversationId, room);
     restored += 1;
@@ -429,6 +472,7 @@ module.exports = {
   replayLayer,
   replayAll,
   resetForReplay,
+  clearRoom,
   advance,
   rebuildBoardAt,
   enforceFrameBudget,

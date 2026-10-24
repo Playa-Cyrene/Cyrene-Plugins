@@ -52,6 +52,14 @@ function hasLessonsDir(workspaceRoot) {
   return Boolean(workspaceRoot) && fs.existsSync(lessonsDir(workspaceRoot));
 }
 
+/** 两种读取入口共用：先确认是普通文件且不超限，再同步读取正文。 */
+function readValidatedLessonFile(target) {
+  const stat = fs.statSync(target);
+  if (!stat.isFile()) throw new Error("剧本不是普通文件");
+  if (stat.size > MAX_BYTES) throw new Error(`剧本超过 ${MAX_BYTES} 字节上限`);
+  return fs.readFileSync(target, "utf8");
+}
+
 /**
  * 读一个**用户从文件选择器里挑的**剧本：绝对路径，不走白名单。
  *
@@ -60,10 +68,7 @@ function hasLessonsDir(workspaceRoot) {
  */
 function readLessonByPath(filePath) {
   const target = path.resolve(String(filePath == null ? "" : filePath));
-  const stat = fs.statSync(target);
-  if (!stat.isFile()) throw new Error("选中的不是普通文件");
-  if (stat.size > MAX_BYTES) throw new Error(`剧本超过 ${MAX_BYTES} 字节上限`);
-  return fs.readFileSync(target, "utf8");
+  return readValidatedLessonFile(target);
 }
 
 function lessonExists(workspaceRoot, file) {
@@ -72,7 +77,7 @@ function lessonExists(workspaceRoot, file) {
 
 /** 读剧本正文。文件不存在时抛 ENOENT，由调用方翻译成可行动的文案。 */
 function readLesson(workspaceRoot, file) {
-  return fs.readFileSync(resolveLessonPath(workspaceRoot, file), "utf8");
+  return readValidatedLessonFile(resolveLessonPath(workspaceRoot, file));
 }
 
 /**

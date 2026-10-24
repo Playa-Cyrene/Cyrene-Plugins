@@ -13,7 +13,7 @@
   <div class="page">
     <!-- 自绘标题栏：标题左、回放胶囊居中、圆形窗口按钮右（宿主的形态） -->
     <header class="titlebar" id="titlebar">
-      <span class="titlebar-title" id="titlebarTitle">Better Lessons</span>
+      <span class="titlebar-title" id="titlebarTitle">神悟课堂</span>
 
       <!-- 回放控件（§14）：纯本地读盘重演，不经过模型。
            放标题栏是因为舞台的点击处理已经把 .titlebar 排除在外，不会误触发"推进一帧"。 -->
@@ -21,6 +21,8 @@
         <button class="pill" id="btnPickLesson" title="用文件选择器挑剧本（可选多个，按文件名顺序当作一整节课）">📂 打开剧本</button>
         <button class="pill" id="btnReplaySection" title="把这一节从头重演一遍">⟲ 本节</button>
         <button class="pill" id="btnReplayAll" title="清空黑板，按顺序重演整节课">⟲ 从头</button>
+        <button class="pill" id="btnClearClassroom" title="清空当前和待播放的剧本，回到开场状态">× 清空</button>
+        <button class="pill" id="btnReview" title="回看当前剧本已说过的对白">|◀ 回放</button>
       </div>
 
       <!-- 窗口按钮：与宿主同一套圆形 30px 与同一组图标 -->
@@ -56,7 +58,7 @@
           <!-- 三层：底图（板面 + 木框） / 板书（markdown） / 边框（压住溢出到框外的字） -->
           <div class="board-art board-art-body" aria-hidden="true"></div>
           <!-- 板书面布双向可滚动（§8.5）：内容超长时滚动，而不是被裁掉 -->
-          <div class="board-surface" id="boardSurface">
+          <div class="board-surface markdown-content" id="boardSurface">
             <div class="board-inner" id="boardInner"></div>
           </div>
           <div class="board-empty" id="boardEmpty">等待剧本推送…</div>
@@ -97,14 +99,21 @@
 
       <div class="notice" id="notice" hidden></div>
     </main>
+
+    <div class="review-overlay" id="reviewOverlay" data-open="0" aria-hidden="true">
+      <aside class="review-drawer" aria-label="当前剧本对白回看">
+        <div class="review-content markdown-content" id="reviewContent"></div>
+      </aside>
+      <button class="review-dismiss" id="reviewDismiss" type="button" aria-label="关闭回看"></button>
+    </div>
   </div>
 
   <script src="vendor/markdown-it.min.js"></script>
   <script src="vendor/katex.min.js"></script>
   <script src="vendor/purify.min.js"></script>
+  <script src="math-renderer.js"></script>
   <script>
-    const { ipcRenderer } = require("electron");
-    const CH = (name) => "plugin:better-lessons:" + name;
+    const classroom = window.betterLessons;
 
     // ---------------------------------------------------------------- 美术素材
     // 全部素材由插件自带，不读宿主仓库（§9.1）。缺失的素材退回 CSS 程序化占位。
@@ -146,16 +155,21 @@
 
     // ---------------------------------------------------------------- markdown
     // 双层防线：markdown-it 关掉 html（模型写的原始 HTML 一律转义），
-    // DOMPurify 再消一次毒（§3.3 / §16 —— 本窗口开了 nodeIntegration，一次 XSS 即任意代码执行）。
+    // DOMPurify 再消一次毒（§3.3 / §16），避免模型文本通过 XSS 篡改画面或滥用课堂操作。
     const md = window.markdownit({
       html: false,
       linkify: false,
       breaks: false,
       typographer: false,
     });
+    // BLS 可以保留 [文字](地址) 的写法，但课堂只显示链接文字。
+    // 不生成 <a>，连拖到桌面创建快捷方式的入口也一并移除。
+    md.renderer.rules.link_open = () => "";
+    md.renderer.rules.link_close = () => "";
+    // 图片写法也只显示替代文字，不生成可能发起远程请求的 <img>。
+    md.renderer.rules.image = (tokens, idx) => md.utils.escapeHtml(tokens[idx].content);
 
-    // 白名单必须覆盖 markdown-it 会产出的全部标签，否则内容会被静默剥掉。
-    // 刻意排除 img：板书不需要图片，而放行等于让模型写的内容去发远程请求（这个窗口开着 nodeIntegration）。
+    // 白名单覆盖需要展示的标签；a / img 刻意禁用，渲染规则在此之前已把它们转成文字。
     // 注意删除线是 <s>（markdown-it 的默认渲染），不是 <del>。
     //
     // ALLOW_DATA_ATTR 为 true 是**必要**的：行区间标注（data-line，见 installLineTagging）
@@ -165,9 +179,9 @@
       ALLOWED_TAGS: [
         "p", "br", "hr", "strong", "em", "del", "s", "code", "pre", "blockquote",
         "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
-        "table", "thead", "tbody", "tr", "th", "td", "a", "span",
+        "table", "thead", "tbody", "tr", "th", "td", "span",
       ],
-      ALLOWED_ATTR: ["href", "title", "class"],
+      ALLOWED_ATTR: ["title", "class"],
       ALLOW_DATA_ATTR: true,
     };
 
@@ -227,7 +241,7 @@
     //   2. 它必须跑在 DOMPurify **之后**（KaTeX 输出的 MathML 与 inline style 过不了净化白名单），
     //      而那时也没法再切回"数学源码"的边界了。
     // 所以这里挂一条 markdown-it 规则：在行内解析之前就把公式源码摘出来，先落成占位元素
-    // （TeX 原文放在文本节点里，顺带避开了净化），等 HTML 插进 DOM 后再用 katex.render 填进去。
+    // （TeX 原文放在文本节点里，顺带避开了净化），等 HTML 插进 DOM 后再交给有预算的渲染器填进去。
     // 数学源码全程不经过 markdown，也就不需要给 DOMPurify 放行 MathML。
     const MATH_DELIM = 0x24; // `$`
     const MATH_BACKSLASH = 0x5c; // `\`
@@ -363,26 +377,26 @@
     /**
      * 把占位元素换成 KaTeX 渲染结果。必须在 `innerHTML` 之后、量尺寸/滚动之前调用。
      *
-     * `trust: false` 是关键：它关掉 \href、\htmlClass 这类能往页面里塞任意 HTML/属性的扩展；
-     * `throwOnError: false` 让写错的公式以红色错误形式留在原位，而不是让整块板书消失。
+     * 共用有预算的渲染器。超限公式保留带分隔符的原文，避免 KaTeX 扩展或布局耗尽资源。
      */
     function hydrateMath(root) {
-      if (!root || !window.katex) return;
+      if (!root) return;
+      const renderer = window.LessonMath;
+      const budget = renderer && renderer.createBudget();
       for (const el of root.querySelectorAll("[data-math]")) {
         const tex = el.textContent || "";
         const displayMode = el.getAttribute("data-math") === "1";
         el.removeAttribute("data-math");
         if (!tex.trim()) continue;
-        try {
-          window.katex.render(tex, el, {
-            displayMode,
-            throwOnError: false,
-            strict: false,
-            trust: false,
-            output: "html",
-          });
-        } catch (err) {
-          el.textContent = tex; // 渲染器自己出了问题也别把公式弄丢
+        const result = renderer ? renderer.render(window.katex, tex, displayMode, budget) :
+          { reason: "unavailable" };
+        if (result.html) {
+          el.innerHTML = result.html;
+        } else {
+          const delim = displayMode ? "$$" : "$";
+          el.textContent = delim + tex + delim;
+          el.classList.add("bl-math-fallback");
+          el.dataset.mathFallback = result.reason || "render-error";
         }
       }
     }
@@ -704,12 +718,15 @@
      *
      * 只有开场态才该出现「等待剧本推送…」：清板之后黑板是**真的空的**（不是又在等推送），
      * 模型推来剧本后第一帧还没铺开时也不该说"在等"——那时对话框会告诉用户点一下。
-     * 所以一旦收到过推送 / 回放 / 已经播过，就永久退出开场态。
+     * 收到推送 / 回放 / 播放后退出开场态；用户主动清空时重新进入。
      */
     let idleEmpty = true;
 
     /** 收到内容、但一步都还没播（第一帧还没铺到黑板上）时给用户的话。 */
     const PUSH_HINT = "昔涟推送了一节课给你，点击进行下一步。";
+    const INITIAL_DIALOG = "点「📂 打开剧本」挑一个剧本，或者等昔涟推给你。";
+    const titlebarTitle = document.getElementById("titlebarTitle");
+    const initialTitle = titlebarTitle.textContent;
 
     function refreshBoardEmpty() {
       boardEmpty.hidden = !(idleEmpty && boardSource.trim().length === 0);
@@ -878,7 +895,23 @@
 
     let boundConversationId = null;
     let pushing = false;
+    let clearing = false;
+    let reviewOpen = false;
+    let reviewQueued = false;
+    let viewEpoch = 0; // 清空或切换会话后忽略先前发出的界面请求响应
     let currentFile = null; // 正在播（或刚播完）的剧本文件名，回放"本节"要用
+
+    function setBinding(nextId) {
+      if (boundConversationId !== nextId) {
+        if (boundConversationId) {
+          viewEpoch += 1;
+          pushing = false;
+          clearing = false;
+        }
+        closeReview();
+      }
+      boundConversationId = nextId;
+    }
 
     /** 把主进程算好的这一帧铺到界面上（§7.3 的返回形状见 rooms.advance）。 */
     function applyFrame(result) {
@@ -941,23 +974,35 @@
       }
 
       setHint("▽");
-      document.getElementById("titlebarTitle").textContent = `${result.file}　·　${base}`;
+      titlebarTitle.textContent = `${result.file}　·　${base}`;
     }
 
     async function advance() {
-      if (pushing) return;
+      if (pushing || clearing || reviewOpen) return;
       pushing = true;
+      const epoch = viewEpoch;
+      const conversationId = boundConversationId;
       try {
-        const result = await ipcRenderer.invoke(CH("advance"), { conversationId: boundConversationId });
+        const result = await classroom.invoke("advance", { conversationId });
+        if (epoch !== viewEpoch || conversationId !== boundConversationId) return;
         if (!result || result.ok === false) {
           showNotice((result && result.reason) || "推进失败");
           return;
         }
         applyFrame(result);
       } catch (err) {
-        showNotice(String(err && err.message ? err.message : err));
+        if (epoch === viewEpoch && conversationId === boundConversationId) {
+          showNotice(String(err && err.message ? err.message : err));
+        }
       } finally {
-        pushing = false;
+        // 旧会话的请求可能晚于新会话的推进结束；不能替新请求解除忙碌状态。
+        if (epoch === viewEpoch) {
+          pushing = false;
+          if (reviewQueued && !clearing) {
+            reviewQueued = false;
+            openReview();
+          }
+        }
       }
     }
 
@@ -967,6 +1012,62 @@
     const btnPickLesson = document.getElementById("btnPickLesson");
     const btnReplaySection = document.getElementById("btnReplaySection");
     const btnReplayAll = document.getElementById("btnReplayAll");
+    const btnClearClassroom = document.getElementById("btnClearClassroom");
+    const btnReview = document.getElementById("btnReview");
+    const reviewOverlay = document.getElementById("reviewOverlay");
+    const reviewContent = document.getElementById("reviewContent");
+    const reviewDismiss = document.getElementById("reviewDismiss");
+    let reviewRequest = 0;
+
+    function closeReview() {
+      reviewQueued = false;
+      reviewRequest += 1;
+      reviewOpen = false;
+      reviewOverlay.dataset.open = "0";
+      reviewOverlay.setAttribute("aria-hidden", "true");
+      if (document.activeElement && document.activeElement.closest(".review-overlay, .titlebar")) {
+        document.activeElement.blur();
+      }
+    }
+
+    function renderReview(says) {
+      if (!says.length) {
+        reviewContent.innerHTML = '<p class="review-empty">当前剧本还没有已展示的对白。</p>';
+      } else {
+        const source = says.map((text) => `**昔涟：** ${text}`).join("\n\n---\n\n");
+        reviewContent.innerHTML = renderBoardHtml(source);
+        hydrateMath(reviewContent);
+      }
+      const drawer = reviewOverlay.querySelector(".review-drawer");
+      drawer.scrollTop = drawer.scrollHeight;
+    }
+
+    async function openReview() {
+      if (reviewOpen) return;
+      if (pushing) {
+        reviewQueued = true; // 已发出的推进先完成，再展示对应的回看内容
+        return;
+      }
+      reviewOpen = true; // IPC 返回前也要先挡住推进
+      const request = ++reviewRequest;
+      reviewOverlay.dataset.open = "1";
+      reviewOverlay.setAttribute("aria-hidden", "false");
+      renderReview([]);
+      try {
+        const res = await classroom.invoke("review", { conversationId: boundConversationId });
+        if (request !== reviewRequest || !reviewOpen) return;
+        if (!res || res.ok === false) {
+          closeReview();
+          showNotice((res && res.reason) || "读取回看失败");
+          return;
+        }
+        renderReview(Array.isArray(res.says) ? res.says : []);
+      } catch (err) {
+        if (request !== reviewRequest || !reviewOpen) return;
+        closeReview();
+        showNotice(String(err && err.message ? err.message : err));
+      }
+    }
 
     /** 回放后主进程那边黑板已经清空，窗口这边要立刻跟着清，别等下一次点击才看得出变化。 */
     function resetBoardView(boardText) {
@@ -985,15 +1086,20 @@
     }
 
     async function requestReplay(channel, payload) {
-      const args = Object.assign({ conversationId: boundConversationId }, payload || {});
+      if (clearing) return;
+      const epoch = viewEpoch;
+      const conversationId = boundConversationId;
+      const args = Object.assign({ conversationId }, payload || {});
       try {
-        const res = await ipcRenderer.invoke(CH(channel), args);
+        const res = await classroom.invoke(channel, args);
+        if (epoch !== viewEpoch) return;
         if (!res || res.ok === false) {
           if (res && res.canceled) return; // 用户在文件选择器里点了取消，什么都不用说
           showNotice((res && res.reason) || "回放失败");
           return;
         }
         const text = describeReplay(res);
+        closeReview();
         leaveIdle(); // 回放同样是"收到内容了"，空板提示不该再出现
         resetBoardView(res.boardText);
         setDialog(text);
@@ -1002,8 +1108,57 @@
         playFigure({ slot: "talk" }, { instant: true });
         setHint("▽");
         showNotice(text);
+        // 标题栏按钮被点击后会保留焦点；释放焦点，下一次空格 / 回车才能推进剧本。
+        if (document.activeElement && document.activeElement.closest(".titlebar")) {
+          document.activeElement.blur();
+        }
       } catch (err) {
-        showNotice(String(err && err.message ? err.message : err));
+        if (epoch === viewEpoch && conversationId === boundConversationId) {
+          showNotice(String(err && err.message ? err.message : err));
+        }
+      }
+    }
+
+    async function clearClassroom() {
+      if (clearing) return;
+      clearing = true;
+      reviewQueued = false;
+      const epoch = ++viewEpoch;
+      const conversationId = boundConversationId;
+      pushing = false; // 先前推进已作废；清空期间仍由 clearing 挡住新推进
+      try {
+        const res = await classroom.invoke("clear-classroom", {
+          conversationId,
+        });
+        if (epoch !== viewEpoch || conversationId !== boundConversationId) return;
+        if (!res || res.ok === false) {
+          showNotice((res && res.reason) || "清空失败");
+          return;
+        }
+        closeReview();
+        currentFile = null;
+        idleEmpty = true;
+        renderBoard("");
+        boardSurface.scrollTop = 0;
+        boardSurface.scrollLeft = 0;
+        boardFrame.classList.remove("bl-cleared");
+        boardArtBody.classList.remove("bl-cleared");
+        figureTalk.classList.remove("is-bounce");
+        playFigure({ slot: "talk" }, { instant: true });
+        setDialog(INITIAL_DIALOG);
+        setHint("▽");
+        titlebarTitle.textContent = initialTitle;
+        clearTimeout(noticeTimer);
+        document.getElementById("notice").hidden = true;
+        if (document.activeElement && document.activeElement.closest(".titlebar")) {
+          document.activeElement.blur();
+        }
+      } catch (err) {
+        if (epoch === viewEpoch && conversationId === boundConversationId) {
+          showNotice(String(err && err.message ? err.message : err));
+        }
+      } finally {
+        if (epoch === viewEpoch) clearing = false;
       }
     }
 
@@ -1018,22 +1173,43 @@
     });
 
     btnReplayAll.addEventListener("click", () => requestReplay("replay-all", {}));
+    btnClearClassroom.addEventListener("click", clearClassroom);
+    btnReview.addEventListener("click", openReview);
+    reviewDismiss.addEventListener("click", closeReview);
 
     stage.addEventListener("click", (event) => {
-      if (event.target.closest(".titlebar") || event.target.closest("a")) return;
+      if (event.target.closest(".titlebar")) return;
       // 正在选文本、或刚拖过滚动条时不要顺手把课推进一格
       const selection = window.getSelection();
       if (selection && !selection.isCollapsed) return;
+      if (document.activeElement && document.activeElement.closest(".titlebar")) {
+        document.activeElement.blur();
+      }
+      advance();
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== " " && event.key !== "Enter") return;
+      if (event.repeat || event.isComposing || event.defaultPrevented) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      // 焦点在标题栏按钮等控件上时，保留空格 / 回车原本的按钮操作。
+      const target = event.target;
+      if (target && typeof target.closest === "function" &&
+          target.closest(".titlebar, button, input, textarea, select, a, [contenteditable]")) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed) return;
+      event.preventDefault(); // 空格不滚动页面；回车只推进一次
       advance();
     });
 
     // ---------------------------------------------------------------- 主进程 → 窗口
 
-    ipcRenderer.on(CH("bind"), (_event, payload) => {
-      boundConversationId = payload && payload.conversationId ? payload.conversationId : null;
+    classroom.on("bind", (payload) => {
+      const nextId = payload && payload.conversationId ? payload.conversationId : null;
+      setBinding(nextId);
     });
 
-    ipcRenderer.on(CH("push"), (_event, payload) => {
+    classroom.on("push", (payload) => {
       const layer = payload && payload.layer;
       if (!layer) return;
       // 队列在主进程里，窗口不复制一份；这里只做提示，下一次点击会先演过渡帧
@@ -1049,7 +1225,7 @@
       setHint("▽");
     });
 
-    ipcRenderer.on(CH("restore"), (_event, payload) => {
+    classroom.on("restore", (payload) => {
       // 打开窗口 / 跨会话切绑定时，主进程把那个房间已有的现场发过来（§13）：帧队列在主进程里，
       // 窗口这边只把板书铺回去。文案也由主进程给（切会话，或"上次恢复时丢过节"）。
       leaveIdle();
@@ -1057,7 +1233,7 @@
       if (payload && payload.notice) showNotice(payload.notice);
     });
 
-    ipcRenderer.on(CH("notice"), (_event, payload) => {
+    classroom.on("notice", (payload) => {
       if (payload && payload.text) showNotice(payload.text);
     });
 
@@ -1065,19 +1241,16 @@
 
     document.querySelectorAll("[data-win]").forEach((button) => {
       button.addEventListener("click", () => {
-        ipcRenderer.invoke(CH(button.dataset.win)).catch(() => {});
+        classroom.invoke(button.dataset.win).catch(() => {});
       });
     });
     document.getElementById("titlebar").addEventListener("dblclick", (event) => {
-      if (event.target.closest(".winbtn")) return;
-      ipcRenderer.invoke(CH("win-maximize")).catch(() => {});
+      if (event.target.closest("button")) return;
+      classroom.invoke("win-maximize").catch(() => {});
     });
 
     // 跳动动画结束后摘掉 class，否则同一个 class 无法再次触发（bounce() 里也会先删一次）
     figureTalk.addEventListener("animationend", () => figureTalk.classList.remove("is-bounce"));
-
-    // 供 DevTools 手工验证窗口壳体用
-    window.__bl = { renderBoard, setDialog, playFigure, stageOf, showNotice, applyFrame };
 
     detectArt().finally(async () => {
       layoutBoard(); // 素材探完后才知道走素材版面还是兜底版面
@@ -1086,11 +1259,14 @@
       // 主进程可能已经先把"上次的板书"推过来了（§13 的 restore 抢在这段异步初始化之前），
       // 那时板上有东西，就别拿这块空板把它盖掉。
       if (!boardSource.trim()) renderBoard("");
-      setDialog("点「📂 打开剧本」挑一个剧本，或者等昔涟推给你。");
+      setDialog(INITIAL_DIALOG);
       setHint("▽");
       try {
-        const state = await ipcRenderer.invoke(CH("state"));
-        boundConversationId = (state && state.boundConversationId) || null;
+        const epoch = viewEpoch;
+        const conversationId = boundConversationId;
+        const state = await classroom.invoke("state");
+        if (epoch !== viewEpoch || conversationId !== boundConversationId) return;
+        setBinding((state && state.boundConversationId) || null);
         // 窗口被关掉又打开时，那间课堂可能还有**没播完**的内容：那就不是开场态 ——
         // 板书要等下一次点击才会重铺到窗口上，但这时的"空"是"还没铺"，不是"在等推送"。
         //

@@ -43,7 +43,13 @@ const { BLS_FORMAT_SPEC, SAMPLE_SCRIPT, buildClassroomBrief } = prompts;
 /** 每个会话一个 Room 由 rooms 管理；窗口只有一个，绑定到最近一次推送的会话（§11.1）。 */
 let pluginWin = null;
 let boundConversationId = null;
+let bindingVersion = 0;
 let ctxRef = null;
+
+function setBoundConversationId(nextId) {
+  if (boundConversationId !== nextId) bindingVersion += 1;
+  boundConversationId = nextId;
+}
 
 /**
  * 从插件列表直接打开窗口、且此前没有任何剧本被推过时，课堂用的房间 key。
@@ -173,7 +179,7 @@ async function restorePersisted() {
   const storage = ctxRef && ctxRef.storage;
   if (!storage) return;
   loadPrefs();
-  if (prefs.boundConversationId) boundConversationId = prefs.boundConversationId;
+  if (prefs.boundConversationId) setBoundConversationId(prefs.boundConversationId);
 
   const snapshot = storage.get(STORAGE_ROOMS);
   if (!snapshot || typeof snapshot !== "object") return;
@@ -276,9 +282,20 @@ async function openWindow() {
     // 否则圆角外那四个角会露出方块。
     backgroundColor: "#00000000",
     transparent: true,
-    webPreferences: { nodeIntegration: true, contextIsolation: false },
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      preload: path.join(__dirname, "preload.cjs"),
+    },
   });
   pluginWin = win;
+  // 页面无 Node 权限，IPC 只经隔离的 preload 白名单。页面发起的跳转和新窗口请求一律拦截。
+  // loadFile 属于主进程主动加载，不会触发这些页面导航事件。
+  win.webContents.on("will-navigate", (event) => event.preventDefault());
+  win.webContents.on("will-frame-navigate", (event) => event.preventDefault());
+  win.webContents.on("will-redirect", (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   if (saved && saved.maximized) win.maximize();
   // 拖动 / 缩放 / 关闭各记一次矩形（去抖），下次沿用
   const rememberBounds = () => {
@@ -324,7 +341,7 @@ function deliverLayer(room, layer, conversationId, options) {
   // 窗口只有一个，绑定到最近一次推送的会话（§11.1）。跨会话推送时先让窗口切绑定、
   // 并把那个房间已有的现场还原回去，否则窗口会一边演新房间的步、一边留着上个房间的板书。
   const switching = Boolean(boundConversationId) && boundConversationId !== conversationId;
-  boundConversationId = conversationId;
+  setBoundConversationId(conversationId);
   schedulePersist(); // 绑定换了，下次启动要能回到同一个房间（§13）
 
   const deliver = () => {
@@ -547,19 +564,19 @@ const writeLessonTool = {
     const root = await workspaceRootOf(toolCtx, toolCtx && toolCtx.conversationId);
     if (!root) return "该会话未绑定工作区，无法写入剧本文件。请确认当前会话处于 learn 模式且已绑定工作区。";
     try {
-      const result = lessons.writeLesson(root, file, script);
-      // §5.3 第 6 条：写完立刻解析一遍；一个有效 step 都没有就删掉刚写的文件，
-      // 避免 learn/lessons/ 里堆积无法演出的残次品，并把问题行号回给模型让它自己修。
+      lessons.resolveLessonPath(root, file);
+      // §5.3 第 6 条：先解析再写盘。无有效 step 或超出解析上限时，
+      // 已有剧本（包括用户手工修改的内容）必须保持原样。
       let parsed;
       try {
         parsed = bls.parseBLS(script);
       } catch (err) {
-        lessons.deleteLesson(root, file);
         return (
-          `剧本写成后校验不通过，已删除 learn/lessons/${result.file}。请修正后重写。\n` +
+          `剧本校验不通过，未写入 learn/lessons/${file}。请修正后重写。\n` +
           `${err.message}`
         );
       }
+      const result = lessons.writeLesson(root, file, script);
       const warnNote = parsed.warnings.length
         ? `\n有 ${parsed.warnings.length} 处问题（前 2 条）：\n` +
           parsed.warnings.slice(0, 2).map((w) => `  第 ${w.line} 行：${w.message}`).join("\n")
@@ -663,6 +680,13 @@ const lessonListTool = {
   },
 };
 
+/** cursor 指向下一步；最后一步已展示但尚未弹栈时，本层应报告完成。 */
+function describeLayerProgress(layer, activePrefix = "") {
+  const total = layer.steps.length;
+  if (layer.cursor >= total) return `《${layer.file}》已完成 ${total}/${total} 步，等待点击切换`;
+  return `${activePrefix}《${layer.file}》第 ${layer.cursor + 1}/${total} 步`;
+}
+
 const statusTool = {
   id: "better-lessons_status",
   name: "查询课堂状态",
@@ -677,14 +701,12 @@ const statusTool = {
     const conversationId = (toolCtx && toolCtx.conversationId) || "default";
     const room = rooms.getRoom(conversationId);
     const layer = rooms.activeLayer(room);
-    const playing = layer
-      ? `《${layer.file}》第 ${layer.cursor + 1}/${layer.steps.length} 步`
-      : "（无）";
+    const playing = layer ? describeLayerProgress(layer) : "（无）";
     const text = room ? board.boardText(room.board) : "";
     const boardText = text.length > 2000 ? `${text.slice(0, 2000)}\n…（已截断）` : text || "（黑板为空）";
     return [
       `课堂窗口：${pluginWin && !pluginWin.isDestroyed() ? "已打开" : "未打开"}（绑定会话 ${boundConversationId || "无"}）`,
-      `正在播放：${playing}`,
+      `${layer && layer.cursor >= layer.steps.length ? "本层进度" : "正在播放"}：${playing}`,
       `板书：\n${boardText}`,
     ].join("\n");
   },
@@ -739,6 +761,28 @@ function registerIpcHandlers(ctx) {
     return Object.assign({ ok: true }, result);
   });
 
+  // 回看只读当前屏幕所处 BLS 已展示的 say；打开抽屉不改变播放状态。
+  ctx.registerIpc("review", (payload) => {
+    const conversationId = (payload && payload.conversationId) || boundConversationId || LOCAL_ROOM_ID;
+    const room = rooms.getRoom(conversationId);
+    return {
+      ok: true,
+      file: room ? room.review.file : "",
+      says: room ? room.review.says.slice() : [],
+    };
+  });
+
+  // 只清当前窗口绑定的课堂；空房间也视为已清空。剧本文件仍留在磁盘上。
+  ctx.registerIpc("clear-classroom", (payload) => {
+    const conversationId = (payload && payload.conversationId) || boundConversationId || LOCAL_ROOM_ID;
+    const room = rooms.getRoom(conversationId);
+    if (room) {
+      rooms.clearRoom(room);
+      schedulePersist();
+    }
+    return { ok: true, boardText: "" };
+  });
+
   // 列出可回放的剧本（§14）。窗口的剧本下拉与设置面板都走这条。
   ctx.registerIpc("lessons", async (payload) => {
     const conversationId = (payload && payload.conversationId) || boundConversationId;
@@ -752,15 +796,20 @@ function registerIpcHandlers(ctx) {
   ctx.registerIpc("replay", async (payload) => {
     const conversationId = (payload && payload.conversationId) || boundConversationId || LOCAL_ROOM_ID;
     const file = payload && payload.file;
-    const root = await workspaceRootOf(null, conversationId);
     const room = rooms.ensureRoom(conversationId);
+    const clearEpoch = room.clearEpoch;
+    const startedAtBinding = bindingVersion;
+    const root = await workspaceRootOf(null, conversationId);
+    if (room.clearEpoch !== clearEpoch || bindingVersion !== startedAtBinding) {
+      return { ok: false, canceled: true };
+    }
 
     // 不预先拦 root 为空的情况：挑来的剧本走 lessonPaths，本来就不需要工作区（§14g）
     const built = buildLayerByName(room, root, file, {});
     if (!built.ok) return { ok: false, reason: built.reason };
 
     const { frameCount } = rooms.replayLayer(room, built.layer);
-    boundConversationId = conversationId;
+    setBoundConversationId(conversationId);
     sendToWindow(CH("bind"), { conversationId });
     schedulePersist();
     return {
@@ -776,8 +825,13 @@ function registerIpcHandlers(ctx) {
   // 从头重放整节课（§14b）。播放列表沿用 room.lessonFiles 的顺序，读不出来的那节跳过。
   ctx.registerIpc("replay-all", async (payload) => {
     const conversationId = (payload && payload.conversationId) || boundConversationId || LOCAL_ROOM_ID;
-    const root = await workspaceRootOf(null, conversationId);
     const room = rooms.ensureRoom(conversationId);
+    const clearEpoch = room.clearEpoch;
+    const startedAtBinding = bindingVersion;
+    const root = await workspaceRootOf(null, conversationId);
+    if (room.clearEpoch !== clearEpoch || bindingVersion !== startedAtBinding) {
+      return { ok: false, canceled: true };
+    }
     const playlist = room.lessonFiles.slice();
     if (!playlist.length) return { ok: false, reason: "这节课还没有可回放的剧本。" };
 
@@ -793,7 +847,7 @@ function registerIpcHandlers(ctx) {
     }
 
     const { frameCount } = rooms.replayAll(room, layers);
-    boundConversationId = conversationId;
+    setBoundConversationId(conversationId);
     sendToWindow(CH("bind"), { conversationId });
     schedulePersist();
     return {
@@ -812,8 +866,13 @@ function registerIpcHandlers(ctx) {
   ctx.registerIpc("pick-lesson", async (payload) => {
     const conversationId = (payload && payload.conversationId) || boundConversationId || LOCAL_ROOM_ID;
     const room = rooms.ensureRoom(conversationId);
+    const clearEpoch = room.clearEpoch;
+    const startedAtBinding = bindingVersion;
 
     const picked = await pickLessonFiles(await defaultLessonDir(conversationId));
+    if (room.clearEpoch !== clearEpoch || bindingVersion !== startedAtBinding) {
+      return { ok: false, canceled: true };
+    }
     if (!picked.ok) return picked;
 
     const layers = [];
@@ -838,7 +897,7 @@ function registerIpcHandlers(ctx) {
       ? rooms.replayLayer(room, layers[0])
       : rooms.replayAll(room, layers);
 
-    boundConversationId = conversationId;
+    setBoundConversationId(conversationId);
     sendToWindow(CH("bind"), { conversationId });
     schedulePersist();
     return {
@@ -928,7 +987,7 @@ async function register(ctx) {
       const head = room.frames[0];
       const progress =
         head && head.type === "layer"
-          ? `正在播放《${head.layer.file}》第 ${head.layer.cursor + 1}/${head.layer.steps.length} 步`
+          ? describeLayerProgress(head.layer, "正在播放")
           : head
             ? `即将播放一层过渡（${head.kind === "in" ? "进入新推的内容" : "回到被打断的那层"}）`
             : "当前没有正在播放的剧本";
@@ -984,7 +1043,7 @@ async function register(ctx) {
     closeWindow();
     rooms.clearAll();
     clearAudit();
-    boundConversationId = null;
+    setBoundConversationId(null);
     ctxRef = null;
   });
 
@@ -1009,7 +1068,7 @@ function unregister() {
   closeWindow();
   rooms.clearAll();
   clearAudit();
-  boundConversationId = null;
+  setBoundConversationId(null);
   ctxRef = null;
 }
 
