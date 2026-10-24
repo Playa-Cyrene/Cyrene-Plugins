@@ -1966,6 +1966,9 @@ function createQoderShim(options) {
     invalidateCredential,
     region,
     logger,
+    // Called before the two directory-reading routes. Absent on the Pi port,
+    // which refreshes from `auth.apiKey.resolve()` instead.
+    refreshCatalog,
     // Endpoint stability. Both are optional so the Pi port keeps its original
     // per-process behaviour; Cyrene persists them so a model profile survives a
     // restart. `preferredPort` is only a preference — a busy port falls back to
@@ -2043,6 +2046,19 @@ function createQoderShim(options) {
       return;
     }
     const url = req.url ?? "/";
+    const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
+    if (catalogRoute && typeof refreshCatalog === "function") {
+      const haveModels = resolveModels().length > 0;
+      const refreshed = (async () => {
+        try {
+          return await refreshCatalog();
+        } catch (error) {
+          logger?.warn?.(`dsh-connect-qoder: ${region.displayName} \u8BF7\u6C42\u524D\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55`, error);
+          return void 0;
+        }
+      })();
+      if (!haveModels) await refreshed;
+    }
     if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) {
       sendJson(res, 200, { ok: true });
       return;
@@ -2334,6 +2350,7 @@ var CatalogStore = class {
 };
 
 // src/qoder/runtime.js
+var CATALOG_RETRY_AFTER_FAILURE_MS = 60 * 1e3;
 var RegionRuntime = class {
   constructor(region, logger, cacheRoot, endpoints, portIndex = 0) {
     this.region = region;
@@ -2352,6 +2369,8 @@ var RegionRuntime = class {
     });
     this.shim = void 0;
     this.disposed = false;
+    this.catalogPending = void 0;
+    this.catalogFailedAt = 0;
   }
   /** Start the loopback shim; called only when a session or a request needs it. */
   startShim() {
@@ -2365,6 +2384,9 @@ var RegionRuntime = class {
       resolveEnabledIds: () => [],
       invalidateCredential: () => this.credentials.invalidate(),
       logger: this.logger,
+      // Lets a request refresh the directory, mirroring what the Pi port does
+      // from `auth.apiKey.resolve()`. TTL-gated inside `refreshCatalog`.
+      refreshCatalog: () => this.refreshCatalog(),
       ...this.endpoints === void 0 ? {} : {
         secret: this.endpoints.tokenFor(this.region.id),
         preferredPort: this.endpoints.preferredPortFor(this.region.id, this.portIndex)
@@ -2408,16 +2430,50 @@ var RegionRuntime = class {
   entryFor(modelId) {
     return this.catalog.current().find((entry) => entry.id === modelId);
   }
-  /** Fetch a fresh catalog and keep the last good one on failure. */
-  async refreshCatalog(signal) {
-    if (this.catalog.fresh()) return;
+  /**
+   * Fetch a fresh catalog and keep the last good one on failure.
+   *
+   * Single-flight. An empty catalog or an expired TTL used to make every
+   * concurrent caller run its own `fetchModels`, and the two results raced:
+   * the fetch that *started* first could *finish* last and overwrite the newer
+   * directory, which was then re-cached for another 30 minutes. Reusing the
+   * in-flight promise removes the race by construction — there is only ever
+   * one result to land.
+   *
+   * The signal is honoured only by the flight that creates the slot. A caller
+   * that joins mid-flight is waiting on someone else's fetch and has no claim
+   * on its cancellation; letting a joiner abort it would turn one caller's
+   * timeout into everyone's. In practice the creator is either the warm-up
+   * (which passes `ctx.signal` + `WARM_TIMEOUT_MS`) or the request path (which
+   * passes nothing, and `fetchModels` then applies its own 30s ceiling).
+   *
+   * `force` skips the TTL check so the panel's explicit "refresh" button can
+   * pick up new models inside the 30-minute window, and the 60-second failure
+   * backoff. An in-flight fetch is still shared: it is already asking upstream,
+   * so a second one would only duplicate the call.
+   */
+  async refreshCatalog(signal, { force = false } = {}) {
+    if (this.catalogPending !== void 0) return this.catalogPending;
+    if (!force && this.catalog.fresh()) return;
+    if (!force && Date.now() - this.catalogFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS) return;
+    const flight = this.fetchCatalog(signal).finally(() => {
+      if (this.catalogPending === flight) this.catalogPending = void 0;
+    });
+    this.catalogPending = flight;
+    return flight;
+  }
+  /** One catalog fetch. Split out so `refreshCatalog` owns only the slot. */
+  async fetchCatalog(signal) {
+    this.credentials.invalidate();
     const credential = await this.resolveCredential();
     if (credential === void 0) return;
     try {
       const raw = await fetchModels(this.region, credential, signal);
       const entries = raw.map(normalizeEntry);
       if (entries.length > 0) this.catalog.replace(entries);
+      this.catalogFailedAt = 0;
     } catch (error) {
+      this.catalogFailedAt = Date.now();
       this.logger?.warn?.(
         `dsh-connect-qoder[pi]: ${this.region.displayName} catalog refresh failed; serving cached catalog`,
         error
@@ -3696,6 +3752,7 @@ function readBody2(req) {
 function createTraeShim(options) {
   const injectedSecret = options?.["secret"];
   const preferredPort = options?.["preferredPort"];
+  const refreshCatalog = options?.["refreshCatalog"];
   const secret = typeof injectedSecret === "string" && injectedSecret.length > 0 ? injectedSecret : (0, import_node_crypto5.randomBytes)(32).toString("base64url");
   const sockets = /* @__PURE__ */ new Set();
   const server = (0, import_node_http2.createServer)((req, res) => {
@@ -3746,6 +3803,19 @@ function createTraeShim(options) {
       if (!originIsLoopback2(req.headers.origin)) return writeError2(res, 403, "origin_not_allowed", "Origin must be loopback");
       if (!bearerOk(req)) return writeError2(res, 401, "unauthorized", "Missing or invalid bearer");
       const url = req.url ?? "/";
+      const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
+      if (catalogRoute && typeof refreshCatalog === "function") {
+        const haveWire = options.wire?.resolved === true;
+        const refreshed = (async () => {
+          try {
+            return await refreshCatalog();
+          } catch (error) {
+            options?.logger?.warn?.("dsh-connect-trae: \u8BF7\u6C42\u524D\u6A21\u578B\u76EE\u5F55\u5237\u65B0\u5931\u8D25\uFF0C\u4F7F\u7528\u7F13\u5B58\u76EE\u5F55", error);
+            return void 0;
+          }
+        })();
+        if (!haveWire) await refreshed;
+      }
       if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) return writeJson(res, 200, { ok: true });
       if (req.method === "GET" && (url === "/v1/models" || url === "/v1/models/")) return writeJson(res, 200, {
         object: "list",
@@ -4112,7 +4182,8 @@ var TraeSoloUpstreamClient = class {
       this.collectModels(list, directoryFunction, byId);
     }
     const models = [...byId.values()];
-    if (models.length === 0) throw new Error(`Trae SOLO models response contained no models (${failures.join("; ") || "empty directory"})`);
+    if (failures.length > 0) throw new Error(`Trae SOLO models directory incomplete (${failures.join("; ")})`);
+    if (models.length === 0) throw new Error("Trae SOLO models response contained no models (empty directory)");
     return models;
   }
   /** Merge one function's config list into the shared catalogue (first wins). */
@@ -4873,10 +4944,16 @@ function toCheckin(status) {
 
 // src/trae/runtime.js
 var REGION_KEYS = ["cn", "ai"];
+var CATALOG_TTL_MS2 = 30 * 60 * 1e3;
+var CATALOG_RETRY_AFTER_FAILURE_MS2 = 60 * 1e3;
 var RegionStack = class {
   constructor(region, logger, cacheRoot, endpoints, portIndex = 0) {
     this.endpoints = endpoints;
     this.portIndex = portIndex;
+    this.modelsDiscoveredAt = 0;
+    this.modelsReady = false;
+    this.modelsPending = void 0;
+    this.modelsFailedAt = 0;
     this.region = region;
     this.logger = logger;
     this.catalog = new TraeCatalog(region);
@@ -4926,6 +5003,12 @@ var RegionStack = class {
       catalog: this.catalog,
       client: this.delegating,
       logger: this.logger,
+      // Lets the shim tell "no directory worth serving from" (block on the
+      // discovery) from "cache available" (refresh in the background).
+      wire: this.wire,
+      // Lets a request refresh the directory, mirroring what the Pi port does
+      // from `auth.apiKey.resolve()`.
+      refreshCatalog: () => this.refreshCatalog(),
       // Absent on the Pi port, which keeps its original random-per-process
       // behaviour.
       ...this.endpoints === void 0 ? {} : {
@@ -4956,20 +5039,47 @@ var RegionStack = class {
    */
   async ensureReady() {
     const shim = await this.ensureShim();
-    if (this.modelsReady === void 0) {
-      this.modelsReady = this.discoverModels().then((models) => {
+    if (this.modelsReady === false && this.modelsPending === void 0) {
+      const flight = this.discoverModels().then((models) => {
         if (models.length > 0) {
           this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
+          this.modelsDiscoveredAt = Date.now();
+          this.modelsReady = true;
+          this.modelsFailedAt = 0;
         }
         return true;
       }).catch((error) => {
         this.logger?.warn?.(`trae: model directory discovery failed for ${this.region}`, error);
-        this.modelsReady = void 0;
+        this.modelsFailedAt = Date.now();
         return false;
+      }).finally(() => {
+        if (this.modelsPending === flight) this.modelsPending = void 0;
       });
+      this.modelsPending = flight;
     }
-    await this.modelsReady;
+    if (this.modelsPending !== void 0) await this.modelsPending;
     return shim;
+  }
+  /**
+   * Re-discover the model directory when it has gone stale.
+   *
+   * Called once per request from the shim, the way the Pi port refreshes from
+   * `auth.apiKey.resolve()`. TTL-gated, so inside the window this is a no-op and
+   * costs nothing. On failure `modelsDiscoveredAt` is left alone, so the next
+   * request retries — same "keep the last good directory" behaviour as the
+   * Qoder side.
+   *
+   * `force` skips the TTL check so the panel's explicit "refresh" button can
+   * pick up new models inside the 30-minute window.
+   *
+   * @returns the shim when a discovery ran, or `null` when this was a no-op.
+   */
+  async refreshCatalog({ force = false } = {}) {
+    if (this.modelsPending !== void 0) return this.modelsPending;
+    if (!force && this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
+    if (!force && Date.now() - this.modelsFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS2) return null;
+    this.modelsReady = false;
+    return this.ensureReady();
   }
   /**
    * The loopback base URL when the shim is running, or a placeholder.
@@ -5359,13 +5469,13 @@ var plugin = {
     }
     const deadline = () => AbortSignal.any([ctx.signal, AbortSignal.timeout(WARM_TIMEOUT_MS)]);
     let warmPromise = Promise.resolve();
-    const startWarm = () => {
+    const startWarm = (force = false) => {
       warmPromise = (async () => {
         for (const runtime of qoderRuntimes) {
           try {
             const credential = await runtime.resolveCredential();
             if (!isCredentialUsable(credential)) continue;
-            await runtime.refreshCatalog(deadline());
+            await runtime.refreshCatalog(deadline(), { force });
             await runtime.ensureShim();
           } catch (error) {
             logger.warn(`qoder ${runtime.region.id}: \u9884\u70ED\u5931\u8D25`, error instanceof Error ? error.message : String(error));
@@ -5375,7 +5485,8 @@ var plugin = {
           try {
             const credential = await stack.store.resolve().catch(() => void 0);
             if (credential === void 0) continue;
-            await stack.ensureReady();
+            await stack.ensureShim();
+            await stack.refreshCatalog({ force });
           } catch (error) {
             logger.warn(`trae ${stack.region}: \u9884\u70ED\u5931\u8D25`, error instanceof Error ? error.message : String(error));
           }
@@ -5404,7 +5515,7 @@ var plugin = {
       return readState();
     });
     ctx.registerIpc(IPC.REFRESH, async () => {
-      await startWarm();
+      await startWarm(true);
       return readState();
     });
     ctx.registerIpc(IPC.USAGE, async () => ({
