@@ -21,6 +21,7 @@ function createRoom(conversationId) {
   return {
     conversationId,
     frames: [], // 待播放队列；frames[0] 是当前正在播放的帧
+    nextPushOrder: 0, // 同一房间内的推入顺序；超限时据此淘汰较早的待播层
     board: board.createBoard(),
     boardOwner: null, // 当前 room.board 反映的是哪一层的增量；null = 空板
     lessonFiles: [], // 本节课推过的剧本文件，按推送顺序 —— 回放的播放列表
@@ -90,18 +91,22 @@ function transitionText(kind, hint) {
 }
 
 /**
- * 帧队列超限时，从**队尾**丢弃最旧的未播放层（连带它后面的过渡帧）。
- * 绝不丢正在播放的 frames[0]。
+ * 帧队列超限时，丢弃最早推入的非队首层（连带它后面的过渡帧）。
+ * interrupt 在队首插入、append 在队尾插入，因此不能用队列位置判断新旧。
  * @returns {number} 丢弃的层数
  */
 function enforceFrameBudget(room, limit = MAX_FRAMES) {
   let dropped = 0;
   while (room.frames.length > limit) {
     let idx = -1;
-    for (let i = room.frames.length - 1; i >= 0; i -= 1) {
-      if (room.frames[i].type === "layer") {
+    let oldestOrder = Infinity;
+    for (let i = 1; i < room.frames.length; i += 1) {
+      const frame = room.frames[i];
+      if (frame.type !== "layer") continue;
+      const order = Number.isSafeInteger(frame.pushOrder) ? frame.pushOrder : 0;
+      if (order < oldestOrder) {
         idx = i;
-        break;
+        oldestOrder = order;
       }
     }
     if (idx < 0) {
@@ -133,15 +138,16 @@ function enforceFrameBudget(room, limit = MAX_FRAMES) {
 function pushLayer(room, layer, mode, maxFrames) {
   const interrupt = mode !== "append";
   const head = room.frames[0];
+  const frame = { type: "layer", layer, pushOrder: ++room.nextPushOrder };
 
   if (interrupt && head && head.type === "layer") {
     // cursor 一直在 layer 对象上，不需要额外快照
     room.frames.unshift(makeTransition("in", transitionText("in", "")));
-    room.frames.splice(1, 0, { type: "layer", layer });
+    room.frames.splice(1, 0, frame);
   } else if (interrupt && head) {
-    room.frames.splice(1, 0, { type: "layer", layer });
+    room.frames.splice(1, 0, frame);
   } else {
-    room.frames.push({ type: "layer", layer });
+    room.frames.push(frame);
   }
 
   if (layer.file && !room.lessonFiles.includes(layer.file)) room.lessonFiles.push(layer.file);
@@ -185,7 +191,7 @@ function clearRoom(room) {
  */
 function replayLayer(room, layer) {
   resetForReplay(room);
-  room.frames.push({ type: "layer", layer });
+  room.frames.push({ type: "layer", layer, pushOrder: ++room.nextPushOrder });
   // 播放列表语义：重放本课程里的某一节 → 保留整条列表（"从头"仍能放完整节课）；
   // 放一个不属于当前课程的剧本（用户从选择器里挑了别的课）→ 视为开始新的一节，列表换成它自己。
   if (layer.file && !room.lessonFiles.includes(layer.file)) room.lessonFiles = [layer.file];
@@ -335,6 +341,7 @@ function serializeRoom(room) {
       file: frame.layer.file,
       cursor: frame.layer.cursor,
       transitionHint: frame.layer.transitionHint || "",
+      pushOrder: frame.pushOrder,
     });
   }
   return {
@@ -410,7 +417,13 @@ function restoreRooms(snapshot, resolveLayer) {
       const cursor = Number(entry.cursor) || 0;
       layer.cursor = Math.max(0, Math.min(cursor, layer.steps.length));
       if (entry.transitionHint) layer.transitionHint = String(entry.transitionHint);
-      room.frames.push({ type: "layer", layer });
+      // 旧快照没有 pushOrder，用 lessonFiles 的首次推送顺序近似恢复；
+      // 同一文件被重复推送时无法区分先后，但新推的层仍会排在旧帧之后。
+      const legacyIndex = room.lessonFiles.indexOf(layer.file);
+      const pushOrder = Number.isSafeInteger(entry.pushOrder) && entry.pushOrder > 0
+        ? entry.pushOrder : Math.max(0, legacyIndex + 1);
+      room.nextPushOrder = Math.max(room.nextPushOrder, pushOrder);
+      room.frames.push({ type: "layer", layer, pushOrder });
     });
 
     if (lost.length) {
@@ -418,10 +431,12 @@ function restoreRooms(snapshot, resolveLayer) {
       lost.forEach((name) => missed.push(`${conversationId}/${name}`));
     }
 
-    // 黑板是不是已经铺成队首那一层：只有"板非空 + 队首是 layer"才认定它已就绪（§8.3）；
-    // 其余情况（板空、队首是过渡帧）置 null，让第一次点击走瞬时重绘，别跳过重绘。
+    // 快照里的板书可能属于刚播完的旧层，而队首已是尚未点击的新层。
+    // 队首是 layer 时，按重新解析出的板书操作重建到 cursor，保证首次还原的画面
+    // 与后续 advance() 使用的是同一层的板书；过渡帧仍保留快照画面直到点击清板。
     const head = room.frames[0];
-    room.boardOwner = head && head.type === "layer" && room.board.lines.length ? head.layer.id : null;
+    if (head && head.type === "layer") rebuildBoardAt(room, head.layer);
+    else room.boardOwner = null;
     if (!state.review && head && head.type === "layer" && head.layer.cursor > 0) {
       // 升级旧存档：那时还没有 review 字段，能从当前层的断点补出已展示的对白。
       room.review.file = head.layer.file;
