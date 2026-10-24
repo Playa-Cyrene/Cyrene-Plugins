@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "在 learn 模式下打开一间独立的 galgame 风格教室：教室背景、黑板、立绘与对话框，鼠标点击逐帧推进",
+    "BLS 剧本文本格式：对白、板书、板书改写与清板，板书正文就是 markdown",
+    "课堂插话：在聊天框里追问，昔涟另写一层剧本打断播放，演完回到刚才那一步继续讲",
+    "课堂回放：剧本落在工作区 learn/lessons/，可重放本节或从头重演整节课，不触发大模型",
+    "板书支持标准 markdown 与 LaTeX 公式，新内容自动滚入视野",
+    "立绘讲述 / 板书 / 擦板演出，素材全部由插件自带，缺失时退回纯 CSS 占位"
+  ],
+  "requirements": [
+    "需要处于 learn 模式并已绑定工作区的 Cyrene 会话",
+    "剧本写入 <工作区>/learn/lessons/，需要该工作区可写"
+  ],
+  "setup": [
+    "在 Cyrene 插件市场安装并启用插件",
+    "进入 learn 模式并绑定工作区，对昔涟说「给我讲讲判别式」这类请求",
+    "也可以从插件列表的「打开」按钮直接进教室，用标题栏的「打开剧本」挑一个 .bls 文件播放"
+  ],
+  "dataHandling": [
+    "只写当前会话工作区的 learn/lessons/*.bls，不读写笔记文件，也不写 learn/progress.md",
+    "播放状态通过宿主 ctx.storage 存在插件自己的数据目录，不上传",
+    "插件本身不联网；唯一外联是 ui.css 引用的 Google Fonts，断网时回落到本地字体",
+    "不启动子进程，不需要任何密钥或账号"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/blob/main/plugins/better-lessons/README.md"
+}

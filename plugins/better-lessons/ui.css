@@ -1,0 +1,713 @@
+/* ui.css —— galgame 课堂窗口样式。
+ *
+ * 配色与呈现风格对齐**宿主主窗口**（pearl-white 浅色主题）：页面底 + 内嵌工作区卡片 + 粉调胶囊
+ * + 圆形窗口按钮 + 柔和双向投影 + 大圆角。参考值取自
+ *   · src/renderer/react/styles/react-root.css   （--cy-* 页面/工作区/气泡三层表面）
+ *   · src/renderer/react/components/ui/WindowControls.css、ModeSwitch.css
+ *   · src/renderer/ui/tokens.css + theme.css     （--rb-* 字体、圆角、投影、文本色）
+ *   · src/renderer/ui/fonts.css                  （Noto Sans SC / JetBrains Mono）
+ * 之所以"抄数值"而不是引用：插件自建窗口拿不到宿主的 CSS 与主题 token（DESIGN §9.1 / §11.3）。
+ * 改配色时请对着上面几个文件抄，别凭印象调。
+ *
+ * 两条布局硬约束（DESIGN §11.1 / §16）：
+ *   1) 布局一律百分比 + clamp()，禁止写死 px 宽度：窗口默认只占半屏，宽度可能只有 700–960px，
+ *      目标效果是"窗口本身永不出现滚动条，只有黑板内容区滚动"（§8.5）。
+ *   2) 唯一保留深色的区域是**黑板板面**（用户明确要求）：它是课堂的内容画布，
+ *      整体浅色化会失去"黑板"的物理感。
+ *
+ * 美术素材全部来自 assets/，缺失时退回程序化占位（§9.1）。素材是否可用由 ui.html 的
+ * detectArt() 探针决定，结果落在 body 的 art-* 类名上（立绘的缺失由槽上的
+ * data-missing 逐个控制，见"立绘（两槽）"一节）。
+ */
+
+/* 与宿主同一套字体（宿主 fonts.css 也是这么引的）。断网时自动落到下面的本地回退栈。 */
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  /* ===== 宿主设计语言的副本（pearl-white）===== */
+  /* 页面 / 工作区 / 悬停 / 选中 */
+  --cy-bg-page: #faf4f8;
+  --cy-bg-workspace: #fffbfc;
+  --cy-bg-hover: #fff1f6;
+  --cy-bg-active: #fde0ed;
+
+  /* 边框 / 文字 */
+  --cy-border: #f2f2f2;
+  --cy-text: #1d1d1f;
+  --cy-text-muted: #8e8e93;
+
+  /* 强调色与胶囊 */
+  --cy-accent: #ff5b8a;
+  --cy-pill-bg: #fff9fb;
+  --cy-pill-border: #ff9fbd;
+  --cy-pill-status: #7d3557;
+
+  /* 投影：工作区是内阴影，气泡/控件是柔和双向投影 */
+  --cy-shadow-workspace: inset 0 2px 8px rgba(31, 35, 48, 0.04), inset 0 0 2px rgba(31, 35, 48, 0.03);
+  --cy-shadow-bubble-neutral: 2px 2px 3px rgba(31, 35, 48, 0.06), 3px 5px 16px rgba(31, 35, 48, 0.055);
+
+  /* 宿主默认窗口圆角 24px（用户可调 0–40）。插件读不到那个偏好，固定用默认值。 */
+  --cy-window-radius: 24px;
+  /* 工作区卡片圆角（宿主 .cy-workspace 是 10px） */
+  --cy-card-radius: 10px;
+
+  /* 字体：与宿主 --rb-font-sans / --rb-font-mono 同序 */
+  --font-sans: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 宿主给 body 设的全局字间距，靠继承辐射全站 */
+  --letter-spacing: 0.7px;
+
+  /* ===== 黑板：窗口里唯一的深色区域 ===== */
+  --chalk: #f2f6ef;        /* 粉笔白 */
+  --chalk-dim: #a9b8ad;    /* 次要字（占位提示、删除线） */
+  --chalk-strong: #ffd6e4; /* 强调：**加粗** / 引用 / 行内代码，用宿主强调色的浅调 */
+
+  --titlebar-h: 50px; /* 宿主 .cy-page 的 padding-top 就是它的"标题栏带"高度 */
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* 窗口本身不滚动 */
+  /* 窗口是透明的（与宿主的 frame:false + transparent 一致），圆角由 .page 画 */
+  background: transparent;
+  color: var(--cy-text);
+  font-family: var(--font-sans);
+  letter-spacing: var(--letter-spacing);
+  user-select: none; /* 舞台是点击推进的，避免误选文字；板书与对话框单独放开 */
+}
+
+button { font: inherit; }
+
+/* ---------------------------------------------------------------- 页面壳 */
+
+/* 宿主的三层表面：.cy-page（页面底）→ .cy-workspace（工作区卡片）→ 气泡/卡片。
+   这里同样：.page 是页面底 + 顶部 50px 标题栏带，.stage 是那张工作区卡片。 */
+.page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: var(--titlebar-h) 10px 10px;
+  border: 1px solid var(--cy-border);
+  border-radius: var(--cy-window-radius);
+  background: var(--cy-bg-page);
+  /* clip 而不是 hidden：hidden 仍是滚动容器，scrollIntoView 能把整页滚走（§8.5） */
+  overflow: clip;
+  -webkit-app-region: drag; /* 整页可拖，交互元素逐个 no-drag（宿主的做法） */
+}
+
+/* 标题栏：宿主没有独立的标题栏元素，就是页面顶那条 50px 的带子。
+   三栏网格 —— 标题左、回放胶囊居中、窗口按钮右。 */
+.titlebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: grid;
+  height: var(--titlebar-h);
+  align-items: center;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  padding: 0 20px;
+  -webkit-app-region: drag;
+}
+
+.titlebar-title {
+  display: inline-flex;
+  min-width: 0; /* 标题会带"文件名 · 第 N/M 步"，窄窗口下必须能省略 */
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--cy-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 标题前的小圆点：用强调色，与宿主的品牌粉呼应 */
+.titlebar-title::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--cy-accent);
+  box-shadow: 0 0 0 4px rgba(255, 91, 138, 0.12);
+  content: "";
+}
+
+/* 回放控件（§14）：宿主顶部中间放的是模式胶囊，这里换成三个动作胶囊。
+   样式取宿主的胶囊 token（浅粉底 + 粉描边 + 深玫瑰字）。 */
+.titlebar-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--cy-pill-border);
+  border-radius: 999px;
+  background: var(--cy-pill-bg);
+  color: var(--cy-pill-status);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.pill:hover {
+  border-color: var(--cy-accent);
+  background: var(--cy-bg-hover);
+  color: var(--cy-accent);
+  box-shadow: var(--cy-shadow-bubble-neutral);
+}
+
+.pill:active { background: var(--cy-bg-active); }
+
+/* 窗口按钮：宿主的圆形 30px（.cy-winbtn）。 */
+.window-controls {
+  display: flex;
+  justify-self: end;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.winbtn {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--cy-border);
+  border-radius: 50%;
+  background: var(--cy-bg-workspace);
+  color: var(--cy-text-muted);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.winbtn svg { display: block; }
+
+.winbtn:hover {
+  background: var(--cy-bg-hover);
+  color: var(--cy-text);
+}
+
+.winbtn.close:hover {
+  border-color: #ff5f57;
+  background: #ff5f57;
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------- 舞台（工作区卡片） */
+
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--cy-border);
+  border-radius: var(--cy-card-radius);
+  background: var(--cy-bg-workspace);
+  box-shadow: var(--cy-shadow-workspace);
+  /* 同上：舞台必须用 clip。用 hidden 时，板书里一次 scrollIntoView 就会把整张舞台
+     连同背景、黑板、对话框、立绘一起滚上去（2026-10-24 实测，board replace 稳定复现） */
+  overflow: clip;
+  cursor: pointer; /* 点击推进（§1.1 目标 4） */
+  -webkit-app-region: no-drag; /* 舞台要点，不能被拖拽区吃掉 */
+}
+
+.classroom-bg {
+  position: absolute;
+  inset: 0;
+  /* 兜底：程序化教室 —— 上方冷白墙光，往下渐渐压深当作地面，没有硬分界线
+     （有分界线会在浅色下读成色带）。素材到位后由里面的 img 盖上去（§9.1）。 */
+  background:
+    radial-gradient(120% 80% at 50% -10%, #fff3f8, transparent 62%),
+    linear-gradient(180deg, #fffbfc 0%, #fdf7fa 54%, #f9eff5 78%, #f4eaf2 100%);
+  background-size: cover;
+  background-position: center;
+}
+
+/* 教室背景图：默认盖住舞台；有黑板素材时由 layoutBoard() 按"顶端对齐黑板素材、
+   底端贴舞台底、中轴对齐黑板素材"重算尺寸（原比例，宽度可能超出舞台被裁） */
+.classroom-img {
+  position: absolute;
+  inset: 0;
+  display: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+body.art-classroom .classroom-img { display: block; }
+
+/* ---------------------------------------------------------------- 黑板 */
+
+.board {
+  position: absolute;
+  top: 6%;
+  left: 4%;
+  width: 78%;
+  height: 62%;
+  z-index: 1;
+}
+
+.board-frame {
+  position: relative;
+  height: 100%;
+  padding: clamp(6px, 1.1vw, 14px);
+  border-radius: 8px;
+  /* 兜底：木框 + 墨绿板面。木质扁一点，压住深色，别在浅色页面里显得脏 */
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.3)),
+    linear-gradient(160deg, #8a6440, #61432a 55%, #74512f);
+  box-shadow: 0 10px 30px rgba(31, 35, 48, 0.14), 0 0 0 1px rgba(31, 35, 48, 0.06);
+}
+
+/* 有黑板素材时（§11.1 方案 2）：黑板占满舞台，素材按舞台高度等比放到最大、
+   靠左摆；窗口不够宽时右侧被舞台裁掉。不再拉伸素材，比例永远是 1374:1145。 */
+body.art-board .board {
+  inset: 0;
+  width: auto;
+  height: auto;
+  transform: translateY(-75px); /* 2026-10-24：整体上移 75px（顶部只裁到皇冠最上面一点） */
+}
+
+/* 木框、内边距、圆角与投影全部让位给素材层 */
+body.art-board .board-frame {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* 素材层：默认不显示（没素材时走上面的 CSS 木框兜底） */
+.board-art {
+  display: none;
+  position: absolute;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* 高度撑满舞台，宽度由原比例推出来；舞台裁掉的是溢出部分 */
+body.art-board .board-art {
+  display: block;
+  left: 2%;
+  top: 8px;
+  height: calc(100% - 16px);
+  width: auto;
+  aspect-ratio: 1374 / 1145;
+}
+
+/* 下层：完整黑板（板面 + 木框 + 贴花） */
+body.art-board .board-art-body {
+  z-index: 0;
+  background-image: url("assets/board.png");
+}
+
+/* 上层：只留边框，中间镂空；板书滚到框外时由它压住 */
+body.art-board .board-art-boundary {
+  z-index: 2;
+  background-image: url("assets/board-boundary.png");
+}
+
+.board-surface {
+  position: relative;
+  height: 100%;
+  overflow: auto; /* 双向可滚动（§8.5） */
+  padding: clamp(12px, 2.2vw, 30px);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(24, 42, 33, 0.96), rgba(18, 33, 26, 0.98));
+  color: var(--chalk);
+  font-size: clamp(13px, 1.45vw, 18px);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  user-select: text; /* 允许抄板书 */
+  cursor: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+
+/* 回弹只平移内容层（滚动容器本身不动，滚动条才不会跟着跑） */
+.board-inner { will-change: transform; }
+
+/* 中层：文字面板的位置与尺寸由 layoutBoard() 按素材板面实时计算（ui.html） */
+body.art-board .board-surface {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: transparent;
+  z-index: 1;
+}
+
+.board-surface::-webkit-scrollbar { width: 8px; height: 8px; }
+.board-surface::-webkit-scrollbar-track { background: transparent; }
+.board-surface::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.board-surface::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.34); }
+
+/* 板书内容：只用标准 markdown，强调一律 **加粗**（§8.2） */
+.board-surface :first-child { margin-top: 0; }
+.board-surface :last-child { margin-bottom: 0; }
+.board-surface h1, .board-surface h2, .board-surface h3, .board-surface h4 {
+  margin: 1.1em 0 0.5em;
+  font-weight: 700;
+  line-height: 1.35;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+.board-surface h1 { font-size: 1.5em; }
+.board-surface h2 { font-size: 1.28em; }
+.board-surface h3 { font-size: 1.12em; }
+.board-surface p { margin: 0.55em 0; }
+.board-surface strong { color: var(--chalk-strong); font-weight: 800; } /* 加粗即强调 */
+.board-surface em { color: var(--chalk-strong); }
+.board-surface del { color: var(--chalk-dim); }
+.board-surface ul, .board-surface ol { margin: 0.55em 0; padding-left: 1.5em; }
+.board-surface li { margin: 0.2em 0; }
+.board-surface blockquote {
+  margin: 0.7em 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid var(--chalk-strong);
+  color: var(--chalk-strong);
+  font-size: 1.06em;
+}
+.board-surface code {
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--chalk-strong);
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+}
+.board-surface pre {
+  overflow-x: auto; /* 横向滚动是长代码的唯一正解（§8.5） */
+  margin: 0.7em 0;
+  padding: 0.75em 0.9em;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.32);
+}
+.board-surface pre code { padding: 0; background: none; color: var(--chalk); }
+.board-surface table {
+  width: max-content;
+  max-width: none;
+  margin: 0.7em 0;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.board-surface th, .board-surface td {
+  padding: 0.35em 0.7em;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  text-align: left;
+}
+.board-surface hr { margin: 1em 0; border: none; border-top: 1px solid rgba(255, 255, 255, 0.16); }
+.board-surface a { color: var(--cy-pill-border); } /* 宿主的 pink-200，在墨绿板面上读得清 */
+
+/* 数学公式（KaTeX）：行内公式跟着正文走；$$...$$ 是块级元素，参与黑板滚动与行级动画标注。
+   KaTeX 的输出不写死颜色，会继承板面的粉笔白。 */
+.board-surface .katex,
+.dialog-text .katex {
+  letter-spacing: normal; /* 全局 0.7px 字距会破坏公式内部的排版度量 */
+}
+.board-surface .bl-math-display { display: block; }
+.board-surface .bl-math-display > .katex-display { margin: 0.55em 0; }
+
+/* 行级动画（§8.2）：由 ui.html 按"哪几行变了"点到具体块级元素上 */
+.board-surface .bl-enter { animation: bl-enter 260ms ease both; }
+.board-surface .bl-flash { animation: bl-flash 620ms ease both; }
+
+@keyframes bl-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bl-flash {
+  0% { background: rgba(255, 91, 138, 0.3); }
+  100% { background: transparent; }
+}
+
+/* 整块擦除（boardClear 与过渡帧）：给板面一次擦过感，而不是内容突然消失。
+   有素材时只闪底层板面（board-art-body），顶层边框（board-boundary）不参与。 */
+.board-frame.bl-cleared,
+.board-art-body.bl-cleared { animation: bl-cleared 420ms ease both; }
+
+@keyframes bl-cleared {
+  0% { filter: brightness(1); }
+  35% { filter: brightness(1.5) saturate(0.6); }
+  100% { filter: brightness(1); }
+}
+
+.board-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--chalk-dim);
+  font-size: clamp(12px, 1.3vw, 15px);
+  pointer-events: none;
+}
+
+.board-empty[hidden] { display: none; }
+
+/* 空板提示也钉在显示区域里；具体尺寸同样由 layoutBoard() 写内联样式 */
+body.art-board .board-empty {
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------- 立绘（两槽，§9.2） */
+
+/* 两个槽位置不同：talk 在右下近景、面向观众；board 在黑板前中景、完全背身。
+   交叉过渡期间两者同时可见 —— "她走过去站到黑板前"就是靠这个读出来的。
+   槽本身是**零宽锚点**，图靠绝对定位挂在锚线上。 */
+.figure {
+  position: absolute;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.figure[data-on="1"] { opacity: 1; }
+
+/* talk 槽：半身近景，1.4×。底部在舞台底下方 62px（含 12px 跳动预沉，
+   跳至最高点时仍低于舞台底、不会露缝）；横向累计右移 120px，右侧出舞台的部分由舞台裁掉。
+   这个 12px 与 @keyframes figure-bounce 必须同步。 */
+.figure-talk {
+  right: calc(1% - 120px);
+  bottom: -62px;
+  height: 64.4%;
+}
+
+/* board 槽：全身、完全背身，站黑板前偏右。偏右是有意的 —— 板书左对齐，
+   压住最右侧的损失最小（§11.1）。后期若调整黑板或立绘尺寸，改这里。 */
+.figure-board {
+  left: 49%;
+  bottom: 0; /* 2026-10-24：素材下缘贴舞台最底端（下半身由对话框盖住） */
+  height: 69.6%; /* 58% × 1.2（2026-10-24） */
+}
+
+.figure-img {
+  position: absolute;
+  bottom: 0;
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+  object-position: bottom center;
+  opacity: 0;
+  /* 浅色底上用紫灰投影，别用纯黑 —— 宿主的头像就是 drop-shadow(… rgba(76,55,98,.22)) */
+  filter: drop-shadow(0 10px 22px rgba(76, 55, 98, 0.18));
+  /* 槽内换帧的短过渡：擦板主帧与差分每 380ms 交替一次，硬切会显得很生硬（§9.3） */
+  transition: opacity 120ms ease;
+}
+
+/* talk 槽只有一张图：右对齐到锚线，即"图的右边缘距窗口右边 1%" */
+.figure-talk .figure-img { right: 0; }
+
+/* board 槽的三张必须像素级对齐（脚底、中轴），所以统一以锚线为中轴居中 */
+.figure-board .figure-img { left: 0; transform: translateX(-50%); }
+
+/* 槽内按 data-art / data-swing 选帧 */
+.figure-talk[data-on="1"] #imgTalk { opacity: 1; }
+.figure-board[data-art="write"] #imgWrite { opacity: 1; }
+.figure-board[data-art="erase"][data-swing="0"] #imgErase { opacity: 1; }
+.figure-board[data-art="erase"][data-swing="1"] #imgEraseSwing { opacity: 1; }
+
+/* 讲述槽每点一次向上轻跳一次（§9.3）：让每一次点击都有即时反馈 */
+.figure-talk.is-bounce { animation: figure-bounce 260ms ease; }
+
+/* 12px 是跳动最大位移，必须与 .figure-talk 的 bottom 预沉量一致（否则最高点会露出空隙） */
+@keyframes figure-bounce {
+  0% { transform: translateY(0); }
+  40% { transform: translateY(-12px); }
+  100% { transform: translateY(0); }
+}
+
+/* 素材缺失时的剪影兜底：按槽各自降级，一个槽缺图不影响另一个（§9.3）。
+   由 playFigure() 按"当前这一帧的素材是否加载成功"逐个切，不漏也不误伤。
+   浅色底上剪影必须是**深色半透明**（纯白会整个隐身），但也别太重 ——
+   它只是"立绘还没到位"的占位，不该抢黑板的戏。 */
+.figure-silhouette {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  background: linear-gradient(180deg, rgba(76, 55, 98, 0.14), rgba(76, 55, 98, 0.05));
+  box-shadow: inset 0 -18px 36px rgba(76, 55, 98, 0.05);
+}
+
+.figure[data-missing="1"] .figure-img { opacity: 0 !important; }
+.figure[data-missing="1"] .figure-silhouette { display: block; }
+
+/* 半身剪影：肩宽、头肩轮廓 */
+.figure-talk .figure-silhouette {
+  right: 0;
+  width: clamp(120px, 20vw, 260px);
+  height: 100%;
+  border-radius: 46% 46% 16% 16% / 30% 30% 10% 10%;
+}
+
+/* 全身剪影：细长站姿 */
+.figure-board .figure-silhouette {
+  left: 0;
+  transform: translateX(-50%);
+  width: clamp(110px, 18vw, 240px);
+  height: 100%;
+  border-radius: 42% 42% 14% 14% / 20% 20% 8% 8%;
+}
+
+/* 瞬时重绘期间关掉所有过渡与动画（§7.4）：直接设值，避免出现"擦干净又立刻恢复"的观感 */
+.stage[data-instant="1"] .figure,
+.stage[data-instant="1"] .figure-img { transition: none; }
+
+.stage[data-instant="1"] .figure-talk { animation: none; }
+
+/* ---------------------------------------------------------------- 对话框 */
+
+/* 对话框就是"昔涟说的一句话"，所以直接取宿主的**助手气泡**配方：
+   底 #f7f7f7 + 1px rgba(31,35,48,.065) + 圆角 4px 16px 16px + 柔和投影。 */
+.dialog {
+  position: absolute;
+  right: 4%;
+  bottom: 3%;
+  left: 4%;
+  z-index: 3;
+  height: 11%;
+  min-height: 48px;
+  cursor: auto;
+}
+
+.dialog-box {
+  position: relative;
+  height: 100%;
+  padding: clamp(10px, 1.5vw, 20px) clamp(14px, 2vw, 28px);
+  border: 1px solid rgba(31, 35, 48, 0.065);
+  border-radius: 4px 16px 16px;
+  background: #f7f7f7;
+  box-shadow: var(--cy-shadow-bubble-neutral);
+}
+
+body.art-dialog .dialog-box {
+  background: url("assets/dialog-bg.png") center / 100% 100% no-repeat;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dialog-text {
+  height: 100%;
+  margin: 0;
+  overflow: auto; /* 文本区独立滚动（§8.5） */
+  color: var(--cy-text);
+  font-size: clamp(14px, 1.6vw, 20px);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  user-select: text;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(31, 35, 48, 0.18) transparent;
+}
+
+.dialog-text strong { color: var(--cy-accent); font-weight: 800; }
+.dialog-text code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: #f5f5f5;
+  color: #d73a72; /* 宿主行内代码用的就是这组：底 #f5f5f5 / 字 #d73a72 */
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+}
+
+.dialog-text::-webkit-scrollbar { width: 6px; height: 6px; }
+.dialog-text::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(31, 35, 48, 0.15);
+}
+
+.dialog-hint {
+  position: absolute;
+  right: clamp(10px, 1.4vw, 20px);
+  bottom: clamp(4px, 0.8vw, 12px);
+  color: var(--cy-accent);
+  font-size: 12px;
+  animation: bl-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes bl-blink {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(2px); }
+}
+
+/* ---------------------------------------------------------------- 提示条 */
+
+.notice {
+  position: absolute;
+  top: 3%;
+  left: 50%;
+  z-index: 4;
+  max-width: 76%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border: 1px solid var(--cy-border);
+  border-radius: 999px;
+  background: var(--cy-bg-workspace);
+  box-shadow: var(--cy-shadow-bubble-neutral);
+  color: var(--cy-text-muted);
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.notice[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- 窄窗口适配 */
+
+/* 半屏 + 系统缩放后可能只剩 700px 左右，此时把立绘收窄并允许被黑板压住（§11.1），
+   顶部的三个回放胶囊也收紧一点，把宽度让给标题。 */
+@media (max-width: 900px) {
+  .board { width: 82%; height: 60%; }
+  .figure-talk { bottom: -62px; height: 58.8%; } /* 42% × 1.4；底边仍在舞台下方 */
+  .figure-board { height: 64.8%; } /* 54% × 1.2 */
+  .dialog { height: 13%; }
+}
+
+@media (max-width: 760px) {
+  .pill { padding: 0 9px; font-size: 11px; }
+  .titlebar { padding: 0 14px; gap: 8px; }
+  .window-controls { gap: 6px; }
+  .winbtn { width: 26px; height: 26px; }
+}
+
+@media (max-width: 680px) {
+  .figure-talk { height: 50.4%; } /* 36% × 1.4 */
+  .figure-board { height: 57.6%; } /* 48% × 1.2 */
+  .board { width: 88%; height: 56%; }
+  .titlebar-tools { gap: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
