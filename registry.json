@@ -154,6 +154,14 @@
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-hud-0.8.7.zip",
       "sha256": "0dc5de056802360b971a6f35fb8a5145de5cb9af567ad288dcc1fb0ef4cc0fd3",
       "downloads": 0
+    },
+    {
+      "id": "better-lessons",
+      "name": "神悟课堂",
+      "version": "0.1.0",
+      "description": "learn 模式下的课堂演出：把讲解写成 BLS 剧本，在独立教室窗口里点击逐帧演出，支持插话打断、断点续讲与整节课回放",
+      "author": "yuzu-tanuki",
+      "homepage": "https://github.com/yuzu-tanuki/Cyrene-Better-Lessons"
     }
   ]
 }
