@@ -277,9 +277,13 @@ function advance(room) {
     const step = layer.steps[layer.cursor];
     // 恢复到某一层（插话结束回来、或回放跳到某节）时，先按断点把它的板瞬时重绘出来（§8.3）。
     // 必须在 cursor++ 之前做：此时 cursor 指向"即将演的那一步"，重放 [0, cursor) 才是正确的前置状态。
-    if (room.boardOwner !== layer.id) {
+    const needsRebuild = room.boardOwner !== layer.id;
+    if (needsRebuild) {
       rebuildBoardAt(room, layer);
     }
+    // 窗口刚演过清板过渡帧时，还显示着空板。把本步之前的断点板书也交给它，
+    // 让窗口先瞬时铺回旧板，再演当前 step（当前步可能只是 say，不会主动渲染黑板）。
+    const boardTextBeforeStep = needsRebuild ? board.boardText(room.board) : null;
     layer.cursor += 1;
     board.apply(step, room.board); // say 不动黑板，返回 false 是正常情况
     recordDisplayedStep(room, layer, layer.cursor - 1);
@@ -292,6 +296,7 @@ function advance(room) {
       file: layer.file,
       cursor: layer.cursor,
       total: layer.steps.length,
+      boardTextBeforeStep,
       boardText: board.boardText(room.board),
       layerFinished: layer.cursor >= layer.steps.length,
     };

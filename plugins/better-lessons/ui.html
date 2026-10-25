@@ -944,12 +944,19 @@
       const total = result.total;
       const base = `第 ${result.cursor}/${total} 步`;
       if (result.file) currentFile = result.file;
+      // 返回被打断的层时，先无动画地恢复断点板书。必须早于当前步的板书动画，
+      // 否则追加/替换会把旧内容也当成新内容；say 步则会一直留下过渡帧的空板。
+      if (typeof result.boardTextBeforeStep === "string") {
+        renderBoard(result.boardTextBeforeStep, null);
+      }
       // 立绘演出与黑板渲染同时开始：她走过去的同时板书就在写。
       // 跳动只由真正的 say step 触发（§9.3）—— 未知类型不跳，避免"点了没反应"变成"乱弹"。
       playFigure(stageOf(step), { bounce: step.kind === "say" });
 
       switch (step.kind) {
         case "say":
+          // 也修正窗口漏收 restore 等情况下的板书镜像；对白本身不改黑板。
+          if (boardSource !== result.boardText) renderBoard(result.boardText, null);
           setDialog(step.text);
           break;
 
