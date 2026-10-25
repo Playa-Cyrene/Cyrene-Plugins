@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "better-lessons",
+  "name": "神悟课堂",
+  "version": "0.1.0",
+  "description": "learn 模式课堂演出：BLS 剧本在独立窗口逐帧播放，支持键鼠推进、插话续讲、对白回看、回放与清空",
+  "author": "yuzu-tanuki",
+  "entry": "index.cjs",
+  "defaultEnabled": false,
+  "deps": ["workspace"]
+}
