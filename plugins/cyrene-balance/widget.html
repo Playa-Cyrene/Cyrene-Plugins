@@ -271,6 +271,51 @@
   const peakEl = $("peak");
   const sprite = $("sprite");
   const sticker = $("sticker");
+  const baseImg = $("base");
+
+  /* ---------- 8 张透明主立绘，按间隔轮换 ---------- */
+  const POSES = [
+    "assets/frame-01.png",
+    "assets/frame-02.png",
+    "assets/frame-03.png",
+    "assets/frame-04.png",
+    "assets/frame-05.png",
+    "assets/frame-06.png",
+    "assets/frame-07.png",
+    "assets/frame-08.png",
+  ];
+  let poseIndex = 0;
+  let poseTimer = null;
+
+  function applyPose(index) {
+    if (!baseImg || POSES.length < 2) return;
+    const next = ((index % POSES.length) + POSES.length) % POSES.length;
+    poseIndex = next;
+    if (baseImg.getAttribute("src") !== POSES[next]) baseImg.setAttribute("src", POSES[next]);
+  }
+
+  function nextPose() {
+    applyPose(poseIndex + 1);
+    schedulePose();
+  }
+
+  function schedulePose() {
+    if (poseTimer) {
+      clearTimeout(poseTimer);
+      poseTimer = null;
+    }
+    if (CONFIG.poseRotate === false || POSES.length < 2) return;
+    const sec = Math.max(8, Number(CONFIG.poseSec) || 45);
+    poseTimer = setTimeout(() => {
+      applyPose(poseIndex + 1);
+      schedulePose();
+    }, sec * 1000);
+  }
+
+  POSES.forEach((src) => {
+    const img = new Image();
+    img.src = src;
+  });
 
   const FACES = {
     calm: $("faceCalm"),
@@ -524,6 +569,7 @@
 
   /* ---------- 渲染 ---------- */
   let wasLow = false;
+  let wasOverBudget = false;
   function render(d) {
     if (!d) return;
     lastData = d;
@@ -544,15 +590,21 @@
     peakEl.classList.toggle("peak", Boolean(d.peak && d.peak.peak));
 
     const low = Boolean(d.low);
-    if (low && !wasLow) {
+    const over = Boolean(d.overBudget);
+    const lowTurn = low && !wasLow;
+    const overTurn = over && !wasOverBudget && !lowTurn;
+    if (lowTurn || overTurn) {
       playSound("assets/task-end-a.wav", 0.5);
-      const text = fill(pick(LINES.low), d);
+      const text = lowTurn
+        ? fill(pick(LINES.low), d)
+        : "今天已经用掉 " + spent.toFixed(2) + " 元，超过 " + (Number(d.budget) || 0).toFixed(2) + " 元预算啦。";
       infoLine.textContent = text;
       setFace("serious", 2600);
       showSticker("low");
       showPanel(infoBubble, panelMs());
     }
     wasLow = low;
+    wasOverBudget = over;
     infoBubble.classList.toggle("low", low);
 
     if (activeBubble === infoBubble && infoBubble.classList.contains("show")) {
@@ -635,6 +687,7 @@
 
   ipcRenderer.on("menu-action", (e, type) => {
     if (type === "talk") { setFace("rua", 780); saySomething(); }
+    else if (type === "next-pose") nextPose();
     else if (type === "zoom-in") changeScale(1);
     else if (type === "zoom-out") changeScale(-1);
     else if (type === "refresh") load(true);
@@ -659,11 +712,14 @@
         if (typeof c.talkFont === "number") CONFIG.talkFont = c.talkFont;
         if (typeof c.stickerSize === "number") CONFIG.stickerSize = c.stickerSize;
         if (typeof c.rotateSec === "number") CONFIG.rotateSec = c.rotateSec;
+        if (typeof c.poseRotate === "boolean") CONFIG.poseRotate = c.poseRotate;
+        if (typeof c.poseSec === "number") CONFIG.poseSec = c.poseSec;
       }
     } catch (e) {}
     applySizes();
     mountSticker();
     startRotate();
+    schedulePose();
   }
 
   /* ---------- 数据 / 缩放 ---------- */

@@ -1,0 +1,26 @@
+{
+    "schemaVersion":  1,
+    "features":  [
+                     "常驻桌面的透明立绘桌宠，8 种姿态自动轮换，可跟随 Cyrene 窗口或独立摆放",
+                     "定时读取 DeepSeek 余额，展示余额 / 今日消费 / 今日充值 / 当前峰谷时段",
+                     "信息气泡与台词气泡轮流出现，44 张小表情随台词一起显示",
+                     "气泡尺寸、余额字号、台词字号、小表情大小、立绘缩放与位置均可调",
+                     "余额低于阈值或今日消费超出预算时，切换表情、台词并播放提示音",
+                     "记账保留最近 7 天，可以查看每天花了多少"
+                 ],
+    "requirements":  [
+                         "需要支持插件的 Cyrene 版本",
+                         "一个 DeepSeek API Key，或已在 Cyrene 里配置过 DeepSeek 模型"
+                     ],
+    "setup":  [
+                  "在 设置 → 插件 里启用本插件，桌宠会自动出现",
+                  "右键立绘可以设置提醒阈值、今日预算、轮换间隔与外观",
+                  "需要单独指定 Key 时，对 Agent 说「把 DeepSeek Key 设成 sk-...」，Key 会存进宿主加密存储"
+              ],
+    "dataHandling":  [
+                         "只请求 https://api.deepseek.com/user/balance 读取余额，不向其它域名发送数据",
+                         "API Key 优先保存在宿主加密密钥存储（ctx.deps.secrets），不写进普通插件设置",
+                         "阈值、预算、外观设置与 7 天账本保存在插件存储；不上传对话内容，不做遥测"
+                     ],
+    "documentationUrl":  "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-balance"
+}

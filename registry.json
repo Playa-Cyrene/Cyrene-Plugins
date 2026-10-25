@@ -1,167 +1,167 @@
 {
-    "apiVersion":  1,
-    "updatedAt":  "2026-10-25",
-    "plugins":  [
-                    {
-                        "id":  "ripples-of-aion",
-                        "name":  "岁月涟漪",
-                        "description":  "结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴与可视化记忆面板",
-                        "author":  "modusensus",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/ripples-of-aion",
-                        "version":  "0.6.0",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip",
-                        "sha256":  "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
-                        "downloads":  59
-                    },
-                    {
-                        "id":  "system-status",
-                        "name":  "系统状态",
-                        "version":  "0.1.0",
-                        "description":  "查询本机系统状态：CPU、内存、磁盘、电池与开机时长",
-                        "author":  "Playa",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
-                        "sha256":  "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-                        "downloads":  77
-                    },
-                    {
-                        "id":  "subscription-oauth",
-                        "name":  "订阅 OAuth（ChatGPT / Claude / Grok）",
-                        "description":  "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理使用订阅模型，并支持 ChatGPT / Grok 订阅生图在聊天内直接预览。",
-                        "author":  "1971687396",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/subscription-oauth",
-                        "version":  "1.2.11",
-                        "downloads":  32,
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/subscription-oauth-1.2.11.zip",
-                        "sha256":  "b891b19e4e4f5cd48a09a40c5748fc06e307e3edc6dff081756773c69f1f3924"
-                    },
-                    {
-                        "id":  "indextts-tts",
-                        "name":  "IndexTTS 本地语音",
-                        "description":  "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
-                        "author":  "Downfallofthedownfall",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/indextts-tts",
-                        "downloads":  64,
-                        "version":  "1.1.2",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip",
-                        "sha256":  "2366bc5a5d12235f8a2bd9b8f5f230b62ae536d74298cc488a1f18c253694fa3"
-                    },
-                    {
-                        "id":  "chat-export",
-                        "name":  "聊天记录导出",
-                        "description":  "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
-                        "author":  "Playa",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/chat-export",
-                        "downloads":  22,
-                        "version":  "1.0.0",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip",
-                        "sha256":  "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
-                    },
-                    {
-                        "id":  "minecraft-bot",
-                        "name":  "Minecraft 机器人",
-                        "description":  "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射。插件目前仍处于测试期，暂不支持会更改游戏机制的模组。",
-                        "author":  "Cyrene",
-                        "downloads":  15,
-                        "version":  "0.10.0-beta.1",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip",
-                        "sha256":  "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
-                    },
-                    {
-                        "id":  "bili-music",
-                        "name":  "B 站听歌",
-                        "description":  "语音听歌：B 站视频分 P 当音源，搜索/定位/下载转 M4A 后用内置隐藏播放器直接出声。支持播放队列与暂停/继续/下一首/音量控制，支持 B 站扫码登录（解锁高码率音源，凭据只存本机）。匿名也可用",
-                        "author":  "boring9720",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/bili-music",
-                        "version":  "0.3.2",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
-                        "sha256":  "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
-                        "downloads":  31
-                    },
-                    {
-                        "id":  "astral-relay",
-                        "name":  "星驿 · Astral Relay BYOS",
-                        "description":  "BYOS 中转站：用你自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——编程套餐仅限 Code 交互会话，通用套餐全模式可用",
-                        "author":  "Unknownuserfrommars",
-                        "homepage":  "https://github.com/Unknownuserfrommars/astral-relay",
-                        "downloads":  20,
-                        "version":  "0.5.0",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/astral-relay-0.5.0.zip",
-                        "sha256":  "96fa55011c82f9404d459be24b326b0e9de3ed0e0e129ecf6c627e63eb6c323e"
-                    },
-                    {
-                        "id":  "local-asr",
-                        "name":  "本地语音识别（外置引擎）",
-                        "description":  "接管语音通话/聊天输入，通话开始自动接管（可在面板关闭）。零环境小白可用：无 ASR 环境时面板一键下载轻量引擎（sherpa-onnx CPU，约 250MB，国内源，SHA-256 校验，断点续传）。有 FunASR 外置服务(8328)时优先用 GPU。纯 SDK 接口实现，不依赖宿主内部模块",
-                        "author":  "boring9720",
-                        "homepage":  "https://github.com/boring9720/cyrene-local-asr",
-                        "version":  "0.4.9",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/local-asr-0.4.9.zip",
-                        "sha256":  "4a4a540308c77d3c0078997e32111e3a6078a434cdc8e8767585d0f94f4ed328",
-                        "downloads":  32
-                    },
-                    {
-                        "id":  "mijia-control",
-                        "name":  "米家智能家居控制",
-                        "description":  "扫码连接米家账号，按房间分组展示设备；基于公开 MIoT-Spec 自动生成功能控件（开关/滑块/下拉/动作按钮），对话与面板两种方式操控，淡粉液态玻璃面板带底部抽屉上滑减速动画",
-                        "author":  "抽卡保底真君",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/mijia-control",
-                        "version":  "0.3.1",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.1.zip",
-                        "sha256":  "d851c48d8ee60b71797d36f67a5453c09923b499c129a89cf8580d4a98d90c3f",
-                        "downloads":  6
-                    },
-                    {
-                        "id":  "cyrene-browser",
-                        "name":  "Cyrene 内置浏览器",
-                        "description":  "使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页",
-                        "author":  "1971687396",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-browser",
-                        "version":  "0.3.0",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip",
-                        "sha256":  "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40",
-                        "downloads":  2
-                    },
-                    {
-                        "id":  "xiaomi-health",
-                        "name":  "小米运动数据同步服务",
-                        "version":  "0.5.4",
-                        "description":  "扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均可感知健康数据，支持播报频率 / 风格与独立早安问候配置，可选将健康定期写入长期记忆（L2），退出登录删除插件凭据、健康缓存、同步元信息及关联任务（不删除宿主历史内容）",
-                        "author":  "抽卡保底真君",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
-                        "downloads":  4,
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.4.zip",
-                        "sha256":  "330779958d0f800744ae327081833023210edc7e688771192e5115f05c2d42e5"
-                    },
-                    {
-                        "id":  "ide-account-bridge",
-                        "name":  "IDE 账号桥接（Qoder / Trae）",
-                        "description":  "复用本机已登录的 Qoder 与 Trae 桌面账号，向 Cyrene 提供 OpenAI 兼容的本地端点，无需 OAuth 或粘贴 API Key；附额度查看与每日签到。",
-                        "author":  "citie114514",
-                        "homepage":  "https://github.com/citie114514/pi-connect/tree/main/cyrene/ide-account-bridge",
-                        "version":  "1.1.0",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ide-account-bridge-1.1.0.zip",
-                        "sha256":  "7debad3c8b0002a50adea2b8cbee39979541e1fa8f5f7f3325f633b157835345",
-                        "downloads":  0
-                    },
-                    {
-                        "id":  "cyrene-hud",
-                        "name":  "昔涟桌面 HUD",
-                        "version":  "0.8.7",
-                        "description":  "常驻性能监测\u0026Cyrene状态\u0026自定义快速跳转窗口三合一的仿灵动岛状态栏，可自定义外观",
-                        "author":  "Noimpty",
-                        "homepage":  "https://github.com/LZhWi/Cyrene-Agent-Plugin/tree/codex/cyrene-hud-upstream",
-                        "zip":  "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-hud-0.8.7.zip",
-                        "sha256":  "0dc5de056802360b971a6f35fb8a5145de5cb9af567ad288dcc1fb0ef4cc0fd3",
-                        "downloads":  0
-                    },
-                    {
-                        "id":  "cyrene-balance",
-                        "name":  "昔涟 · 余额桌宠",
-                        "version":  "9.4.0",
-                        "description":  "常驻桌面的透明立绘桌宠：查询 DeepSeek 余额与今日消费，气泡轮播台词、44 张表情，外观字号可调",
-                        "author":  "昔涟",
-                        "homepage":  "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-balance"
-                    }
-                ]
+  "apiVersion": 1,
+  "updatedAt": "2026-10-23",
+  "plugins": [
+    {
+      "id": "ripples-of-aion",
+      "name": "岁月涟漪",
+      "description": "结构化记忆层：自动沉淀对话事实，混合检索 + LLM 精排、实体属性时间轴与可视化记忆面板",
+      "author": "modusensus",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/ripples-of-aion",
+      "version": "0.6.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip",
+      "sha256": "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
+      "downloads": 59
+    },
+    {
+      "id": "system-status",
+      "name": "系统状态",
+      "version": "0.1.0",
+      "description": "查询本机系统状态：CPU、内存、磁盘、电池与开机时长",
+      "author": "Playa",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
+      "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
+      "downloads": 77
+    },
+    {
+      "id": "subscription-oauth",
+      "name": "订阅 OAuth（ChatGPT / Claude / Grok）",
+      "description": "用订阅账号登录 ChatGPT / Claude / Grok，经本地代理使用订阅模型，并支持 ChatGPT / Grok 订阅生图在聊天内直接预览。",
+      "author": "1971687396",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/subscription-oauth",
+      "version": "1.2.11",
+      "downloads": 32,
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/subscription-oauth-1.2.11.zip",
+      "sha256": "b891b19e4e4f5cd48a09a40c5748fc06e307e3edc6dff081756773c69f1f3924"
+    },
+    {
+      "id": "indextts-tts",
+      "name": "IndexTTS 本地语音",
+      "description": "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
+      "author": "Downfallofthedownfall",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/indextts-tts",
+      "downloads": 64,
+      "version": "1.1.2",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip",
+      "sha256": "2366bc5a5d12235f8a2bd9b8f5f230b62ae536d74298cc488a1f18c253694fa3"
+    },
+    {
+      "id": "chat-export",
+      "name": "聊天记录导出",
+      "description": "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
+      "author": "Playa",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/chat-export",
+      "downloads": 22,
+      "version": "1.0.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip",
+      "sha256": "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
+    },
+    {
+      "id": "minecraft-bot",
+      "name": "Minecraft 机器人",
+      "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射。插件目前仍处于测试期，暂不支持会更改游戏机制的模组。",
+      "author": "Cyrene",
+      "downloads": 15,
+      "version": "0.10.0-beta.1",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip",
+      "sha256": "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
+    },
+    {
+      "id": "bili-music",
+      "name": "B 站听歌",
+      "description": "语音听歌：B 站视频分 P 当音源，搜索/定位/下载转 M4A 后用内置隐藏播放器直接出声。支持播放队列与暂停/继续/下一首/音量控制，支持 B 站扫码登录（解锁高码率音源，凭据只存本机）。匿名也可用",
+      "author": "boring9720",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/bili-music",
+      "version": "0.3.2",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
+      "sha256": "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
+      "downloads": 31
+    },
+    {
+      "id": "astral-relay",
+      "name": "星驿 · Astral Relay BYOS",
+      "description": "BYOS 中转站：用你自己的订阅额度驱动 Cyrene，按各厂商条款分类放行——编程套餐仅限 Code 交互会话，通用套餐全模式可用",
+      "author": "Unknownuserfrommars",
+      "homepage": "https://github.com/Unknownuserfrommars/astral-relay",
+      "downloads": 20,
+      "version": "0.5.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/astral-relay-0.5.0.zip",
+      "sha256": "96fa55011c82f9404d459be24b326b0e9de3ed0e0e129ecf6c627e63eb6c323e"
+    },
+    {
+      "id": "local-asr",
+      "name": "本地语音识别（外置引擎）",
+      "description": "接管语音通话/聊天输入，通话开始自动接管（可在面板关闭）。零环境小白可用：无 ASR 环境时面板一键下载轻量引擎（sherpa-onnx CPU，约 250MB，国内源，SHA-256 校验，断点续传）。有 FunASR 外置服务(8328)时优先用 GPU。纯 SDK 接口实现，不依赖宿主内部模块",
+      "author": "boring9720",
+      "homepage": "https://github.com/boring9720/cyrene-local-asr",
+      "version": "0.4.9",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/local-asr-0.4.9.zip",
+      "sha256": "4a4a540308c77d3c0078997e32111e3a6078a434cdc8e8767585d0f94f4ed328",
+      "downloads": 32
+    },
+    {
+      "id": "mijia-control",
+      "name": "米家智能家居控制",
+      "description": "扫码连接米家账号，按房间分组展示设备；基于公开 MIoT-Spec 自动生成功能控件（开关/滑块/下拉/动作按钮），对话与面板两种方式操控，淡粉液态玻璃面板带底部抽屉上滑减速动画",
+      "author": "抽卡保底真君",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/mijia-control",
+      "version": "0.3.1",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.1.zip",
+      "sha256": "d851c48d8ee60b71797d36f67a5453c09923b499c129a89cf8580d4a98d90c3f",
+      "downloads": 6
+    },
+    {
+      "id": "cyrene-browser",
+      "name": "Cyrene 内置浏览器",
+      "description": "使用 Cyrene 自带 Chromium 的可见浏览器，让用户与 Agent 操作同一个网页",
+      "author": "1971687396",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-browser",
+      "version": "0.3.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip",
+      "sha256": "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40",
+      "downloads": 2
+    },
+    {
+      "id": "xiaomi-health",
+      "name": "小米运动数据同步服务",
+      "version": "0.5.4",
+      "description": "扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均可感知健康数据，支持播报频率 / 风格与独立早安问候配置，可选将健康定期写入长期记忆（L2），退出登录删除插件凭据、健康缓存、同步元信息及关联任务（不删除宿主历史内容）",
+      "author": "抽卡保底真君",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
+      "downloads": 4,
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.4.zip",
+      "sha256": "330779958d0f800744ae327081833023210edc7e688771192e5115f05c2d42e5"
+    },
+    {
+      "id": "ide-account-bridge",
+      "name": "IDE 账号桥接（Qoder / Trae）",
+      "description": "复用本机已登录的 Qoder 与 Trae 桌面账号，向 Cyrene 提供 OpenAI 兼容的本地端点，无需 OAuth 或粘贴 API Key；附额度查看与每日签到。",
+      "author": "citie114514",
+      "homepage": "https://github.com/citie114514/pi-connect/tree/main/cyrene/ide-account-bridge",
+      "version": "1.1.0",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ide-account-bridge-1.1.0.zip",
+      "sha256": "7debad3c8b0002a50adea2b8cbee39979541e1fa8f5f7f3325f633b157835345",
+      "downloads": 0
+    },
+    {
+      "id": "cyrene-hud",
+      "name": "昔涟桌面 HUD",
+      "version": "0.8.7",
+      "description": "常驻性能监测&Cyrene状态&自定义快速跳转窗口三合一的仿灵动岛状态栏，可自定义外观",
+      "author": "Noimpty",
+      "homepage": "https://github.com/LZhWi/Cyrene-Agent-Plugin/tree/codex/cyrene-hud-upstream",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-hud-0.8.7.zip",
+      "sha256": "0dc5de056802360b971a6f35fb8a5145de5cb9af567ad288dcc1fb0ef4cc0fd3",
+      "downloads": 0
+    },
+    {
+      "id": "cyrene-balance",
+      "name": "昔涟 · 余额桌宠",
+      "description": "常驻桌面的透明立绘桌宠：查询 DeepSeek 余额与今日消费，8 种姿态与 44 张小表情轮换，气泡、字号和立绘大小可调",
+      "author": "昔涟",
+      "homepage": "—",
+      "version": "9.5.1"
+    }
+  ]
 }

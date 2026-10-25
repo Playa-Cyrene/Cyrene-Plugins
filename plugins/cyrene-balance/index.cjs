@@ -41,6 +41,9 @@ let cached = null;
 let win = null;
 let mainWin = null;
 let followMode = true;
+let openTimer = null;
+let lastError = "";
+const SECRET_API_KEY = "deepseekApiKey";
 
 /* ------------------------------ 设置 ------------------------------ */
 
@@ -64,6 +67,8 @@ const defaultSettings = () => ({
   bubbleFont: 1,
   talkFont: 12,
   rotateSec: 12,
+  poseRotate: true,
+  poseSec: 45,
 });
 
 async function getSettings() {
@@ -74,7 +79,7 @@ async function getSettings() {
     return {
       threshold: Number.isFinite(Number(raw.threshold)) ? Number(raw.threshold) : DEFAULT_THRESHOLD,
       budget: Number.isFinite(Number(raw.budget)) ? Number(raw.budget) : 0,
-      apiKey: typeof raw.apiKey === "string" ? raw.apiKey : "",
+      apiKey: "",
       enabled: raw.enabled !== false,
       refreshSec:
         Number.isFinite(Number(raw.refreshSec)) && Number(raw.refreshSec) >= 30
@@ -108,6 +113,8 @@ async function getSettings() {
         Number.isFinite(Number(raw.rotateSec)) && Number(raw.rotateSec) >= 5 && Number(raw.rotateSec) <= 90
           ? Number(raw.rotateSec)
           : 12,
+      poseRotate: raw.poseRotate !== false,
+      poseSec: [20, 45, 90, 180].includes(Number(raw.poseSec)) ? Number(raw.poseSec) : 45,
     };
   } catch {
     return defaultSettings();
@@ -117,6 +124,44 @@ async function getSettings() {
 async function saveSettings(next) {
   if (!ctxRef) return;
   await ctxRef.storage.set(SETTINGS_KEY, next);
+}
+
+/** 读写宿主加密密钥存储；旧版本写在普通存储里的 Key 会自动迁移过去 */
+async function getKey() {
+  try {
+    if (ctxRef && ctxRef.deps && ctxRef.deps.secrets) {
+      const value = await ctxRef.deps.secrets.get(SECRET_API_KEY);
+      if (value) return String(value);
+    }
+  } catch {
+    /* 安全存储不可用时走下面的旧数据迁移 */
+  }
+  try {
+    const raw = ctxRef ? await ctxRef.storage.get(SETTINGS_KEY) : null;
+    const legacy = raw && typeof raw.apiKey === "string" ? raw.apiKey : "";
+    if (legacy) {
+      await setKey(legacy);
+      const clean = Object.assign({}, raw);
+      delete clean.apiKey;
+      await ctxRef.storage.set(SETTINGS_KEY, clean);
+      return legacy;
+    }
+  } catch {
+    /* 忽略迁移失败 */
+  }
+  return "";
+}
+
+async function setKey(key) {
+  if (!ctxRef || !ctxRef.deps || !ctxRef.deps.secrets) return false;
+  await ctxRef.deps.secrets.set(SECRET_API_KEY, key);
+  return true;
+}
+
+async function clearKey() {
+  if (!ctxRef || !ctxRef.deps || !ctxRef.deps.secrets) return false;
+  await ctxRef.deps.secrets.delete(SECRET_API_KEY);
+  return true;
 }
 
 function readKeyFromModelSettings() {
@@ -239,11 +284,18 @@ async function observe(balance) {
   let ledger = await readLedger();
 
   if (ledger.day !== day) {
+    // 先把旧账本的 history 接过来，再重置当天计数，否则跨天会丢掉历史
+    const history = ledger.history && typeof ledger.history === "object" ? ledger.history : {};
     if (ledger.day && ledger.spent > 0) {
-      ledger.history[ledger.day] = Math.round(ledger.spent * 100) / 100;
+      history[ledger.day] = Math.round(ledger.spent * 100) / 100;
+    }
+    const keys = Object.keys(history).sort();
+    while (keys.length > HISTORY_DAYS) {
+      delete history[keys.shift()];
     }
     // 跨天第一次观测不把隔夜差额算成今天的消费
     ledger = emptyLedger(day);
+    ledger.history = history;
     ledger.lastTotal = balance.total;
     ledger.lastAt = Date.now();
     await saveLedger(ledger);
@@ -344,7 +396,7 @@ function money(value) {
 async function query(options) {
   const opts = options || {};
   const settings = await getSettings();
-  const key = settings.apiKey || readKeyFromModelSettings();
+  const key = (await getKey()) || readKeyFromModelSettings();
   if (!key) {
     return { ok: false, error: "还没拿到 DeepSeek 的 API Key，请在插件里设置一次。" };
   }
@@ -380,13 +432,15 @@ async function query(options) {
 }
 
 async function tick() {
-  if (disposed) return;
+  if (disposed) return null;
   const settings = await getSettings();
-  if (!settings.enabled) return;
+  if (!settings.enabled) return null;
   const result = await query();
+  lastError = result && !result.ok ? result.error : "";
   if (result.ok && result.stale && ctxRef) {
     ctxRef.log("余额刷新失败，沿用上次数据：" + result.error);
   }
+  return result;
 }
 
 function formatReport(result) {
@@ -435,7 +489,7 @@ async function buildWidgetPayload() {
   if (!cached) {
     return {
       ok: false,
-      error: "还没查到余额",
+      error: lastError || "还没查到余额",
       currency: "CNY",
       total: 0,
       spent: 0,
@@ -486,11 +540,13 @@ function findMainWindow() {
   return best;
 }
 
-function mainContentSize() {
+function mainContentBounds() {
   if (!mainWin || mainWin.isDestroyed()) return null;
   try {
+    // getPosition 返回屏幕坐标，getContentSize 只给尺寸，必须把原点带上
+    const pos = mainWin.getPosition();
     const size = mainWin.getContentSize();
-    return { w: size[0], h: size[1] };
+    return { x: pos[0], y: pos[1], w: size[0], h: size[1] };
   } catch {
     return null;
   }
@@ -500,18 +556,18 @@ function mainContentSize() {
 function keepInsideMain() {
   if (!win || win.isDestroyed() || !mainWin || mainWin.isDestroyed()) return;
   try {
-    const size = mainContentSize();
+    const size = mainContentBounds();
     if (!size) return;
     const b = win.getBounds();
     const margin = 12;
     let x = b.x;
     let y = b.y;
-    const maxX = size.w - b.width - margin;
-    const maxY = size.h - b.height - margin;
-    if (x < margin) x = margin;
-    if (x > maxX) x = maxX;
-    if (y < margin) y = margin;
-    if (y > maxY) y = maxY;
+    const minX = size.x + margin;
+    const minY = size.y + margin;
+    const maxX = size.x + size.w - b.width - margin;
+    const maxY = size.y + size.h - b.height - margin;
+    x = Math.min(Math.max(x, minX), Math.max(minX, maxX));
+    y = Math.min(Math.max(y, minY), Math.max(minY, maxY));
     if (x !== b.x || y !== b.y) win.setPosition(Math.round(x), Math.round(y));
   } catch {
     /* 忽略 */
@@ -527,12 +583,15 @@ function snapToEdge() {
     let y = bounds.y;
     if (followMode) {
       if (!mainWin || mainWin.isDestroyed()) return;
-      const size = mainContentSize();
+      const size = mainContentBounds();
       if (!size) return;
-      if (Math.abs(bounds.x) < gap) x = 0;
-      if (Math.abs(size.w - (bounds.x + bounds.width)) < gap) x = size.w - bounds.width;
-      if (Math.abs(bounds.y) < gap) y = 0;
-      if (Math.abs(size.h - (bounds.y + bounds.height)) < gap) y = size.h - bounds.height;
+      if (Math.abs(bounds.x - size.x) < gap) x = size.x;
+      if (Math.abs(size.x + size.w - (bounds.x + bounds.width)) < gap) x = size.x + size.w - bounds.width;
+      if (Math.abs(bounds.y - size.y) < gap) y = size.y;
+      if (Math.abs(size.y + size.h - (bounds.y + bounds.height)) < gap) y = size.y + size.h - bounds.height;
+      // 主窗口移动或缩放后，挂件不能留在窗口外
+      x = Math.min(Math.max(x, size.x), size.x + size.w - bounds.width);
+      y = Math.min(Math.max(y, size.y), size.y + size.h - bounds.height);
     } else {
       const { screen } = require("electron");
       const area = screen.getDisplayMatching(bounds).workArea;
@@ -561,20 +620,27 @@ async function saveWidgetPosition() {
   }
 }
 
-function placeWidget() {
+function placeWidget(settings) {
   if (!win || win.isDestroyed()) return;
   const b = win.getBounds();
   const margin = 16;
   if (followMode) {
-    const size = mainContentSize();
+    const size = mainContentBounds();
     if (!size) return;
-    win.setPosition(Math.round(size.w - b.width - margin), Math.round(size.h - b.height - margin));
+    win.setPosition(
+      Math.round(size.x + size.w - b.width - margin),
+      Math.round(size.y + size.h - b.height - margin),
+    );
   } else {
     const { screen } = require("electron");
     const area = screen.getPrimaryDisplay().workArea;
-    const x = Math.round(area.x + area.width - b.width - 28);
-    const y = Math.round(area.y + area.height - b.height - 28);
-    win.setPosition(x, y);
+    const savedX = settings ? settings.widgetX : null;
+    const savedY = settings ? settings.widgetY : null;
+    let x = Number.isFinite(savedX) ? savedX : area.x + area.width - b.width - 28;
+    let y = Number.isFinite(savedY) ? savedY : area.y + area.height - b.height - 28;
+    x = Math.min(Math.max(x, area.x), area.x + area.width - b.width);
+    y = Math.min(Math.max(y, area.y), area.y + area.height - b.height);
+    win.setPosition(Math.round(x), Math.round(y));
   }
 }
 
@@ -635,6 +701,7 @@ async function openWidget() {
     skipTaskbar: true,
     hasShadow: false,
     show: false,
+    backgroundColor: "#00000000",
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -645,7 +712,7 @@ async function openWidget() {
     try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
   }
   win.loadFile(path.join(__dirname, "widget.html"));
-  placeWidget();
+  placeWidget(settings);
   if (followMode) attachMainListeners();
 
   let moveTimer = null;
@@ -769,9 +836,9 @@ module.exports = {
       async execute(args) {
         const key = String((args && args.apiKey) || "").trim();
         if (!key) return "Key 是空的，没有改动。";
-        const settings = await getSettings();
-        settings.apiKey = key;
-        await saveSettings(settings);
+        const saved = await setKey(key);
+        if (!saved) return "宿主安全存储不可用，Key 没有保存。";
+        void tick();
         return "记下了，之后余额查询会用这个 Key。";
       },
     });
@@ -790,7 +857,7 @@ module.exports = {
           "提醒阈值：" + money(settings.threshold) + " 元",
           "今日预算：" + (settings.budget > 0 ? money(settings.budget) + " 元" : "未启用"),
           "自动刷新：每 " + settings.refreshSec + " 秒",
-          "Key 来源：" + (settings.apiKey ? "插件内单独设置" : "跟随 Cyrene 的 DeepSeek 配置"),
+          "Key 来源：" + ((await getKey()) ? "插件内单独设置" : "跟随 Cyrene 的 DeepSeek 配置"),
         ];
         if (cached) {
           lines.push(
@@ -860,8 +927,10 @@ module.exports = {
     ctx.registerIpc("get", async () => buildWidgetPayload());
 
     ctx.registerIpc("refresh", async () => {
-      await tick();
-      return buildWidgetPayload();
+      const result = await tick();
+      const payload = await buildWidgetPayload();
+      if (result && result.error) payload.error = result.error;
+      return payload;
     });
 
     ctx.registerIpc("scale", async () => {
@@ -881,6 +950,8 @@ module.exports = {
         bubbleFont: settings.bubbleFont,
         talkFont: settings.talkFont,
         rotateSec: settings.rotateSec,
+        poseRotate: settings.poseRotate,
+        poseSec: settings.poseSec,
       };
     });
 
@@ -944,6 +1015,27 @@ module.exports = {
         const menu = Menu.buildFromTemplate([
           { label: "♪ 说句话", click: () => send("talk") },
           { type: "separator" },
+          {
+            label: "立绘",
+            submenu: [
+              {
+                label: "自动轮换",
+                type: "checkbox",
+                checked: settings.poseRotate !== false,
+                click: (item) => applySetting("poseRotate", Boolean(item.checked)),
+              },
+              { label: "换一个姿势", click: () => send("next-pose") },
+              {
+                label: "轮换间隔",
+                submenu: [20, 45, 90, 180].map((s) => ({
+                  label: s + " 秒",
+                  type: "radio",
+                  checked: Math.abs(settings.poseSec - s) < 0.01,
+                  click: () => applySetting("poseSec", s),
+                })),
+              },
+            ],
+          },
           {
             label: "小表情",
             submenu: [
@@ -1099,15 +1191,21 @@ module.exports = {
         clearInterval(timer);
         timer = null;
       }
+      if (openTimer) {
+        clearTimeout(openTimer);
+        openTimer = null;
+      }
     });
 
     void tick();
     ctx.log("余额提醒已启动，每 " + Math.round(interval / 1000) + " 秒刷新一次");
 
     if (settings.autoOpen) {
-      setTimeout(() => {
+      openTimer = setTimeout(() => {
+        openTimer = null;
+        if (disposed) return;
         openWidget().catch((error) => {
-          if (ctxRef) ctxRef.log("自动打开挂件失败：" + ((error && error.message) || error));
+          if (ctxRef && !disposed) ctxRef.log("自动打开挂件失败：" + ((error && error.message) || error));
         });
       }, 1200);
     }
@@ -1120,7 +1218,12 @@ module.exports = {
       clearInterval(timer);
       timer = null;
     }
+    if (openTimer) {
+      clearTimeout(openTimer);
+      openTimer = null;
+    }
     ctxRef = null;
     cached = null;
+    lastError = "";
   },
 };
