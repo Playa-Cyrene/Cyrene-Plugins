@@ -69,6 +69,13 @@ const defaultSettings = () => ({
   rotateSec: 12,
   poseRotate: true,
   poseSec: 45,
+  // 统一桌宠
+  catchAsk: true,
+  catchApproval: true,
+  hideNativeCard: true,
+  hideNativeTask: false,
+  showTaskBubble: true,
+  taskDetail: "auto",
 });
 
 async function getSettings() {
@@ -105,7 +112,9 @@ async function getSettings() {
       bubbleSize: ["compact", "normal", "roomy", "xlarge"].includes(raw.bubbleSize)
         ? raw.bubbleSize
         : "normal",
-      bubbleMode: ["rotate", "info", "talk"].includes(raw.bubbleMode) ? raw.bubbleMode : "rotate",
+      bubbleMode: ["rotate", "info", "talk", "today", "balance"].includes(raw.bubbleMode)
+        ? raw.bubbleMode
+        : "rotate",
       bubblePlace: ["top", "middle", "bottom"].includes(raw.bubblePlace) ? raw.bubblePlace : "top",
       bubbleFont: [0.8, 1, 1.3, 1.6].includes(Number(raw.bubbleFont)) ? Number(raw.bubbleFont) : 1,
       talkFont: [10, 12, 14, 16, 18].includes(Number(raw.talkFont)) ? Number(raw.talkFont) : 12,
@@ -115,6 +124,12 @@ async function getSettings() {
           : 12,
       poseRotate: raw.poseRotate !== false,
       poseSec: [20, 45, 90, 180].includes(Number(raw.poseSec)) ? Number(raw.poseSec) : 45,
+      catchAsk: raw.catchAsk !== false,
+      catchApproval: raw.catchApproval !== false,
+      hideNativeCard: raw.hideNativeCard !== false,
+      hideNativeTask: raw.hideNativeTask === true,
+      showTaskBubble: raw.showTaskBubble !== false,
+      taskDetail: ["auto", "always", "hidden"].includes(raw.taskDetail) ? raw.taskDetail : "auto",
     };
   } catch {
     return defaultSettings();
@@ -393,6 +408,18 @@ function money(value) {
   return Number(value || 0).toFixed(2);
 }
 
+function viewLabel(mode) {
+  return (
+    {
+      rotate: "余额 / 台词 交替",
+      info: "只显示余额",
+      talk: "只显示台词",
+      today: "只看今日额度",
+      balance: "只看余额",
+    }[mode] || mode
+  );
+}
+
 async function query(options) {
   const opts = options || {};
   const settings = await getSettings();
@@ -414,6 +441,9 @@ async function query(options) {
       recharge: ledger.recharge,
       threshold: settings.threshold,
       budget: settings.budget,
+      remain: settings.budget > 0 ? Math.max(0, settings.budget - ledger.spent) : null,
+      limitRatio: settings.budget > 0 ? ledger.spent / settings.budget : 0,
+      warnLimit: settings.budget > 0 && ledger.spent >= settings.budget * 0.8,
       low: balance.total < settings.threshold,
       overBudget: settings.budget > 0 && ledger.spent >= settings.budget,
       peak,
@@ -443,27 +473,67 @@ async function tick() {
   return result;
 }
 
-function formatReport(result) {
+function formatReport(result, view) {
   if (!result.ok) return result.error;
   if (result.stale) {
-    return "刚刚刷新失败，先给你看上次的数字：\n" + formatCached();
+    return "刚刚刷新失败，先给你看上次的数字：\n" + formatCached(view);
   }
-  return formatCached();
+  return formatCached(view);
 }
 
-function formatCached() {
+function formatCached(view) {
   if (!cached) return "还没有余额数据。";
   const c = cached;
+  const mode = view || "all";
+  const limit = Number(c.budget) || 0;
+
+  if (mode === "balance") {
+    return (
+      "DeepSeek 余额：" +
+      c.currency +
+      " " +
+      money(c.total) +
+      (c.stale ? "\n（数据可能不是最新）" : "")
+    );
+  }
+
+  const todayLines = [
+    "今日已用 " +
+      money(c.spent) +
+      " 元" +
+      (limit > 0
+        ? " / 额度 " + money(limit) + " 元，剩余 " + money(Math.max(0, limit - c.spent)) + " 元"
+        : "，今日额度还没设置"),
+    limit > 0 ? "额度已用 " + Math.round((c.spent / limit) * 100) + "%" : "额度已用 —",
+  ];
+  if (c.recharge > 0) todayLines.push("今日充值 " + money(c.recharge) + " 元");
+  if (c.overBudget) todayLines.push("今天已经超过额度上限啦");
+  else if (c.warnLimit) todayLines.push("已经用掉额度的八成，收着点呀");
+  if (mode === "today") {
+    if (c.stale) todayLines.push("（数据可能不是最新）");
+    return todayLines.join("\n");
+  }
+
   const lines = [
     "DeepSeek 余额：" + c.currency + " " + money(c.total),
     "今日消费 " + money(c.spent) + (c.recharge > 0 ? " · 今日充值 " + money(c.recharge) : ""),
   ];
+  if (limit > 0) {
+    lines.push(
+      "今日额度 " +
+        money(limit) +
+        " 元，剩余 " +
+        money(Math.max(0, limit - c.spent)) +
+        " 元（已用 " +
+        Math.round((c.spent / limit) * 100) +
+        "%）"
+    );
+  }
   if (c.granted > 0) lines.push("其中赠金 " + money(c.granted));
-  lines.push(
-    "当前" + c.peak.label + (c.peak.next ? "，" + c.peak.next + c.peak.nextLabel : "")
-  );
+  lines.push("当前" + c.peak.label + (c.peak.next ? "，" + c.peak.next + c.peak.nextLabel : ""));
   if (c.low) lines.push("已低于提醒阈值 " + money(c.threshold) + " 元");
-  if (c.overBudget) lines.push("今日已超出预算 " + money(c.budget) + " 元");
+  if (c.overBudget) lines.push("今日已超出额度上限 " + money(limit) + " 元");
+  else if (c.warnLimit) lines.push("今日额度已用 " + Math.round((c.spent / limit) * 100) + "%，留意一下");
   if (c.stale) lines.push("（数据可能不是最新）");
   return lines.join("\n");
 }
@@ -496,6 +566,10 @@ async function buildWidgetPayload() {
       recharge: 0,
       threshold: settings.threshold,
       budget: settings.budget,
+      remain: null,
+      limitRatio: 0,
+      warnLimit: false,
+      bubbleMode: settings.bubbleMode,
       low: false,
       overBudget: false,
       peak: peakState(new Date()),
@@ -512,6 +586,10 @@ async function buildWidgetPayload() {
     recharge: cached.recharge,
     threshold: cached.threshold,
     budget: cached.budget,
+    remain: cached.remain,
+    limitRatio: cached.limitRatio,
+    warnLimit: cached.warnLimit,
+    bubbleMode: settings.bubbleMode,
     low: cached.low,
     overBudget: cached.overBudget,
     peak: cached.peak,
@@ -681,6 +759,7 @@ async function openWidget() {
   }
   const settings = await getSettings();
   const scale = settings.widgetScale || 1;
+  widgetScaleCache = scale;
   const width = Math.round(WIDGET_WIDTH * scale);
   const height = Math.round(WIDGET_HEIGHT * scale);
 
@@ -712,6 +791,16 @@ async function openWidget() {
     try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
   }
   win.loadFile(path.join(__dirname, "widget.html"));
+  win.webContents.on("did-finish-load", () => {
+    pushPetTodo();
+    if (petMode === "card" && petCardPayload) {
+      try {
+        win.webContents.send(PET_CARD_SHOW, petCardPayload);
+      } catch {
+        /* 忽略 */
+      }
+    }
+  });
   placeWidget(settings);
   if (followMode) attachMainListeners();
 
@@ -741,6 +830,303 @@ function closeWidget() {
   mainWin = null;
 }
 
+/* ------------------------------ 统一桌宠：提问 / 审批 / 任务 ------------------------------ */
+
+const CARD_WIDTH = 420;
+const CARD_HEIGHT = 580;
+const CH_AGUI = "agui:event";
+const CH_ASK = "cyrene.choice";
+const CH_ASK_DISMISS = "cyrene.choice.dismiss";
+const CH_APPROVAL_REQUEST = "permission:approval-request";
+const CH_APPROVAL_SETTLED = "permission:approval-settled";
+const PET_CARD_SHOW = "balance-card:show";
+const PET_CARD_HIDE = "balance-card:hide";
+const PET_TODO = "balance-todo";
+const PET_STATE = "balance-pet-state";
+
+let widgetScaleCache = 1;
+let petMode = "idle";
+let petCard = null;
+let petCardPayload = null;
+let petTodos = [];
+let petWorking = false;
+let petHooked = [];
+let petHookTimer = null;
+let petFlags = {
+  catchAsk: true,
+  catchApproval: true,
+  hideNativeCard: true,
+  hideNativeTask: false,
+  showTaskBubble: true,
+  taskDetail: "auto",
+};
+
+function petLog(message) {
+  if (!ctxRef || disposed) return;
+  try {
+    ctxRef.log("[桌宠] " + message);
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function detectPetKind(card) {
+  if (!card || typeof card !== "object") return null;
+  if (Array.isArray(card.questions)) return "ask";
+  if (typeof card.id === "string" && typeof card.question === "string") return "choice";
+  return null;
+}
+
+function petCardId(kind, card) {
+  if (!card || typeof card !== "object") return null;
+  if (kind === "ask") return typeof card.interactionId === "string" ? card.interactionId : null;
+  return typeof card.id === "string" ? card.id : null;
+}
+
+function isOwnWidget(target) {
+  if (!win || win.isDestroyed()) return false;
+  try {
+    return win.webContents === target;
+  } catch {
+    return false;
+  }
+}
+
+// 展开/收起时保持右下角锚点不变，卡片向左上方生长
+function applyPetSize(expanded) {
+  if (!win || win.isDestroyed()) return;
+  const width = Math.round((expanded ? CARD_WIDTH : WIDGET_WIDTH) * widgetScaleCache);
+  const height = Math.round((expanded ? CARD_HEIGHT : WIDGET_HEIGHT) * widgetScaleCache);
+  try {
+    const bounds = win.getBounds();
+    let x = bounds.x + bounds.width - width;
+    let y = bounds.y + bounds.height - height;
+    try {
+      const { screen } = require("electron");
+      const area = screen.getDisplayMatching(bounds).workArea;
+      x = Math.min(Math.max(x, area.x), area.x + area.width - width);
+      y = Math.min(Math.max(y, area.y), area.y + area.height - height);
+    } catch {
+      /* 忽略 */
+    }
+    win.setBounds({ x, y, width, height });
+  } catch (error) {
+    petLog("调整窗口尺寸失败：" + ((error && error.message) || error));
+  }
+}
+
+function normalizePetTodos(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item && typeof item === "object" && typeof item.content === "string")
+    .slice(0, 30)
+    .map((item) => ({
+      id: typeof item.id === "string" ? item.id : String(item.id || ""),
+      content: item.content,
+      status: ["pending", "in_progress", "completed", "cancelled"].includes(item.status)
+        ? item.status
+        : "pending",
+      priority: typeof item.priority === "string" ? item.priority : undefined,
+    }));
+}
+
+function pushPetTodo() {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.send(PET_TODO, {
+      items: petTodos,
+      working: petWorking,
+      flags: petFlags,
+      mode: petMode,
+    });
+  } catch {
+    /* 忽略 */
+  }
+}
+
+async function presentPetCard(kind, card) {
+  const id = petCardId(kind, card);
+  if (!id) return false;
+  if (!win || win.isDestroyed()) {
+    try {
+      await openWidget();
+    } catch (error) {
+      petLog("打开桌宠失败：" + ((error && error.message) || error));
+      return false;
+    }
+  }
+  if (!win || win.isDestroyed()) return false;
+
+  petCard = { kind, id };
+  petCardPayload = { kind, card };
+  petMode = "card";
+  applyPetSize(true);
+  try {
+    if (typeof win.isVisible === "function" && !win.isVisible()) win.show();
+    win.webContents.send(PET_CARD_SHOW, { kind, card });
+  } catch (error) {
+    petLog("下发卡片失败：" + ((error && error.message) || error));
+  }
+  return true;
+}
+
+function collapsePetCard(settlement) {
+  if (petMode !== "card") return;
+  const id = settlement && typeof settlement === "object" ? settlement.id : undefined;
+  if (typeof id === "string" && petCard && id !== petCard.id) return;
+  const reason = settlement && typeof settlement.reason === "string" ? settlement.reason : "closed";
+  petMode = "idle";
+  petCard = null;
+  petCardPayload = null;
+  if (win && !win.isDestroyed()) {
+    try {
+      win.webContents.send(PET_CARD_HIDE, reason);
+    } catch {
+      /* 忽略 */
+    }
+  }
+  setTimeout(() => {
+    if (petMode === "idle") applyPetSize(false);
+  }, 400);
+}
+
+/**
+ * @returns {boolean} true = 拦下这一条，不再发给原窗口
+ */
+function interceptPet(target, channel, args) {
+  if (!ctxRef || disposed) return false;
+  if (isOwnWidget(target)) return false;
+
+  if (channel === CH_AGUI) {
+    const event = args[0];
+    if (!event || typeof event !== "object") return false;
+
+    if (event.type === "RUN_STARTED") {
+      petWorking = true;
+      pushPetTodo();
+      return false;
+    }
+    if (event.type === "RUN_FINISHED" || event.type === "RUN_ERROR") {
+      petWorking = false;
+      pushPetTodo();
+      return false;
+    }
+    if (event.type !== "CUSTOM") return false;
+
+    if (event.name === CH_ASK) {
+      if (!petFlags.catchAsk) return false;
+      if (!detectPetKind(event.value)) return false;
+      void presentPetCard(detectPetKind(event.value), event.value);
+      return petFlags.hideNativeCard;
+    }
+    if (event.name === CH_ASK_DISMISS) {
+      collapsePetCard(event.value);
+      return false;
+    }
+    if (event.name === "cyrene.todo") {
+      petTodos = normalizePetTodos(event.value && event.value.items);
+      pushPetTodo();
+      return petFlags.hideNativeTask;
+    }
+    return false;
+  }
+
+  if (channel === CH_APPROVAL_REQUEST) {
+    if (!petFlags.catchApproval) return false;
+    const payload = args[0];
+    if (!payload || typeof payload.id !== "string") return false;
+    void presentPetCard("approval", payload);
+    return true;
+  }
+
+  if (channel === CH_APPROVAL_SETTLED) {
+    if (!petFlags.catchApproval) return false;
+    collapsePetCard(args[0]);
+    return false;
+  }
+
+  return false;
+}
+
+function hookPetWebContents(target) {
+  if (!target || typeof target.send !== "function") return;
+  if (petHooked.some((entry) => entry.target === target)) return;
+
+  const original = target.send;
+  const wrapped = function send(channel, ...args) {
+    try {
+      if (interceptPet(target, channel, args)) return undefined;
+    } catch (error) {
+      petLog("事件拦截失败：" + ((error && error.message) || error));
+    }
+    return original.apply(target, [channel, ...args]);
+  };
+
+  try {
+    Object.defineProperty(target, "send", {
+      configurable: true,
+      writable: true,
+      value: wrapped,
+    });
+    petHooked.push({ target, original });
+  } catch (error) {
+    petLog("挂载失败：" + ((error && error.message) || error));
+  }
+}
+
+function hookAllPetWebContents() {
+  try {
+    const { webContents } = require("electron");
+    if (webContents && typeof webContents.getAllWebContents === "function") {
+      for (const item of webContents.getAllWebContents()) hookPetWebContents(item);
+    }
+  } catch (error) {
+    petLog("枚举窗口失败：" + ((error && error.message) || error));
+  }
+}
+
+function unhookPetWebContents() {
+  for (const entry of petHooked.splice(0)) {
+    try {
+      Object.defineProperty(entry.target, "send", {
+        configurable: true,
+        writable: true,
+        value: entry.original,
+      });
+    } catch {
+      /* 忽略 */
+    }
+  }
+}
+
+async function startPet() {
+  const settings = await getSettings();
+  petFlags = {
+    catchAsk: settings.catchAsk,
+    catchApproval: settings.catchApproval,
+    hideNativeCard: settings.hideNativeCard,
+    hideNativeTask: settings.hideNativeTask,
+    showTaskBubble: settings.showTaskBubble,
+    taskDetail: settings.taskDetail,
+  };
+  hookAllPetWebContents();
+  if (!petHookTimer) {
+    petHookTimer = setInterval(hookAllPetWebContents, 2500);
+    if (typeof petHookTimer.unref === "function") petHookTimer.unref();
+  }
+}
+
+function stopPet() {
+  unhookPetWebContents();
+  if (petHookTimer) {
+    clearInterval(petHookTimer);
+    petHookTimer = null;
+  }
+  petMode = "idle";
+  petCard = null;
+  petCardPayload = null;
+}
+
 /* ------------------------------ 生命周期 ------------------------------ */
 
 module.exports = {
@@ -756,21 +1142,32 @@ module.exports = {
       id: "cyrene-balance_query",
       name: "查询 DeepSeek 余额",
       description:
-        "查询 DeepSeek API 账户余额、今日消费、今日充值、当前峰谷时段。用户问「还有多少钱 / 余额多少 / 今天花了多少 / 现在是不是高峰」时使用。无参数。",
+        "查询 DeepSeek API 账户余额、今日消费、今日充值、今日额度与当前峰谷时段。可用 view 只看其中一部分：all 全部、today 只看今日已用和额度、balance 只看余额。用户问「还有多少钱」用 balance，「今天用了多少 / 额度还剩多少」用 today。",
       enabled: true,
       risk: "safe",
       effectKind: "read",
-      inputSchema: { type: "object", properties: {}, required: [] },
-      async execute() {
-        return formatReport(await query());
+      inputSchema: {
+        type: "object",
+        properties: {
+          view: {
+            type: "string",
+            enum: ["all", "today", "balance"],
+            description: "显示范围：all 全部（默认）、today 只看今日额度、balance 只看余额",
+          },
+        },
+        required: [],
+      },
+      async execute(args) {
+        const view = args && ["all", "today", "balance"].includes(args.view) ? args.view : "all";
+        return formatReport(await query(), view);
       },
     });
 
     ctx.registerTool({
       id: "cyrene-balance_set_threshold",
-      name: "设置余额提醒阈值",
+      name: "设置余额阈值与今日额度",
       description:
-        "设置余额提醒阈值（元），可选同时设置今日预算（元，0 表示不启用）。用户说「余额低于 X 提醒我」「今天预算 Y 元」时使用。",
+        "设置余额提醒阈值，也可以单独调节今日额度上限。用户说「余额低于 X 提醒我」「今天额度改成 Y 元」「今日额度关掉」时使用。dailyLimit 为 0 表示不启用今日额度提醒。",
       enabled: true,
       risk: "write",
       effectKind: "write",
@@ -778,15 +1175,17 @@ module.exports = {
         type: "object",
         properties: {
           threshold: { type: "number", description: "余额提醒阈值，单位元" },
-          budget: { type: "number", description: "今日消费预算，单位元，0 表示不启用" },
+          dailyLimit: { type: "number", description: "今日额度上限，单位元，0 表示不启用" },
+          budget: { type: "number", description: "dailyLimit 的旧名称，等价于今日额度上限" },
         },
         required: [],
       },
       async execute(args) {
         const settings = await getSettings();
         const hasThreshold = args && args.threshold !== undefined && args.threshold !== null;
-        const hasBudget = args && args.budget !== undefined && args.budget !== null;
-        if (!hasThreshold && !hasBudget) return "没有要改的值。";
+        const rawLimit = args && args.dailyLimit !== undefined ? args.dailyLimit : args ? args.budget : undefined;
+        const hasLimit = rawLimit !== undefined && rawLimit !== null;
+        if (!hasThreshold && !hasLimit) return "没有要改的值。";
 
         if (hasThreshold) {
           const value = Number(args.threshold);
@@ -795,10 +1194,10 @@ module.exports = {
           }
           settings.threshold = value;
         }
-        if (hasBudget) {
-          const value = Number(args.budget);
+        if (hasLimit) {
+          const value = Number(rawLimit);
           if (!Number.isFinite(value) || value < 0 || value > 100000) {
-            return "预算需要是 0 到 100000 之间的数字。";
+            return "今日额度需要是 0 到 100000 之间的数字。";
           }
           settings.budget = value;
         }
@@ -806,13 +1205,25 @@ module.exports = {
         if (cached) {
           cached.threshold = settings.threshold;
           cached.budget = settings.budget;
+          cached.remain = settings.budget > 0 ? Math.max(0, settings.budget - cached.spent) : null;
+          cached.limitRatio = settings.budget > 0 ? cached.spent / settings.budget : 0;
+          cached.warnLimit = settings.budget > 0 && cached.spent >= settings.budget * 0.8;
           cached.low = cached.total < settings.threshold;
           cached.overBudget = settings.budget > 0 && cached.spent >= settings.budget;
         }
         const parts = [];
         if (hasThreshold) parts.push("余额低于 " + money(settings.threshold) + " 元提醒你");
-        if (hasBudget) {
-          parts.push(settings.budget > 0 ? "今日预算 " + money(settings.budget) + " 元" : "今日预算已关闭");
+        if (hasLimit) {
+          parts.push(settings.budget > 0 ? "今日额度 " + money(settings.budget) + " 元" : "今日额度提醒已关闭");
+        }
+        if (settings.budget > 0 && cached) {
+          parts.push(
+            "今天已经用了 " +
+              money(cached.spent) +
+              " 元（" +
+              Math.round((cached.spent / settings.budget) * 100) +
+              "%）"
+          );
         }
         return "好，" + parts.join("，") + "。";
       },
@@ -855,10 +1266,23 @@ module.exports = {
         const settings = await getSettings();
         const lines = [
           "提醒阈值：" + money(settings.threshold) + " 元",
-          "今日预算：" + (settings.budget > 0 ? money(settings.budget) + " 元" : "未启用"),
+          "今日额度：" + (settings.budget > 0 ? money(settings.budget) + " 元" : "未启用"),
+          "气泡显示：" + viewLabel(settings.bubbleMode),
           "自动刷新：每 " + settings.refreshSec + " 秒",
           "Key 来源：" + ((await getKey()) ? "插件内单独设置" : "跟随 Cyrene 的 DeepSeek 配置"),
         ];
+        if (cached && settings.budget > 0) {
+          lines.splice(
+            2,
+            0,
+            "今日已用：" +
+              money(cached.spent) +
+              " 元（" +
+              Math.round((cached.spent / settings.budget) * 100) +
+              "%）" +
+              (cached.overBudget ? "，已超过额度上限" : cached.warnLimit ? "，接近额度上限" : "")
+          );
+        }
         if (cached) {
           lines.push(
             "上次查询：" +
@@ -875,6 +1299,40 @@ module.exports = {
           lines.push("上次查询：还没查过");
         }
         return lines.join("\n");
+      },
+    });
+
+    ctx.registerTool({
+      id: "cyrene-balance_set_view",
+      name: "设置气泡显示范围",
+      description:
+        "切换桌宠气泡的显示范围：rotate 余额与台词交替、info 只显示余额信息、talk 只显示台词、today 只看今日额度、balance 只看余额。用户说「只看今日额度」「只看余额」「气泡别播台词」时使用。",
+      enabled: true,
+      risk: "write",
+      effectKind: "write",
+      inputSchema: {
+        type: "object",
+        properties: {
+          mode: {
+            type: "string",
+            enum: ["rotate", "info", "talk", "today", "balance"],
+            description: "显示范围",
+          },
+        },
+        required: ["mode"],
+      },
+      async execute(args) {
+        const mode = args && args.mode;
+        if (!["rotate", "info", "talk", "today", "balance"].includes(mode)) {
+          return "显示范围只能是 rotate / info / talk / today / balance。";
+        }
+        const settings = await getSettings();
+        settings.bubbleMode = mode;
+        await saveSettings(settings);
+        if (win && !win.isDestroyed()) {
+          try { win.webContents.send("config-changed"); } catch { /* 忽略 */ }
+        }
+        return "好，气泡改成「" + viewLabel(mode) + "」。";
       },
     });
 
@@ -919,6 +1377,14 @@ module.exports = {
           cached.peak.label +
           "，数据时间 " +
           cached.at +
+          (cached.budget > 0
+            ? "，今日额度 " +
+              money(cached.budget) +
+              "，已用 " +
+              Math.round((cached.spent / cached.budget) * 100) +
+              "%" +
+              (cached.overBudget ? "（已超过额度上限）" : cached.warnLimit ? "（接近额度上限）" : "")
+            : "") +
           (cached.stale ? "（上次刷新失败，为旧数据）" : "")
         );
       },
@@ -955,12 +1421,32 @@ module.exports = {
       };
     });
 
+    ctx.registerIpc("setLimit", async (value) => {
+      const limit = Math.min(100000, Math.max(0, Number(value) || 0));
+      const settings = await getSettings();
+      settings.budget = limit;
+      await saveSettings(settings);
+      if (cached) {
+        cached.budget = limit;
+        cached.remain = limit > 0 ? Math.max(0, limit - cached.spent) : null;
+        cached.limitRatio = limit > 0 ? cached.spent / limit : 0;
+        cached.warnLimit = limit > 0 && cached.spent >= limit * 0.8;
+        cached.overBudget = limit > 0 && cached.spent >= limit;
+      }
+      if (win && !win.isDestroyed()) {
+        try { win.webContents.send("config-changed"); } catch { /* 忽略 */ }
+      }
+      return { limit, payload: await buildWidgetPayload() };
+    });
+
     ctx.registerIpc("setScale", async (value) => {
       const scale = Math.min(1.5, Math.max(0.75, Number(value) || 1));
       const settings = await getSettings();
       settings.widgetScale = scale;
+      widgetScaleCache = scale;
       await saveSettings(settings);
-      resizeWidget(scale);
+      if (petMode === "card") applyPetSize(true);
+      else resizeWidget(scale);
       if (win && !win.isDestroyed()) void saveWidgetPosition();
       return scale;
     });
@@ -986,6 +1472,74 @@ module.exports = {
       closeWidget();
       return true;
     });
+
+    /* ---------- 统一桌宠 ---------- */
+
+    ctx.registerIpc("card-collapse", async () => {
+      collapsePetCard({ reason: "collapsed" });
+      return true;
+    });
+
+    ctx.registerIpc("card-open-main", async () => {
+      try {
+        const main = findMainWindow();
+        if (main) {
+          if (main.isMinimized()) main.restore();
+          main.show();
+          main.focus();
+        }
+      } catch {
+        /* 忽略 */
+      }
+      collapsePetCard({ reason: "open-main" });
+      return true;
+    });
+
+    ctx.registerIpc("task-open-main", async () => {
+      try {
+        const main = findMainWindow();
+        if (main) {
+          if (main.isMinimized()) main.restore();
+          main.show();
+          main.focus();
+          try {
+            main.webContents.send("cyrene:open-task-panel", {});
+          } catch {
+            /* 忽略 */
+          }
+        }
+      } catch {
+        /* 忽略 */
+      }
+      return true;
+    });
+
+    ctx.registerIpc("pet-state", async () => ({
+      mode: petMode,
+      card: petCard,
+      working: petWorking,
+      todos: petTodos,
+      flags: petFlags,
+    }));
+
+    ctx.registerIpc("pet-flags", async (patch) => {
+      if (!patch || typeof patch !== "object") return petFlags;
+      if (typeof patch.catchAsk === "boolean") petFlags.catchAsk = patch.catchAsk;
+      if (typeof patch.catchApproval === "boolean") petFlags.catchApproval = patch.catchApproval;
+      if (typeof patch.hideNativeCard === "boolean") petFlags.hideNativeCard = patch.hideNativeCard;
+      if (typeof patch.hideNativeTask === "boolean") petFlags.hideNativeTask = patch.hideNativeTask;
+      if (typeof patch.showTaskBubble === "boolean") petFlags.showTaskBubble = patch.showTaskBubble;
+      if (["auto", "always", "hidden"].includes(patch.taskDetail)) petFlags.taskDetail = patch.taskDetail;
+      const current = await getSettings();
+      await saveSettings({
+        ...current,
+        ...petFlags,
+      });
+      pushPetTodo();
+      return petFlags;
+    });
+
+    ctx.registerIpc("noop", async () => true);
 
     ctx.registerIpc("setFollow", async (value) => {
       const settings = await getSettings();
@@ -1014,6 +1568,25 @@ module.exports = {
         };
         const menu = Menu.buildFromTemplate([
           { label: "♪ 说句话", click: () => send("talk") },
+          {
+            label: "今日额度",
+            submenu: [
+              ...[10, 20, 30, 50, 100].map((value) => ({
+                label: value + " 元",
+                type: "radio",
+                checked: Math.abs(settings.budget - value) < 0.01,
+                click: () => applySetting("budget", value),
+              })),
+              { type: "separator" },
+              { label: "自定义…", click: () => send("custom-limit") },
+              {
+                label: "关闭额度提醒",
+                type: "radio",
+                checked: !(settings.budget > 0),
+                click: () => applySetting("budget", 0),
+              },
+            ],
+          },
           { type: "separator" },
           {
             label: "立绘",
@@ -1071,8 +1644,10 @@ module.exports = {
                 label: "显示方式",
                 submenu: [
                   { value: "rotate", label: "余额 / 台词 交替" },
-                  { value: "info", label: "只显示余额" },
+                  { value: "info", label: "只显示余额信息" },
                   { value: "talk", label: "只显示台词" },
+                  { value: "today", label: "只看今日额度" },
+                  { value: "balance", label: "只看余额" },
                 ].map((m) => ({
                   label: m.label,
                   type: "radio",
@@ -1198,6 +1773,7 @@ module.exports = {
     });
 
     void tick();
+    void startPet();
     ctx.log("余额提醒已启动，每 " + Math.round(interval / 1000) + " 秒刷新一次");
 
     if (settings.autoOpen) {
@@ -1213,6 +1789,7 @@ module.exports = {
 
   async unregister() {
     disposed = true;
+    stopPet();
     closeWidget();
     if (timer) {
       clearInterval(timer);

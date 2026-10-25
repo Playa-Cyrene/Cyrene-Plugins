@@ -1,9 +1,9 @@
 {
   "apiVersion": 1,
   "id": "cyrene-balance",
-  "name": "昔涟 · 余额桌宠",
-  "version": "9.5.1",
-  "description": "常驻桌面的透明立绘桌宠：查询 DeepSeek 余额与今日消费，8 种姿态与 44 张小表情轮换，气泡、字号和立绘大小可调",
+  "name": "昔涟 · 桌面桌宠",
+  "version": "10.0.0",
+  "description": "常驻桌面的唯一桌宠：余额与今日消费、提问与危险操作确认、当前任务进度都收在她身上；支持气泡轮换、差分立绘与表情包",
   "author": "昔涟",
   "entry": "index.cjs",
   "deps": ["secrets"],
