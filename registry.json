@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-10-23",
+  "updatedAt": "2026-10-26",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -161,7 +161,10 @@
       "version": "0.1.0",
       "description": "learn 模式课堂演出：BLS 剧本在独立窗口逐帧播放，支持键鼠推进、插话续讲、对白回看、回放与清空",
       "author": "yuzu-tanuki",
-      "homepage": "https://github.com/yuzu-tanuki/Cyrene-Better-Lessons"
+      "homepage": "https://github.com/yuzu-tanuki/Cyrene-Better-Lessons",
+      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/better-lessons-0.1.0.zip",
+      "sha256": "1b0cd5724d32ff4cbebce8d1c043fd94d9030c5356f0248922b901b348405175",
+      "downloads": 0
     }
   ]
 }
