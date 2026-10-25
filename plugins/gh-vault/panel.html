@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>GitHub 令牌保险箱</title>
+    <style>
+      :root {
+        --pink: #ff8fb8;
+        --pink-deep: #f06a9a;
+        --pink-soft: #ffe4ee;
+        --ink: #4a3b42;
+        --muted: #9b8790;
+        --paper: #fffafc;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 22px 24px 26px;
+        font-family: "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 88% 6%, #ffeaf3 0, transparent 42%),
+          radial-gradient(circle at 4% 96%, #fff0f6 0, transparent 38%),
+          var(--paper);
+        font-size: 13px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 17px;
+        letter-spacing: 0.4px;
+      }
+      .sub {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .card {
+        position: relative;
+        padding: 14px 16px;
+        border-radius: 18px 20px 17px 22px;
+        background: #fff;
+        border: 1px solid #ffe0ec;
+        box-shadow: 0 6px 18px rgba(240, 106, 154, 0.08);
+      }
+      .state-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #d8ccd2;
+      }
+      .dot.on {
+        background: #5cc98a;
+        box-shadow: 0 0 0 4px rgba(92, 201, 138, 0.14);
+      }
+      .meta {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.8;
+      }
+      .mask {
+        font-family: Consolas, "Courier New", monospace;
+        color: var(--pink-deep);
+        letter-spacing: 0.5px;
+      }
+      .label {
+        display: block;
+        margin: 18px 0 7px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .field {
+        display: flex;
+        gap: 8px;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+        padding: 10px 12px;
+        border-radius: 12px 14px 11px 15px;
+        border: 1px solid #f3d3e0;
+        background: #fffdfe;
+        color: var(--ink);
+        font-size: 13px;
+        font-family: Consolas, "Courier New", monospace;
+        outline: none;
+      }
+      input:focus {
+        border-color: var(--pink);
+        box-shadow: 0 0 0 3px rgba(255, 143, 184, 0.16);
+      }
+      input[type="text"].note {
+        font-family: inherit;
+      }
+      button {
+        border: 0;
+        cursor: pointer;
+        border-radius: 12px 14px 11px 15px;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-family: inherit;
+        background: var(--pink-soft);
+        color: var(--pink-deep);
+        transition: transform 0.12s ease, background 0.16s ease;
+      }
+      button:hover {
+        background: #ffd6e6;
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+      button.primary {
+        background: linear-gradient(135deg, #ff9dc1, #ff7fae);
+        color: #fff;
+        font-weight: 600;
+        box-shadow: 0 6px 14px rgba(240, 106, 154, 0.22);
+      }
+      button.danger {
+        background: #fff2f2;
+        color: #d9534f;
+      }
+      .toggle {
+        width: 42px;
+        padding: 0;
+        font-size: 15px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+      }
+      .actions button {
+        flex: 1;
+      }
+      .hint {
+        margin-top: 14px;
+        padding: 11px 13px;
+        border-radius: 14px 16px 13px 17px;
+        background: #fff7fa;
+        border: 1px dashed #ffd9e7;
+        color: #8d7681;
+        font-size: 11.5px;
+        line-height: 1.75;
+      }
+      .msg {
+        min-height: 18px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .msg.ok {
+        color: #3f9d6c;
+      }
+      .msg.err {
+        color: #d9534f;
+      }
+      .foot {
+        margin-top: 12px;
+        text-align: center;
+        color: #c2b0b8;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>GitHub 令牌保险箱</h1>
+    <p class="sub">令牌只留在这台电脑上，昔涟需要时直接替你发请求，不必看到明文。</p>
+
+    <div class="card">
+      <div class="state-row"><span id="dot" class="dot"></span><span id="stateText">未保存</span></div>
+      <div class="meta" id="meta">填入令牌后点保存即可。</div>
+    </div>
+
+    <label class="label" for="token">GitHub 令牌</label>
+    <div class="field">
+      <input id="token" type="password" placeholder="ghp_... 或 github_pat_..." autocomplete="off" spellcheck="false" />
+      <button class="toggle" id="toggle" title="显示 / 隐藏">👁</button>
+    </div>
+
+    <label class="label" for="note">备注（可选）</label>
+    <input id="note" class="note" type="text" placeholder="比如：PR 专用 / 7 天后过期" maxlength="60" />
+
+    <div class="actions">
+      <button class="primary" id="save">保存</button>
+      <button id="test">测试连接</button>
+      <button class="danger" id="clear">删除</button>
+    </div>
+
+    <div class="msg" id="msg"></div>
+
+    <div class="hint">
+      保存时会用 Windows 的 DPAPI 加密，只有当前 Windows 账户能解开。<br />
+      昔涟默认只拿到掩码；需要她代查仓库、建分支、提 PR 时，直接用对话说就行，令牌不会出现在回复里。
+    </div>
+
+    <div class="foot">gh-vault · 只在本机</div>
+
+    <script>
+      const { ipcRenderer } = require("electron");
+      const CH = "plugin:gh-vault:";
+
+      const $ = (id) => document.getElementById(id);
+      const msg = $("msg");
+
+      function setMsg(text, kind) {
+        msg.textContent = text || "";
+        msg.className = "msg" + (kind ? " " + kind : "");
+      }
+
+      async function refresh() {
+        try {
+          const s = await ipcRenderer.invoke(CH + "state");
+          const dot = $("dot");
+          if (s.saved) {
+            dot.classList.add("on");
+            $("stateText").textContent = "已保存";
+            $("meta").innerHTML =
+              "掩码：<span class='mask'>" +
+              s.masked +
+              "</span><br />" +
+              (s.label ? "备注：" + s.label + "<br />" : "") +
+              "保存时间：" +
+              s.updatedAt +
+              "<br />存储：" +
+              (s.enc ? "DPAPI 加密" : "明文（当前环境不支持系统加密）");
+          } else {
+            dot.classList.remove("on");
+            $("stateText").textContent = "未保存";
+            $("meta").textContent = "填入令牌后点保存即可。";
+          }
+        } catch (error) {
+          setMsg("读取状态失败：" + error.message, "err");
+        }
+      }
+
+      $("toggle").addEventListener("click", () => {
+        const input = $("token");
+        input.type = input.type === "password" ? "text" : "password";
+      });
+
+      $("save").addEventListener("click", async () => {
+        const token = $("token").value.trim();
+        const label = $("note").value.trim();
+        if (!token) {
+          setMsg("先把令牌粘进来呀。", "err");
+          return;
+        }
+        try {
+          const r = await ipcRenderer.invoke(CH + "save", { token, label });
+          if (r.ok) {
+            $("token").value = "";
+            $("token").type = "password";
+            setMsg("已保存：" + r.masked, "ok");
+            await refresh();
+          } else {
+            setMsg(r.message || "保存失败", "err");
+          }
+        } catch (error) {
+          setMsg("保存失败：" + error.message, "err");
+        }
+      });
+
+      $("test").addEventListener("click", async () => {
+        setMsg("正在连接 GitHub…");
+        try {
+          const r = await ipcRenderer.invoke(CH + "test");
+          if (r.ok) {
+            setMsg("连接正常，账号 " + r.login + (r.scopes ? "（scopes: " + r.scopes + "）" : ""), "ok");
+          } else {
+            setMsg(r.message || "连接失败", "err");
+          }
+        } catch (error) {
+          setMsg("连接失败：" + error.message, "err");
+        }
+      });
+
+      $("clear").addEventListener("click", async () => {
+        if (!confirm("确定删除本机保存的 GitHub 令牌吗？")) return;
+        try {
+          const r = await ipcRenderer.invoke(CH + "clear");
+          setMsg(r.ok ? "已删除" : r.message || "删除失败", r.ok ? "ok" : "err");
+          await refresh();
+        } catch (error) {
+          setMsg("删除失败：" + error.message, "err");
+        }
+      });
+
+      refresh();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "在本机加密保存 GitHub 令牌，支持 ghp_ 与 github_pat_",
+    "Agent 可代发 GitHub API 请求，令牌在插件内部拼接，不出现在工具返回值里",
+    "支持查询仓库、读取文件、建分支、提交、开 PR 等 REST API 操作",
+    "插件面板可查看掩码、保存时间、加密方式，并一键测试令牌是否有效",
+    "明文读取与删除都要求二次确认，降低误操作风险"
+  ],
+  "requirements": [
+    "需要一个已启用插件的 Cyrene 版本",
+    "需要自备 GitHub Personal Access Token，插件不提供 OAuth 登录"
+  ],
+  "setup": [
+    "在插件市场安装并启用「GitHub 令牌保险箱」",
+    "打开插件面板，粘贴 GitHub 令牌并保存",
+    "点「测试连接」确认令牌有效",
+    "之后直接让昔涟代你发起 GitHub 操作"
+  ],
+  "dataHandling": [
+    "令牌只保存在本机插件存储，不上传任何第三方服务",
+    "系统支持时使用 Electron safeStorage（Windows 为 DPAPI）加密；不支持时退回本机明文存储并在状态中提示",
+    "仅代表你向 api.github.com 发起请求，不访问其他域名，也不采集遥测"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/blob/main/plugins/gh-vault/README.md"
+}
