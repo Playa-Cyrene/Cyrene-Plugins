@@ -4,7 +4,14 @@
 <meta charset="UTF-8" />
 <title>昔涟 · 桌宠</title>
 <style>
-  :root { --scale: 1; --fs: 1; }
+  :root {
+    --scale: 1;
+    --fs: 1;
+    --task-fs: 12px;
+    --task-list-h: 150px;
+    --hud-h: 0px;
+    --sprite-bottom: 8px;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%;
@@ -17,7 +24,7 @@
   }
   #shell {
     width: 203px;
-    height: 250px;
+    height: 100%;
     transform: scale(var(--scale));
     transform-origin: top left;
     position: relative;
@@ -194,8 +201,9 @@
   /* ---------- 角色：静态立绘 + 呼吸律动 ---------- */
   #sprite {
     position: absolute;
-    left: 50%;
-    bottom: 8px;
+    /* 气泡变宽时窗口向左扩，立绘锚在距右 101.5px（默认 203 宽时的中心），视觉位置不动 */
+    left: calc(100% - 101.5px);
+    bottom: var(--sprite-bottom);
     width: 180px;
     height: 180px;
     transform: translateX(-50%) scale(var(--sprite-scale, 1));
@@ -233,28 +241,33 @@
     50% { transform: translateY(-2px) scale(1.015); }
   }
 
-  /* ---------- 当前任务气泡 ---------- */
+  /* ---------- 当前任务气泡（字号可调 / 列表可上滚 / 不压缩立绘） ---------- */
   .bubble.task {
     padding: 9px 11px 8px;
     z-index: 6;
     cursor: pointer;
     user-select: none;
+    max-height: calc(100% - 10px);
+    display: flex;
+    flex-direction: column;
   }
   .task-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
-    font-size: 11px;
+    font-size: calc(var(--task-fs) + 1px);
+    flex: 0 0 auto;
   }
   .task-title { font-weight: 700; color: #8a4b63; letter-spacing: 0.04em; }
-  .task-count { font-size: 10px; color: #b07088; font-variant-numeric: tabular-nums; }
+  .task-count { font-size: var(--task-fs); color: #b07088; font-variant-numeric: tabular-nums; }
   .task-bar {
     margin-top: 6px;
     height: 4px;
     border-radius: 2px;
     background: rgba(255, 160, 190, 0.28);
     overflow: hidden;
+    flex: 0 0 auto;
   }
   .task-bar i {
     display: block;
@@ -266,10 +279,11 @@
   }
   .task-now {
     margin-top: 6px;
-    font-size: 11px;
-    line-height: 1.45;
+    font-size: var(--task-fs);
+    line-height: 1.5;
     color: #7a4a5e;
     word-break: break-word;
+    flex: 0 0 auto;
   }
   .task-now.done { color: #4f8f74; }
   .task-list {
@@ -278,15 +292,27 @@
     transition: max-height 0.28s ease;
   }
   .bubble.task.expanded .task-list {
-    max-height: 132px;
+    max-height: var(--task-list-h);
     overflow-y: auto;
-    margin-top: 5px;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 143, 183, 0.6) transparent;
+    margin-top: 6px;
+    padding-right: 2px;
+    flex: 1 1 auto;
+    min-height: 0;
   }
+  .task-list::-webkit-scrollbar { width: 5px; }
+  .task-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 143, 183, 0.62);
+    border-radius: 99px;
+  }
+  .task-list::-webkit-scrollbar-track { background: transparent; }
   .task-item {
     display: flex;
     gap: 5px;
-    font-size: 10px;
-    line-height: 1.5;
+    font-size: var(--task-fs);
+    line-height: 1.55;
     color: #8b5b6e;
     padding: 2px 0;
   }
@@ -294,7 +320,7 @@
     flex: 0 0 auto;
     width: 5px;
     height: 5px;
-    margin-top: 6px;
+    margin-top: calc(var(--task-fs) * 0.52);
     border-radius: 50%;
     background: #e7b4c6;
   }
@@ -308,9 +334,142 @@
   .task-item.cancelled { opacity: 0.5; }
   .task-foot {
     margin-top: 4px;
-    font-size: 9px;
+    font-size: calc(var(--task-fs) - 2px);
     color: #b58aa0;
     text-align: right;
+    flex: 0 0 auto;
+  }
+
+  /* ---------- 状态面板：头像 + CPU / GPU / 内存 圆环 + 网速 ---------- */
+  #hud {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    bottom: 5px;
+    display: none;
+    z-index: 4;
+    padding: 7px 9px 8px;
+    border-radius: 16px 13px 17px 12px;
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(255, 255, 255, 0.97), rgba(255, 245, 250, 0.9) 55%, rgba(255, 226, 240, 0.93) 100%);
+    box-shadow: 0 4px 16px rgba(214, 110, 155, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.95);
+    color: #8a5468;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  #hud.show { display: block; }
+
+  .hud-head { display: flex; align-items: center; gap: 6px; }
+  .hud-avatar {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: linear-gradient(160deg, #ffd9ea, #ffb9d6);
+    box-shadow: 0 0 0 1.5px #fff, 0 2px 6px rgba(214, 110, 155, 0.35);
+  }
+  .hud-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+  .hud-name { display: none; flex: 0 0 auto; width: 30px; color: #a06780; }
+  .hud-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.18; }
+  .hud-mood { font-size: calc(10px * var(--fs)); font-weight: 700; color: #b23a69; white-space: nowrap; }
+  .hud-model {
+    font-size: calc(8px * var(--fs));
+    color: #ab7c90;
+    font-style: normal;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hud-peek-val {
+    flex: 0 0 auto;
+    font-size: calc(8.5px * var(--fs));
+    color: #b07088;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hud-detail { margin-top: 6px; }
+  #hud:not(.expanded) .hud-detail { display: none; }
+  #hud.expanded .hud-peek-val { display: none; }
+
+  .hud-rings { display: flex; justify-content: space-between; gap: 4px; }
+  .ring {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    position: relative;
+  }
+  .ring svg { width: 40px; height: 40px; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 4; stroke-linecap: round; }
+  .ring .track { stroke: rgba(255, 160, 190, 0.32); }
+  .ring .fill { stroke: #ff7faf; transition: stroke-dashoffset 0.5s ease; }
+  .ring .fill.gpu { stroke: #b58bff; }
+  .ring .fill.mem { stroke: #ffa26f; }
+  .ring-pct {
+    position: absolute;
+    top: 12px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: calc(9px * var(--fs));
+    font-weight: 700;
+    color: #8a5468;
+    font-variant-numeric: tabular-nums;
+  }
+  .ring-tag { font-size: calc(7.5px * var(--fs)); color: #ab7c90; letter-spacing: 0.02em; }
+
+  .hud-net {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed rgba(226, 138, 178, 0.36);
+    font-size: calc(8.5px * var(--fs));
+    color: #a06780;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-net .net-item { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+  .hud-net .dl { color: #ff6f9f; font-style: normal; }
+  .hud-net .ul { color: #b58bff; font-style: normal; }
+  .hud-net .bat { color: #7fa9c9; }
+
+  /* 简版：回到原来那一行——状态 / CPU·内存 / 心情 */
+  #hud.simple { padding: 6px 9px 7px; }
+  #hud.simple .hud-detail,
+  #hud.simple .hud-avatar,
+  #hud.simple .hud-model { display: none; }
+  #hud.simple .hud-head { gap: 5px; font-size: calc(9px * var(--fs)); }
+  #hud.simple .hud-name { display: inline; }
+  #hud.simple .hud-peek-val {
+    display: inline;
+    flex: 1 1 auto;
+    min-width: 34px;
+    text-align: right;
+    font-size: calc(9px * var(--fs));
+    color: #b07088;
+  }
+  #hud.simple .hud-id { flex: 0 0 auto; flex-direction: row; align-items: center; }
+  #hud.simple .hud-mood { font-size: calc(9px * var(--fs)); font-weight: 600; }
+
+  /* 简版2：头像 + 心情/模型 + CPU·内存，圆环那一段收起 */
+  #hud.simple2 { padding: 7px 9px 8px; }
+  #hud.simple2 .hud-detail,
+  #hud.simple2 .hud-name { display: none; }
+  #hud.simple2 .hud-head { gap: 6px; }
+  #hud.simple2 .hud-id { order: 2; }
+  /* 收起来时只看头像和心情，点开才露出 CPU · 内存 */
+  #hud.simple2 .hud-peek-val {
+    display: none;
+    order: 3;
+  }
+  #hud.simple2.expanded .hud-peek-val {
+    display: inline;
   }
 
   /* ---------- 卡片层：提问 / 审批 ---------- */
@@ -323,6 +482,37 @@
     background: transparent;
     display: none;
     z-index: 60;
+  }
+  /* 只占底部一条，绝不整窗铺满——铺满会把卡片的点击和滚轮一起吃掉 */
+  #cardFallback {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 70;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    text-align: center;
+    color: #6b4a5a;
+    background: rgba(255, 247, 250, 0.97);
+    border-radius: 14px;
+    box-shadow: 0 8px 22px rgba(206, 96, 146, 0.26);
+    font-size: 12px;
+  }
+  #cardFallback.show { display: flex; }
+  #cardFallback p { margin: 0; }
+  #cardFallbackBtn {
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 18px;
+    background: #ffb3cd;
+    color: #5a2a3d;
+    font-size: 13px;
+    cursor: pointer;
   }
   body.card-mode #shell { display: none; }
 </style>
@@ -356,7 +546,43 @@
       <div class="task-bar"><i id="taskBar"></i></div>
       <div class="task-now" id="taskNow">还没有开始呢</div>
       <div class="task-list" id="taskList"></div>
-      <div class="task-foot">点一下展开 · 双击打开任务窗</div>
+      <div class="task-foot">点一下展开 · 长按立绘也能展开</div>
+    </div>
+
+    <div id="hud" title="点一下展开状态">
+      <div class="hud-head">
+        <span class="hud-avatar"><img src="assets/calm.png" alt="" draggable="false" /></span>
+        <span class="hud-name" id="hudName">状态</span>
+        <span class="hud-peek-val" id="hudPeek">--</span>
+        <span class="hud-id">
+          <b class="hud-mood" id="hudMood">平静</b>
+          <em class="hud-model" id="hudModel">--</em>
+        </span>
+      </div>
+      <div class="hud-detail">
+        <div class="hud-rings">
+          <div class="ring">
+            <svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16" /><circle class="fill cpu" id="hudCpuRing" cx="20" cy="20" r="16" /></svg>
+            <span class="ring-pct" id="hudCpu">--</span>
+            <span class="ring-tag">CPU</span>
+          </div>
+          <div class="ring">
+            <svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16" /><circle class="fill gpu" id="hudGpuRing" cx="20" cy="20" r="16" /></svg>
+            <span class="ring-pct" id="hudGpu">--</span>
+            <span class="ring-tag">GPU</span>
+          </div>
+          <div class="ring">
+            <svg viewBox="0 0 40 40"><circle class="track" cx="20" cy="20" r="16" /><circle class="fill mem" id="hudMemRing" cx="20" cy="20" r="16" /></svg>
+            <span class="ring-pct" id="hudMem">--</span>
+            <span class="ring-tag">内存</span>
+          </div>
+        </div>
+        <div class="hud-net">
+          <span class="net-item"><i class="dl">↓</i><b id="hudDown">--</b></span>
+          <span class="net-item"><i class="ul">↑</i><b id="hudUp">--</b></span>
+          <span class="net-item bat"><i>●</i><b id="hudBat">--</b></span>
+        </div>
+      </div>
     </div>
 
     <div id="sprite">
@@ -371,6 +597,10 @@
   </div>
 
   <iframe id="cardFrame" title="昔涟的提问"></iframe>
+  <div id="cardFallback">
+    <p>卡片没能加载出来…</p>
+    <button type="button" id="cardFallbackBtn">回主界面回答</button>
+  </div>
 
 <script>
   const { ipcRenderer } = require("electron");
@@ -397,20 +627,66 @@
   const taskNow = $("taskNow");
   const taskList = $("taskList");
   const cardFrame = $("cardFrame");
+
+  /* ---------- 状态面板 ---------- */
+  const hud = $("hud");
+  const hudPeek = $("hudPeek");
+  const hudCpu = $("hudCpu");
+  const hudGpu = $("hudGpu");
+  const hudMem = $("hudMem");
+  const hudCpuRing = $("hudCpuRing");
+  const hudGpuRing = $("hudGpuRing");
+  const hudMemRing = $("hudMemRing");
+  const hudDown = $("hudDown");
+  const hudUp = $("hudUp");
+  const hudBat = $("hudBat");
+  const hudMood = $("hudMood");
+  const hudModel = $("hudModel");
+  let lastHud = null;
+  let simple2Expanded = false;
   let taskItems = [];
   let taskWorking = false;
   let taskExpanded = false;
+  let petFlags = {};
 
-  /* ---------- 8 张透明主立绘，按间隔轮换 ---------- */
+  /* ---------- 9 个透明立绘：5 张高清姿势 + 4 张从表情包提升 ---------- */
   const POSES = [
-    "assets/frame-01.png",
-    "assets/frame-02.png",
-    "assets/frame-03.png",
-    "assets/frame-04.png",
-    "assets/frame-05.png",
-    "assets/frame-06.png",
-    "assets/frame-07.png",
-    "assets/frame-08.png",
+    {
+      id: "calm", src: "assets/calm.png", mood: "normal",
+      lines: ["人家在呢，安安静静陪着你就好", "慢慢来，不着急呀", "风很轻，今天适合发一会儿呆", "你忙你的，人家就在旁边"],
+    },
+    {
+      id: "confident", src: "assets/confident.png", mood: "normal",
+      lines: ["余额人家帮你盯着呢，放心", "交给人家就好♪", "这点小事，难不倒咱", "嗯，这个数人家记下了"],
+    },
+    {
+      id: "playful", src: "assets/playful.png", mood: "happy",
+      lines: ["嘻嘻，被你抓到啦♪", "今天心情很好呢", "要不要陪人家玩一会儿？", "再点一下，人家就换个样子给你看♪"],
+    },
+    {
+      id: "love", src: "assets/love-happy.png", mood: "shy",
+      lines: ["悄悄告诉你，人家一直在看你哦", "这颗心，是留给你的呀", "喜欢你呀，超级喜欢♪", "你专心做事的样子，很好看"],
+    },
+    {
+      id: "serious", src: "assets/serious.png", mood: "think",
+      lines: ["这个要好好算一算", "认真的时候，不许打扰哦", "嗯……让咱想一想", "先把眼前这一步做完"],
+    },
+    {
+      id: "shy", src: "assets/emoji/shyshort.png", mood: "shy",
+      lines: ["别、别这样看着人家啦……", "被夸了，会有点不好意思呢", "人家才没有偷偷高兴♪", "再说一遍，人家就当真了哦"],
+    },
+    {
+      id: "think", src: "assets/emoji/thinking.png", mood: "think",
+      lines: ["嗯……这里好像有点绕", "让人家把线索捋一捋", "等一下，人家想到什么了", "答案还差一点点"],
+    },
+    {
+      id: "sleepy", src: "assets/emoji/sleepynow.png", mood: "tired",
+      lines: ["哈欠……人家只是闭一下眼睛", "这么晚了，还不睡吗？", "再陪你一会儿，就一小会儿", "困了就靠过来吧，人家不吵你"],
+    },
+    {
+      id: "cheer", src: "assets/emoji/fighting.png", mood: "happy",
+      lines: ["加油呀！人家给你打气♪", "这一步迈过去，就很了不起啦", "别怕，人家在后面撑着你", "今天也辛苦啦，夸夸你"],
+    },
   ];
   let poseIndex = 0;
   let poseTimer = null;
@@ -419,12 +695,25 @@
     if (!baseImg || POSES.length < 2) return;
     const next = ((index % POSES.length) + POSES.length) % POSES.length;
     poseIndex = next;
-    if (baseImg.getAttribute("src") !== POSES[next]) baseImg.setAttribute("src", POSES[next]);
+    const src = POSES[next].src;
+    if (baseImg.getAttribute("src") !== src) baseImg.setAttribute("src", src);
   }
 
   function nextPose() {
     applyPose(poseIndex + 1);
     schedulePose();
+  }
+
+  /* 单击：换立绘 + 换台词 + 换小表情 */
+  function cycleLook() {
+    applyPose(poseIndex + 1);
+    schedulePose();
+    const pose = POSES[poseIndex];
+    talkLine.textContent = pick(pose.lines);
+    showPanel(talkBubble, panelMs());
+    showSticker(pose.mood);
+    sprite.classList.remove("showing-face");
+    Object.values(FACES).forEach((f) => f.classList.remove("on"));
   }
 
   function schedulePose() {
@@ -440,9 +729,9 @@
     }, sec * 1000);
   }
 
-  POSES.forEach((src) => {
+  POSES.forEach((pose) => {
     const img = new Image();
-    img.src = src;
+    img.src = pose.src;
   });
 
   const FACES = {
@@ -454,17 +743,17 @@
     rua: $("faceRua"),
   };
 
-  /* ---------- 44 张透明表情，按情绪分组 ---------- */
+  /* ---------- 表情池：已把 shyshort / thinking / sleepynow / fighting 提升为立绘，气泡里不再重复使用 ---------- */
   const EMOJI = {
     low: ["poorwallet.png", "Hurtcry.png", "Sobbinghard.png", "PanincCrying.png", "sotired.png"],
     normal: ["OK.png", "Thumbsup.png", "sonice.png", "sogood.png", "Allset.png", "hellyeah.png", "Free.png", "copythat.png"],
     happy: ["Gigglelots.png", "hellyeah.png", "sogood.png", "awesome.png", "sonice.png", "Allset.png"],
-    shy: ["blushhard.png", "shyshort.png", "Airkiss.png", "hugtight.png", "foryou.png"],
-    think: ["thinking.png", "Whatswrong.png", "midmeh.png", "hmph.png", "awkward.png"],
-    tired: ["deadtired.png", "sotired.png", "sleepynow.png", "goodnight.png"],
+    shy: ["blushhard.png", "Airkiss.png", "hugtight.png", "foryou.png"],
+    think: ["Whatswrong.png", "midmeh.png", "hmph.png", "awkward.png"],
+    tired: ["deadtired.png", "sotired.png", "goodnight.png"],
     eat: ["eating.png", "teatime.png", "foryou.png", "putmd.png"],
     sad: ["weeploud.png", "Hurtcry.png", "giveup.png", "awkward.png"],
-    angry: ["Madnow.png", "hmph.png", "fighting.png"],
+    angry: ["Madnow.png", "hmph.png"],
     greet: ["hello.png", "HI.png", "goodmoring1.png", "Thanks.png"],
   };
 
@@ -562,11 +851,17 @@
     stickerPlacement: "inside",
     stickerSize: 42,
     bubbleSize: "normal",
+    bubbleWidth: 0,
+    bubbleHeight: 0,
     bubbleMode: "rotate",
     bubblePlace: "top",
     bubbleFont: 1,
     talkFont: 12,
     rotateSec: 12,
+    taskFont: 12,
+    taskListHeight: 150,
+    hudEnabled: false,
+    hudDetail: "full",
   };
 
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -590,18 +885,40 @@
   }
 
   /* ---------- 字号 / 尺寸 / 位置 ---------- */
+  let lastBubbleWindowWidth = 0;
+
   function applySizes() {
     document.documentElement.style.setProperty("--fs", String(CONFIG.bubbleFont));
     document.documentElement.style.setProperty("--talk-fs", CONFIG.talkFont + "px");
     document.documentElement.style.setProperty("--sticker-size", CONFIG.stickerSize + "px");
-    [infoBubble, talkBubble].forEach((el) => {
+    document.documentElement.style.setProperty("--task-fs", Number(CONFIG.taskFont) + "px");
+    document.documentElement.style.setProperty("--task-list-h", Number(CONFIG.taskListHeight) + "px");
+
+    const bubbleW = Math.max(0, Math.min(1400, Number(CONFIG.bubbleWidth) || 0));
+    const bubbleH = Math.max(0, Math.min(1400, Number(CONFIG.bubbleHeight) || 0));
+
+    [infoBubble, talkBubble, taskBubble].forEach((el) => {
       el.classList.remove(
         "size-compact", "size-normal", "size-roomy", "size-xlarge",
         "place-top", "place-middle", "place-bottom",
       );
       el.classList.add("size-" + CONFIG.bubbleSize);
       el.classList.add("place-" + CONFIG.bubblePlace);
+      // 宽度：填了具体像素就固定，0 表示跟着内容走
+      el.style.width = bubbleW > 0 ? bubbleW + "px" : "";
+      el.style.right = bubbleW > 0 ? "auto" : "";
+      // 高度：只给最小高度，内容更长时继续往下长
+      el.style.minHeight = bubbleH > 0 ? bubbleH + "px" : "";
     });
+
+    // 气泡要更宽时，窗口一起向左长，不然会被裁掉
+    const cssWidth = Math.max(203, bubbleW > 0 ? bubbleW + 6 : 203);
+    if (Math.abs(cssWidth - lastBubbleWindowWidth) >= 2) {
+      lastBubbleWindowWidth = cssWidth;
+      ipcRenderer.invoke(CH + "set-widget-width", cssWidth).catch(() => {});
+    }
+
+    applyHud();
     fitSprite();
   }
 
@@ -648,13 +965,111 @@
     }, ms || 2400);
   }
 
-  /* 气泡占多高，立绘就往里让多少，避免压住角色 */
+  /* 气泡占多高，窗口就向上长多高，立绘保持原尺寸不被压扁 */
+  let heightTimer = null;
+  let lastHeight = 0;
+
+  function hudHeight() {
+    if (!CONFIG.hudEnabled || !hud) return 0;
+    return Math.max(24, hud.offsetHeight || 24) + 8;
+  }
+
   function fitSprite() {
-    const shown = [taskBubble, infoBubble, talkBubble].find((b) => b.classList.contains("show"));
-    const h = shown ? shown.offsetHeight : 0;
-    const room = 250 - 8 - (4 + h + 6);
-    const s = Math.max(0.56, Math.min(1, room / 180));
-    document.documentElement.style.setProperty("--sprite-scale", s.toFixed(3));
+    const bottom = CONFIG.hudEnabled ? hudHeight() : 8;
+    document.documentElement.style.setProperty("--sprite-bottom", bottom + "px");
+    document.documentElement.style.setProperty("--hud-h", CONFIG.hudEnabled ? hudHeight() + "px" : "0px");
+    if (heightTimer) clearTimeout(heightTimer);
+    heightTimer = setTimeout(() => {
+      heightTimer = null;
+      const shown = [taskBubble, infoBubble, talkBubble].find((b) => b.classList.contains("show"));
+      const bubbleH = shown ? shown.offsetHeight + 8 : 0;
+      const h = Math.max(250, Math.min(760, Math.round(4 + bubbleH + 6 + 180 + bottom + 6)));
+      if (Math.abs(h - lastHeight) < 6) return;
+      lastHeight = h;
+      ipcRenderer.invoke(CH + "set-widget-height", h).catch(() => {});
+    }, 80);
+  }
+
+  function applyHud() {
+    if (!hud) return;
+    hud.classList.toggle("show", Boolean(CONFIG.hudEnabled));
+    hud.classList.toggle("simple", CONFIG.hudDetail === "simple");
+    hud.classList.toggle("simple2", CONFIG.hudDetail === "simple2");
+    // 简版2 默认收着，只留头像和心情；其它档位默认摊开
+    if (CONFIG.hudDetail === "simple2") hud.classList.toggle("expanded", simple2Expanded);
+    else hud.classList.add("expanded");
+    if (CONFIG.hudEnabled && lastHud) renderHud(lastHud);
+    fitSprite();
+  }
+
+  const RING_LEN = 100.53; // r=16 的周长
+
+  function setRing(el, percent) {
+    if (!el) return;
+    const value = Math.max(0, Math.min(100, Number(percent) || 0));
+    el.style.strokeDasharray = RING_LEN + " " + RING_LEN;
+    el.style.strokeDashoffset = String(RING_LEN * (1 - value / 100));
+  }
+
+  function formatSpeed(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value < 0) return "--";
+    if (value < 1024) return Math.round(value) + " B/s";
+    if (value < 1048576) return Math.round(value / 1024) + " K/s";
+    return (value / 1048576).toFixed(1) + " M/s";
+  }
+
+  function renderHud(data) {
+    if (!data || !hud) return;
+    lastHud = data;
+    const cpu = Math.max(0, Math.min(100, Number(data.cpu) || 0));
+    const mem = Math.max(0, Math.min(100, Number(data.memPercent) || 0));
+    const hasGpu = data.gpu !== null && data.gpu !== undefined && Number.isFinite(Number(data.gpu));
+    const gpu = hasGpu ? Math.max(0, Math.min(100, Number(data.gpu))) : 0;
+
+    hudCpu.textContent = Math.round(cpu) + "%";
+    hudGpu.textContent = hasGpu ? Math.round(gpu) + "%" : "--";
+    hudMem.textContent = Math.round(mem) + "%";
+    setRing(hudCpuRing, cpu);
+    setRing(hudGpuRing, gpu);
+    setRing(hudMemRing, mem);
+    hudMem.title = data.memText || "";
+
+    hudPeek.textContent = "CPU " + Math.round(cpu) + "% · 内存 " + Math.round(mem) + "%";
+    hudMood.textContent = data.mood && data.mood.label ? data.mood.label : "平静";
+    hudModel.textContent = data.model || "--";
+    hudModel.title = data.modelDetail || data.model || "";
+
+    hudDown.textContent = formatSpeed(data.netDown);
+    hudUp.textContent = formatSpeed(data.netUp);
+    hudBat.textContent =
+      data.battery === null || data.battery === undefined
+        ? "--"
+        : (data.charging ? "充电 " : "") + Math.round(Number(data.battery)) + "%";
+  }
+
+  function refreshHud() {
+    ipcRenderer
+      .invoke(CH + "hud")
+      .then((data) => {
+        if (data) renderHud(data);
+      })
+      .catch(() => {});
+  }
+
+  if (hud) {
+    // 详细和简版默认摊开；简版2 收着，点一下才把 CPU · 内存 叫出来
+    hud.classList.add("expanded");
+    hud.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (CONFIG.hudDetail === "simple2") {
+        simple2Expanded = !simple2Expanded;
+        hud.classList.toggle("expanded", simple2Expanded);
+      } else {
+        hud.classList.toggle("expanded");
+      }
+      fitSprite();
+    });
   }
 
   /* ---------- 三气泡互斥 ---------- */
@@ -707,6 +1122,18 @@
   }
 
   /* ---------- 当前任务气泡 ---------- */
+  function scrollTaskToActive() {
+    requestAnimationFrame(() => {
+      if (!taskList) return;
+      const active = taskList.querySelector(".task-item.in_progress") || taskList.querySelector(".task-item");
+      if (active && typeof active.scrollIntoView === "function") {
+        active.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } else {
+        taskList.scrollTop = taskList.scrollHeight;
+      }
+    });
+  }
+
   function renderTask(state) {
     const items = state && Array.isArray(state.items) ? state.items : [];
     const previousDone = taskItems.filter((item) => item.status === "completed").length;
@@ -714,6 +1141,12 @@
 
     taskItems = items;
     taskWorking = Boolean(state && state.working);
+    petFlags = state && state.flags && typeof state.flags === "object" ? state.flags : petFlags;
+    if (petFlags.showTaskBubble === false) {
+      taskBubble.classList.remove("show");
+      fitSprite();
+      return;
+    }
 
     const total = items.length;
     const done = items.filter((item) => item.status === "completed").length;
@@ -752,7 +1185,10 @@
     }
 
     showPanel(taskBubble, Math.max(9000, panelMs()));
-    fitSprite();
+    requestAnimationFrame(() => {
+      if (taskExpanded) scrollTaskToActive();
+      fitSprite();
+    });
 
     // 全部完成时给个小庆祝，只在“刚好做完”那一次触发
     if (total > 0 && done + ended >= total && (previousDone + previousTotal > 0) && previousDone < total) {
@@ -762,15 +1198,134 @@
     }
   }
 
-  function setCardMode(on) {
-    document.body.classList.toggle("card-mode", on);
-    if (on) {
-      if (!cardFrame.getAttribute("src")) cardFrame.setAttribute("src", "card.html");
-      cardFrame.style.display = "block";
-    } else {
-      cardFrame.style.display = "none";
+  /* 卡片（提问 / 选择 / 审批）走 iframe。主进程只把 payload 发到本页，
+     iframe 是独立文档，必须由这里再转发一次，否则里面只会显示空白题干。 */
+  let pendingCardPayload = null;
+  const cardFallback = $("cardFallback");
+  const cardFallbackBtn = $("cardFallbackBtn");
+  let cardReadyTimer = null;
+  // 同一张卡可能收到多次 show；已经渲染过就别再起兜底定时器
+  let cardReadyThisCard = false;
+  let lastCardKeySeen = "";
+
+  function cardLog(text) {
+    ipcRenderer.invoke("plugin:cyrene-balance:card-log", String(text)).catch(() => {});
+  }
+
+  function hideCardFallback() {
+    if (cardFallback) cardFallback.classList.remove("show");
+  }
+
+  // 三秒还没等到 iframe 回话，就把"回主界面回答"露出来，至少有条活路
+  function armCardFallback() {
+    hideCardFallback();
+    if (cardReadyTimer) {
+      clearTimeout(cardReadyTimer);
+      cardReadyTimer = null;
+    }
+    // 这张卡已经渲染过就别再起定时器，否则遮罩会在几秒后自己冒出来挡住点击
+    if (cardReadyThisCard) return;
+    cardReadyTimer = setTimeout(() => {
+      cardReadyTimer = null;
+      if (cardFallback) cardFallback.classList.add("show");
+      cardLog("卡片三秒未就绪，已显示兜底入口");
+    }, 3000);
+  }
+
+  if (cardFallbackBtn) {
+    cardFallbackBtn.addEventListener("click", () => {
+      ipcRenderer.invoke("plugin:cyrene-balance:card-open-main").catch(() => {});
+    });
+  }
+
+  function forwardCardPayload() {
+    if (!pendingCardPayload) return;
+    try {
+      const target = cardFrame.contentWindow;
+      if (!target) return;
+      target.postMessage({ type: "balance-card", payload: pendingCardPayload }, "*");
+      cardLog("卡片已转发进 iframe");
+    } catch (e) {
+      cardLog("转发失败 " + ((e && e.message) || e));
     }
   }
+
+  function setCardMode(on, payload) {
+    if (payload) pendingCardPayload = payload;
+    document.body.classList.toggle("card-mode", on);
+    if (on) {
+      const key = payload && payload.card ? String(payload.card.interactionId || payload.card.id || "") : "";
+      if (key && key !== lastCardKeySeen) {
+        lastCardKeySeen = key;
+        cardReadyThisCard = false;
+      }
+      if (!cardFrame.getAttribute("src")) cardFrame.setAttribute("src", "card.html");
+      cardFrame.style.display = "block";
+      armCardFallback();
+      forwardCardPayload();
+    } else {
+      pendingCardPayload = null;
+      cardFrame.style.display = "none";
+      if (cardReadyTimer) {
+        clearTimeout(cardReadyTimer);
+        cardReadyTimer = null;
+      }
+      hideCardFallback();
+      fitSprite();
+    }
+  }
+
+  cardFrame.addEventListener("load", forwardCardPayload);
+
+  // iframe 拿不到 Node 时由本页代它调主进程；只放行插件自己的通道和白名单
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (!data) return;
+
+    if (data.type === "card-ready") {
+      cardReadyThisCard = true;
+      if (cardReadyTimer) {
+        clearTimeout(cardReadyTimer);
+        cardReadyTimer = null;
+      }
+      hideCardFallback();
+      cardLog("卡片已渲染（iframe 回话）");
+      return;
+    }
+
+    if (data.type === "cyrene-card-error") {
+      cardLog("卡片脚本错误 " + (data.message || "") + " @" + (data.line || "?"));
+      if (cardReadyTimer) {
+        clearTimeout(cardReadyTimer);
+        cardReadyTimer = null;
+      }
+      if (cardFallback) cardFallback.classList.add("show");
+      return;
+    }
+
+    if (data.type !== "cyrene-ipc-invoke" || !data.id) return;
+    const channel = String(data.channel || "");
+    const allowed =
+      channel.indexOf("plugin:cyrene-balance:") === 0 ||
+      channel === "choice:resolve" ||
+      channel === "permission:approval-resolve";
+    const reply = (ok, result, error) => {
+      try {
+        const target = event.source || cardFrame.contentWindow;
+        if (target) target.postMessage({ type: "cyrene-ipc-result", id: data.id, ok, result, error }, "*");
+      } catch {
+        /* 忽略 */
+      }
+    };
+    if (!allowed) {
+      reply(false, null, "E_CHANNEL_DENIED");
+      return;
+    }
+    ipcRenderer.invoke(channel, data.payload).then(
+      (result) => reply(true, result),
+      (error) => reply(false, null, (error && error.message) || String(error)),
+    );
+  });
 
   function openTaskPanel() {
     ipcRenderer.invoke(CH + "task-open-main").catch(() => {});
@@ -816,8 +1371,9 @@
   });
 
   ipcRenderer.on("balance-todo", (_event, state) => renderTask(state));
-  ipcRenderer.on("balance-card:show", () => setCardMode(true));
+  ipcRenderer.on("balance-card:show", (_event, payload) => setCardMode(true, payload || null));
   ipcRenderer.on("balance-card:hide", () => setCardMode(false));
+  ipcRenderer.on("balance-pet-hud", (_event, data) => renderHud(data));
 
   function startRotate() {
     if (rotateTimer) clearInterval(rotateTimer);
@@ -951,11 +1507,15 @@
     } catch (e) {}
   }
 
-  /* ---------- 按压 Q 弹 + 拖拽 ---------- */
+  /* ---------- 按压 Q 弹 / 拖拽 / 单击·长按·双击·三击 ---------- */
   let dragging = false;
   let moved = false;
   let startX = 0, startY = 0, lastX = 0, lastY = 0;
   let pendingDx = 0, pendingDy = 0, rafPending = false;
+  let pressTimer = null;
+  let longPressed = false;
+  let tapCount = 0;
+  let tapTimer = null;
 
   function flushMove() {
     rafPending = false;
@@ -965,14 +1525,66 @@
     ipcRenderer.invoke(CH + "moveBy", { dx, dy }).catch(() => {});
   }
 
+  function expandTasks() {
+    if (!taskItems.length) {
+      presentTalk("这会儿还没有任务，人家先陪你待着", "calm", "normal");
+      return;
+    }
+    if (taskExpanded) {
+      taskExpanded = false;
+      taskBubble.classList.remove("expanded");
+      fitSprite();
+      return;
+    }
+    taskExpanded = true;
+    taskBubble.classList.add("expanded");
+    showPanel(taskBubble, 22000);
+    scrollTaskToActive();
+    fitSprite();
+  }
+
+  function showBalance() {
+    if (!lastData || !lastData.ok) {
+      load(true);
+      return;
+    }
+    infoLine.textContent = chooseLine(lastData);
+    showPanel(infoBubble, Math.max(6000, panelMs()));
+    showSticker(lastData.low ? "low" : "normal");
+  }
+
+  function refreshAll() {
+    void loadConfig();
+    void load(true);
+    refreshHud();
+    presentTalk("刷新好啦♪ 都是最新的", "confident", "normal");
+    showSticker("normal");
+  }
+
+  function handleTap() {
+    if (tapCount >= 3) refreshAll();
+    else if (tapCount === 2) showBalance();
+    else cycleLook();
+    tapCount = 0;
+  }
+
   sprite.addEventListener("pointerdown", (e) => {
     dragging = true;
     moved = false;
+    longPressed = false;
     startX = e.screenX; startY = e.screenY;
     lastX = e.screenX; lastY = e.screenY;
     sprite.classList.add("pressed");
     playSound("assets/Ya1.mp3", 0.5);
     try { sprite.setPointerCapture(e.pointerId); } catch (err) {}
+    if (pressTimer) clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      if (!dragging || moved) return;
+      longPressed = true;
+      expandTasks();
+      playSound("assets/Ya2.mp3", 0.42);
+    }, 620);
   });
 
   sprite.addEventListener("pointermove", (e) => {
@@ -980,7 +1592,10 @@
     const dx = e.screenX - lastX;
     const dy = e.screenY - lastY;
     lastX = e.screenX; lastY = e.screenY;
-    if (Math.abs(e.screenX - startX) > 4 || Math.abs(e.screenY - startY) > 4) moved = true;
+    if (Math.abs(e.screenX - startX) > 4 || Math.abs(e.screenY - startY) > 4) {
+      moved = true;
+      if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    }
     if (moved && (dx || dy)) {
       pendingDx += dx; pendingDy += dy;
       if (!rafPending) { rafPending = true; requestAnimationFrame(flushMove); }
@@ -991,16 +1606,23 @@
     if (!dragging) return;
     dragging = false;
     sprite.classList.remove("pressed");
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
     playSound("assets/Ya2.mp3", 0.5);
-    if (!moved) {
-      setFace("rua", 780);
-      saySomething();
-    }
+    if (moved) return;
+    if (longPressed) { longPressed = false; return; }
+    tapCount += 1;
+    if (tapTimer) clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => {
+      tapTimer = null;
+      handleTap();
+    }, 340);
   }
+
   sprite.addEventListener("pointerup", endDrag);
   sprite.addEventListener("pointercancel", () => {
     dragging = false;
     sprite.classList.remove("pressed");
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
   });
 
   sprite.addEventListener("contextmenu", (e) => {
@@ -1010,7 +1632,8 @@
 
   ipcRenderer.on("menu-action", (e, type) => {
     if (type === "talk") { setFace("rua", 780); saySomething(); }
-    else if (type === "next-pose") nextPose();
+    else if (type === "next-pose") cycleLook();
+    else if (type === "config-changed") void loadConfig();
     else if (type === "zoom-in") changeScale(1);
     else if (type === "zoom-out") changeScale(-1);
     else if (type === "refresh") load(true);
@@ -1025,6 +1648,21 @@
         .then((res) => {
           if (res && res.payload) render(res.payload);
         })
+        .catch(() => {});
+    }
+    else if (type === "custom-bubble-width" || type === "custom-bubble-height") {
+      const isWidth = type === "custom-bubble-width";
+      const key = isWidth ? "bubbleWidth" : "bubbleHeight";
+      const label = isWidth ? "气泡宽度" : "气泡高度";
+      const current = Number(isWidth ? CONFIG.bubbleWidth : CONFIG.bubbleHeight) || 0;
+      const input = window.prompt(label + "（px，0–1400，0 表示随内容自适应）", String(current));
+      if (input === null) return;
+      const value = Math.max(0, Math.min(1400, Math.round(Number(input) || 0)));
+      const patch = {};
+      patch[key] = value;
+      ipcRenderer
+        .invoke(CH + "settings-set", patch)
+        .then(() => loadConfig())
         .catch(() => {});
     }
     else if (type === "close") ipcRenderer.invoke(CH + "close").catch(() => {});
@@ -1042,6 +1680,8 @@
         if (typeof c.stickerDuration === "number") CONFIG.stickerDuration = c.stickerDuration;
         if (c.stickerPlacement) CONFIG.stickerPlacement = c.stickerPlacement;
         if (c.bubbleSize) CONFIG.bubbleSize = c.bubbleSize;
+        if (typeof c.bubbleWidth === "number") CONFIG.bubbleWidth = c.bubbleWidth;
+        if (typeof c.bubbleHeight === "number") CONFIG.bubbleHeight = c.bubbleHeight;
         if (c.bubbleMode) CONFIG.bubbleMode = c.bubbleMode;
         if (c.bubblePlace) CONFIG.bubblePlace = c.bubblePlace;
         if (typeof c.bubbleFont === "number") CONFIG.bubbleFont = c.bubbleFont;
@@ -1050,6 +1690,10 @@
         if (typeof c.rotateSec === "number") CONFIG.rotateSec = c.rotateSec;
         if (typeof c.poseRotate === "boolean") CONFIG.poseRotate = c.poseRotate;
         if (typeof c.poseSec === "number") CONFIG.poseSec = c.poseSec;
+        if (typeof c.taskFont === "number") CONFIG.taskFont = c.taskFont;
+        if (typeof c.taskListHeight === "number") CONFIG.taskListHeight = c.taskListHeight;
+        if (typeof c.hudEnabled === "boolean") CONFIG.hudEnabled = c.hudEnabled;
+        if (["full", "simple", "simple2"].includes(c.hudDetail)) CONFIG.hudDetail = c.hudDetail;
       }
     } catch (e) {}
     applySizes();
@@ -1087,8 +1731,9 @@
       if (typeof s === "number" && s > 0) applyScale(s);
     } catch (e) {}
     await loadConfig();
+    refreshHud();
     await load(false);
-    setFace("calm", 1900);
+    applyPose(0);
     setTimeout(() => {
       presentInfo(true);
       showSticker("greet");

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>桌面桌宠 · 设置</title>
+<style>
+  :root {
+    --ink: #4b3a44;
+    --ink-soft: #8a7280;
+    --line: rgba(203, 146, 176, 0.36);
+    --card: rgba(255, 250, 252, 0.92);
+    --pink: #ef6aa4;
+    --pink-soft: #ffe4ef;
+    --switch-off: #d9cbd2;
+    --field: rgba(255, 255, 255, 0.9);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #f3e6ee;
+      --ink-soft: #b8a3b0;
+      --line: rgba(226, 150, 186, 0.28);
+      --card: rgba(48, 39, 45, 0.86);
+      --pink: #ff86b8;
+      --pink-soft: rgba(255, 134, 184, 0.16);
+      --switch-off: #6b5a64;
+      --field: rgba(38, 30, 36, 0.9);
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: transparent;
+    color: var(--ink);
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+  body { padding: 2px 1px 8px; }
+
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--card);
+    padding: 13px 15px 8px;
+  }
+  .head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .head h3 { font-size: 13.5px; font-weight: 700; }
+  .head .tag {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--pink);
+    background: var(--pink-soft);
+    border-radius: 999px;
+    padding: 1px 7px;
+  }
+  .lead { font-size: 11.5px; color: var(--ink-soft); margin-bottom: 8px; }
+  .group-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--pink);
+    margin: 10px 0 2px;
+  }
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    padding: 9px 0;
+    border-top: 1px dashed var(--line);
+  }
+  .group-title + .row { border-top: 0; }
+  .row .text { flex: 1 1 auto; min-width: 0; }
+  .row .title { font-size: 12.5px; font-weight: 600; }
+  .row .desc { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
+  .switch {
+    flex: 0 0 auto;
+    position: relative;
+    width: 38px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: 999px;
+    border: 0;
+    background: var(--switch-off);
+    cursor: pointer;
+    transition: background 0.18s ease;
+  }
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+    transition: transform 0.18s cubic-bezier(0.4, 1.2, 0.6, 1);
+  }
+  .switch[aria-checked="true"] { background: var(--pink); }
+  .switch[aria-checked="true"]::after { transform: translateX(16px); }
+  .switch:disabled { opacity: 0.5; cursor: default; }
+  select {
+    flex: 0 0 auto;
+    margin-top: 2px;
+    padding: 5px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--field);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  input.num {
+    flex: 0 0 86px;
+    width: 86px;
+    margin-top: 2px;
+    padding: 5px 8px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--field);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 12px;
+    text-align: right;
+  }
+  input.num:focus { outline: 2px solid var(--pink-soft); }
+  .foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .foot #status { flex: 1 1 auto; }
+  .foot button {
+    border: 1px solid var(--line);
+    background: var(--field);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 11.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<section class="panel">
+  <div class="head">
+    <h3>桌面桌宠</h3>
+    <span class="tag">昔涟</span>
+  </div>
+  <p class="lead">平时的提问默认在桌宠上回答；主界面要不要再留一张卡，由你决定。</p>
+
+  <div class="group-title">提问与确认</div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">在桌宠上回答提问（默认）</div>
+      <div class="desc">需要你做选择时，问题直接落在她身边；关掉就交回主界面。</div>
+    </div>
+    <button class="switch" id="askSwitch" type="button" role="switch" aria-checked="true" aria-label="在桌宠上回答提问"></button>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">危险操作确认也交给桌宠</div>
+      <div class="desc">执行命令、写文件、发信这类需要点头的动作，由她来问你。</div>
+    </div>
+    <button class="switch" id="approvalSwitch" type="button" role="switch" aria-checked="true" aria-label="危险操作确认也交给桌宠"></button>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">隐藏主界面提问卡</div>
+      <div class="desc">默认关着，两边都能看到；打开后只在桌宠上答，主界面不再留卡。</div>
+    </div>
+    <button class="switch" id="nativeSwitch" type="button" role="switch" aria-checked="false" aria-label="隐藏主界面提问卡"></button>
+  </div>
+
+  <div class="group-title">手势</div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">单击立绘</div>
+      <div class="desc">换一身立绘，同时换表情包和一句台词，三样一起出现。</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">长按立绘</div>
+      <div class="desc">把当前任务单从气泡里摊开，再按一次收起；列表会自己滚到正在进行的那条。</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">双击立绘</div>
+      <div class="desc">看余额和今日消费。</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">三击立绘</div>
+      <div class="desc">立刻刷新余额和手头状态。</div>
+    </div>
+  </div>
+
+  <div class="group-title">任务气泡</div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">任务气泡字号</div>
+      <div class="desc">觉得字小就调大一档，气泡会跟着长高，不会压到立绘。</div>
+    </div>
+    <select id="taskFont" aria-label="任务气泡字号">
+      <option value="10">小</option>
+      <option value="12">标准</option>
+      <option value="14">大</option>
+      <option value="16">特大</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">任务列表高度</div>
+      <div class="desc">列表超过这个高度就可以往上滚。</div>
+    </div>
+    <select id="taskListHeight" aria-label="任务列表高度">
+      <option value="100">短</option>
+      <option value="150">中</option>
+      <option value="220">长</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">气泡里显示任务</div>
+      <div class="desc">关掉后只留台词和余额气泡。</div>
+    </div>
+    <button class="switch" id="taskBubbleSwitch" type="button" role="switch" aria-checked="true" aria-label="气泡里显示任务"></button>
+  </div>
+
+  <div class="group-title">气泡尺寸</div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">气泡宽度</div>
+      <div class="desc">填像素就按这个宽度排字，桌宠窗口会一起变宽；填 0 表示随内容自适应。</div>
+    </div>
+    <input class="num" id="bubbleWidth" type="number" min="0" max="1400" step="10" inputmode="numeric" aria-label="气泡宽度" />
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">气泡高度</div>
+      <div class="desc">这是最小高度，内容更多时会继续往下长；填 0 表示随内容自适应。</div>
+    </div>
+    <input class="num" id="bubbleHeight" type="number" min="0" max="1400" step="10" inputmode="numeric" aria-label="气泡高度" />
+  </div>
+
+  <div class="group-title">头顶状态</div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">显示 CPU、内存、心情与大模型</div>
+      <div class="desc">两条细光带贴在头顶，下面是她在忙什么和当前模型。</div>
+    </div>
+    <button class="switch" id="hudSwitch" type="button" role="switch" aria-checked="false" aria-label="显示头顶状态"></button>
+  </div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">状态面板详细度</div>
+      <div class="desc">详细是三只圆环加网速；简版是一行状态；简版2 带头像和模型，不展开圆环。</div>
+    </div>
+    <select id="hudDetail" aria-label="状态面板详细度">
+      <option value="full">详细</option>
+      <option value="simple">简版</option>
+      <option value="simple2">简版2</option>
+    </select>
+  </div>
+
+  <div class="foot">
+    <span id="status"></span>
+    <button id="reset" type="button">恢复默认</button>
+  </div>
+</section>
+
+<script>
+  const PROTOCOL = "cyrene-panel/1";
+  const ORIGIN = window.location.origin;
+
+  const askSwitch = document.getElementById("askSwitch");
+  const approvalSwitch = document.getElementById("approvalSwitch");
+  const nativeSwitch = document.getElementById("nativeSwitch");
+  const taskBubbleSwitch = document.getElementById("taskBubbleSwitch");
+  const hudSwitch = document.getElementById("hudSwitch");
+  const taskFontSelect = document.getElementById("taskFont");
+  const taskListHeightSelect = document.getElementById("taskListHeight");
+  const hudDetailSelect = document.getElementById("hudDetail");
+  const bubbleWidthInput = document.getElementById("bubbleWidth");
+  const bubbleHeightInput = document.getElementById("bubbleHeight");
+  const statusEl = document.getElementById("status");
+  const resetBtn = document.getElementById("reset");
+
+  let seq = 0;
+  const pending = new Map();
+  let settings = {
+    catchAsk: true,
+    catchApproval: true,
+    hideNativeCard: false,
+    showTaskBubble: true,
+    hudEnabled: false,
+    hudDetail: "full",
+    taskFont: 12,
+    taskListHeight: 150,
+    bubbleWidth: 0,
+    bubbleHeight: 0
+  };
+  let busy = false;
+
+  function invoke(channel, args) {
+    return new Promise((resolve, reject) => {
+      const id = ++seq;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("设置通道没有回应"));
+      }, 8000);
+      pending.set(id, { resolve, reject, timer });
+      window.parent.postMessage(
+        { protocol: PROTOCOL, kind: "invoke", seq: id, channel, args: args || [] },
+        ORIGIN
+      );
+    });
+  }
+
+  function onMessage(event) {
+    const data = event.data;
+    if (!data || data.protocol !== PROTOCOL) return;
+    if (data.kind === "invoke-result") {
+      const slot = pending.get(data.seq);
+      if (!slot) return;
+      pending.delete(data.seq);
+      clearTimeout(slot.timer);
+      if (data.ok) slot.resolve(data.value);
+      else slot.reject(new Error(data.error || "设置保存失败"));
+    }
+  }
+  window.addEventListener("message", onMessage);
+
+  function reportHeight() {
+    const height = Math.max(160, Math.ceil(document.documentElement.scrollHeight));
+    window.parent.postMessage({ protocol: PROTOCOL, kind: "height", height }, ORIGIN);
+  }
+
+  function setStatus(text) {
+    statusEl.textContent = text || "";
+  }
+
+  function paint() {
+    askSwitch.setAttribute("aria-checked", settings.catchAsk !== false ? "true" : "false");
+    approvalSwitch.setAttribute("aria-checked", settings.catchApproval !== false ? "true" : "false");
+    nativeSwitch.setAttribute("aria-checked", settings.hideNativeCard === true ? "true" : "false");
+    taskBubbleSwitch.setAttribute("aria-checked", settings.showTaskBubble !== false ? "true" : "false");
+    hudSwitch.setAttribute("aria-checked", settings.hudEnabled === true ? "true" : "false");
+    taskFontSelect.value = [10, 12, 14, 16].includes(Number(settings.taskFont))
+      ? String(settings.taskFont)
+      : "12";
+    taskListHeightSelect.value = [100, 150, 220].includes(Number(settings.taskListHeight))
+      ? String(settings.taskListHeight)
+      : "150";
+    hudDetailSelect.value = ["simple", "simple2"].includes(settings.hudDetail) ? settings.hudDetail : "full";
+    hudDetailSelect.disabled = settings.hudEnabled !== true;
+    bubbleWidthInput.value = String(Number(settings.bubbleWidth) || 0);
+    bubbleHeightInput.value = String(Number(settings.bubbleHeight) || 0);
+    reportHeight();
+  }
+
+  async function save(patch) {
+    if (busy) return;
+    busy = true;
+    setStatus("保存中…");
+    try {
+      const next = await invoke("settings-set", [patch]);
+      if (next && typeof next === "object") settings = Object.assign({}, settings, next);
+      paint();
+      setStatus("已保存");
+      setTimeout(() => setStatus(""), 1600);
+    } catch (error) {
+      setStatus(error.message || "没有保存成功");
+    } finally {
+      busy = false;
+    }
+  }
+
+  askSwitch.addEventListener("click", () => save({ catchAsk: settings.catchAsk === false }));
+  approvalSwitch.addEventListener("click", () => save({ catchApproval: settings.catchApproval === false }));
+  nativeSwitch.addEventListener("click", () => save({ hideNativeCard: settings.hideNativeCard !== true }));
+  taskBubbleSwitch.addEventListener("click", () => save({ showTaskBubble: settings.showTaskBubble === false }));
+  hudSwitch.addEventListener("click", () => save({ hudEnabled: settings.hudEnabled !== true }));
+  taskFontSelect.addEventListener("change", () => save({ taskFont: Number(taskFontSelect.value) }));
+  taskListHeightSelect.addEventListener("change", () => save({ taskListHeight: Number(taskListHeightSelect.value) }));
+  hudDetailSelect.addEventListener("change", () => save({ hudDetail: hudDetailSelect.value }));
+
+  function sizeValue(input) {
+    const n = Math.round(Number(input.value) || 0);
+    return Math.max(0, Math.min(1400, n));
+  }
+  bubbleWidthInput.addEventListener("change", () => save({ bubbleWidth: sizeValue(bubbleWidthInput) }));
+  bubbleHeightInput.addEventListener("change", () => save({ bubbleHeight: sizeValue(bubbleHeightInput) }));
+
+  resetBtn.addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    setStatus("恢复中…");
+    try {
+      const next = await invoke("settings-reset", []);
+      if (next && typeof next === "object") settings = Object.assign({}, settings, next);
+      paint();
+      setStatus("已恢复默认");
+      setTimeout(() => setStatus(""), 1600);
+    } catch (error) {
+      setStatus(error.message || "没有恢复成功");
+    } finally {
+      busy = false;
+    }
+  });
+
+  (async () => {
+    try {
+      const current = await invoke("settings-get", []);
+      if (current && typeof current === "object") settings = Object.assign({}, settings, current);
+    } catch (error) {
+      setStatus(error.message || "");
+    }
+    paint();
+  })();
+
+  window.addEventListener("load", reportHeight);
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
@@ -511,7 +511,66 @@
   </div>
 
   <script>
-    const { ipcRenderer } = require("electron");
+    // 一进来就先挂错误上报：脚本后面怎么崩，外面都能知道崩在哪一行
+    window.addEventListener("error", (event) => {
+      try {
+        window.parent.postMessage(
+          {
+            type: "cyrene-card-error",
+            message: (event && event.message) || "unknown",
+            line: event && event.lineno,
+            file: event && event.filename,
+          },
+          "*",
+        );
+      } catch {
+        /* 忽略 */
+      }
+    });
+
+    // iframe 里默认拿不到 Node；拿不到就退回 postMessage 桥，别让整个脚本当场中断
+    function createBridgeIpcRenderer() {
+      const pending = new Map();
+      let seq = 0;
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (!data || data.type !== "cyrene-ipc-result") return;
+        const entry = pending.get(data.id);
+        if (!entry) return;
+        pending.delete(data.id);
+        if (data.ok) entry.resolve(data.result);
+        else entry.reject(new Error(data.error || "E_IPC_BRIDGE"));
+      });
+      return {
+        invoke(channel, payload) {
+          return new Promise((resolve, reject) => {
+            const id = "bridge-" + ++seq;
+            pending.set(id, { resolve, reject });
+            try {
+              window.parent.postMessage({ type: "cyrene-ipc-invoke", id, channel, payload }, "*");
+            } catch (error) {
+              pending.delete(id);
+              reject(error);
+              return;
+            }
+            setTimeout(() => {
+              if (!pending.has(id)) return;
+              pending.delete(id);
+              reject(new Error("E_IPC_TIMEOUT"));
+            }, 8000);
+          });
+        },
+        on() {},
+      };
+    }
+
+    let ipcRenderer = null;
+    try {
+      ({ ipcRenderer } = require("electron"));
+    } catch {
+      ipcRenderer = createBridgeIpcRenderer();
+    }
+    if (!ipcRenderer) ipcRenderer = createBridgeIpcRenderer();
 
     const body = document.body;
     const cardEl = document.getElementById("card");
@@ -1069,10 +1128,30 @@
       }, isPreview ? 1400 : 1000);
     }
 
+    // 卡片里的动作留痕：卡住时能从 ask-debug.log 看出停在哪一步
+    function cardLog(message) {
+      try {
+        ipcRenderer.invoke("plugin:cyrene-balance:card-log", String(message)).catch(() => {});
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    // 本体没响应时别让按钮永远停在"送过去啦…"
+    function invokeWithTimeout(channel, payload, timeoutMs) {
+      return Promise.race([
+        ipcRenderer.invoke(channel, payload),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error("E_IPC_TIMEOUT")), timeoutMs || 8000);
+        }),
+      ]);
+    }
+
     async function submitAnswer() {
       if (!card || sending) return;
       if (mode === "ask" && !allAnswered()) return;
       if (mode === "choice" && pickedValue === null) return;
+      cardLog("提交 kind=" + mode + " id=" + String((mode === "ask" ? card.interactionId : card.id) || ""));
 
       const preview = isPreviewRun();
       sending = true;
@@ -1083,17 +1162,17 @@
       let result = null;
       try {
         if (mode === "ask") {
-          result = await ipcRenderer.invoke("choice:resolve", {
+          result = await invokeWithTimeout("choice:resolve", {
             id: card.interactionId,
             answer: buildSubmission()
           });
         } else if (mode === "choice") {
-          result = await ipcRenderer.invoke("choice:resolve", {
+          result = await invokeWithTimeout("choice:resolve", {
             id: card.id,
             answer: pickedValue
           });
         } else {
-          result = await ipcRenderer.invoke("permission:approval-resolve", {
+          result = await invokeWithTimeout("permission:approval-resolve", {
             id: card.id,
             allowed: true
           });
@@ -1101,6 +1180,7 @@
       } catch (error) {
         result = { ok: false, error: error && error.message ? error.message : String(error) };
       }
+      cardLog("提交结果 " + JSON.stringify(result));
 
       if (preview) {
         thanks(true, mode === "approval" ? "预览成功啦♪ 真到这一步，人家会这样拦你一下。" : "预览成功啦♪ 真的有提问时，人家就会这样出现。");
@@ -1133,12 +1213,13 @@
 
       let result = null;
       try {
-        result = await ipcRenderer.invoke("permission:approval-resolve", {
+        cardLog("拒绝审批 id=" + String(card.id || ""));
+        result = await invokeWithTimeout("permission:approval-resolve", {
           id: card.id,
           allowed: false
         });
       } catch (error) {
-        result = { ok: false };
+        result = { ok: false, error: error && error.message ? error.message : String(error) };
       }
 
       if (result && result.ok) {
@@ -1172,9 +1253,52 @@
 
     /* ============================ 主进程消息 ============================ */
 
+    // 同一张卡片可能同时从 IPC 和 widget 的 postMessage 到达，按 id 去重
+    let lastCardKey = "";
+
+    function cardKeyOf(payload) {
+      if (!payload || typeof payload !== "object" || !payload.card) return "";
+      const card = payload.card;
+      return String(payload.kind || "") + ":" + String(card.interactionId || card.id || "");
+    }
+
+    function acceptCard(payload) {
+      const key = cardKeyOf(payload);
+      if (key && key === lastCardKey && mode !== "idle") return;
+      lastCardKey = key;
+      render(payload);
+      try {
+        const shown = payload && payload.card ? payload.card : {};
+        ipcRenderer
+          .invoke("plugin:cyrene-balance:card-ack", {
+            kind: payload && payload.kind ? payload.kind : "ask",
+            id: shown.interactionId || shown.id || "",
+          })
+          .catch(() => {});
+      } catch {
+        /* 回执失败不影响显示 */
+      }
+      try {
+        window.parent.postMessage({ type: "card-ready" }, "*");
+      } catch {
+        /* 不在 iframe 里时忽略 */
+      }
+    }
+
+    // widget.html 把 payload 转发进 iframe：内嵌在桌宠里时走这条路
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "balance-card" || !data.payload) return;
+      try {
+        acceptCard(data.payload);
+      } catch (error) {
+        setHint("这一题人家没读懂…");
+      }
+    });
+
     ipcRenderer.on("balance-card:show", (_event, payload) => {
       try {
-        render(payload);
+        acceptCard(payload);
       } catch (error) {
         setHint("这一题人家没读懂…");
       }
