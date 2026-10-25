@@ -45,6 +45,8 @@ let mainWin = null;
 let followMode = true;
 let openTimer = null;
 let lastError = "";
+let tray = null;
+let petReloading = false;
 const SECRET_API_KEY = "deepseekApiKey";
 
 /* ------------------------------ 设置 ------------------------------ */
@@ -492,6 +494,7 @@ async function tick() {
   if (result.ok && result.stale && ctxRef) {
     ctxRef.log("余额刷新失败，沿用上次数据：" + result.error);
   }
+  updateTrayTip();
   return result;
 }
 
@@ -742,6 +745,181 @@ function placeWidget(settings) {
     y = Math.min(Math.max(y, area.y), area.y + area.height - b.height);
     win.setPosition(Math.round(x), Math.round(y));
   }
+}
+
+/* ------------------------------ 托盘 / 一键归位 ------------------------------ */
+
+function trayIconImage() {
+  try {
+    const { nativeImage } = require("electron");
+    const candidates = ["assets/mimi.png", "assets/frame-01.png", "assets/DSniang1.png"];
+    for (const rel of candidates) {
+      const file = path.join(__dirname, rel);
+      if (!fs.existsSync(file)) continue;
+      const image = nativeImage.createFromPath(file);
+      if (image.isEmpty()) continue;
+      const size = image.getSize();
+      if (!size.width || !size.height) return image;
+      // 托盘只显示 16~20px，大图先等比缩下来，常驻内存也小
+      const target = 20;
+      const ratio = Math.min(target / size.width, target / size.height);
+      if (ratio >= 1) return image;
+      return image.resize({
+        width: Math.max(1, Math.round(size.width * ratio)),
+        height: Math.max(1, Math.round(size.height * ratio)),
+        quality: "best",
+      });
+    }
+    return nativeImage.createEmpty();
+  } catch {
+    return null;
+  }
+}
+
+function updateTrayTip() {
+  if (!tray) return;
+  try {
+    const tip =
+      cached && Number.isFinite(Number(cached.total))
+        ? "昔涟 · 余额 " + money(cached.total) + " " + (cached.currency || "CNY")
+        : "昔涟 · 桌面桌宠";
+    tray.setToolTip(tip);
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function wakeMainWindow() {
+  if (!mainWin || mainWin.isDestroyed()) return;
+  try {
+    if (mainWin.isMinimized()) mainWin.restore();
+    if (!mainWin.isVisible()) mainWin.showInactive();
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function recenterPet(options) {
+  const opts = options || {};
+  if (!win || win.isDestroyed()) {
+    if (opts.reopen === false) return false;
+    void openWidget()
+      .then(() => {
+        setTimeout(() => recenterPet({ reopen: false, save: opts.save }), 150);
+      })
+      .catch((error) => petLog("归位时打开桌宠失败：" + ((error && error.message) || error)));
+    return false;
+  }
+  try {
+    const { screen } = require("electron");
+    wakeMainWindow();
+    const b = win.getBounds();
+    let x = null;
+    let y = null;
+    if (followMode && mainWin && !mainWin.isDestroyed()) {
+      const size = mainContentBounds();
+      if (size) {
+        const margin = 16;
+        x = size.x + size.w - b.width - margin;
+        y = size.y + size.h - b.height - margin;
+      }
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      const area = screen.getPrimaryDisplay().workArea;
+      x = area.x + area.width - b.width - 28;
+      y = area.y + area.height - b.height - 28;
+    }
+    // 主窗口在副屏边缘或分辨率变化时，目标点也可能越界，最后再夹一次
+    const area = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) }).workArea;
+    const finalX = Math.min(Math.max(x, area.x), Math.max(area.x, area.x + area.width - b.width));
+    const finalY = Math.min(Math.max(y, area.y), Math.max(area.y, area.y + area.height - b.height));
+    win.setPosition(Math.round(finalX), Math.round(finalY));
+    if (!win.isVisible()) win.showInactive();
+    try { win.moveTop(); } catch { /* 忽略 */ }
+    if (!followMode) {
+      try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
+    }
+    if (opts.save !== false && !followMode) void saveWidgetPosition();
+    petLog("归位 -> " + Math.round(finalX) + "," + Math.round(finalY));
+    return true;
+  } catch (error) {
+    petLog("归位失败：" + ((error && error.message) || error));
+    return false;
+  }
+}
+
+function togglePet() {
+  if (!win || win.isDestroyed()) {
+    void openWidget().catch((error) => petLog("打开桌宠失败：" + ((error && error.message) || error)));
+    return;
+  }
+  try {
+    if (win.isVisible()) {
+      win.hide();
+    } else {
+      wakeMainWindow();
+      win.showInactive();
+      try { win.moveTop(); } catch { /* 忽略 */ }
+    }
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function reloadPet() {
+  petReloading = true;
+  closeWidget();
+  setTimeout(() => {
+    petReloading = false;
+    if (disposed) return;
+    void openWidget()
+      .then(() => setTimeout(() => recenterPet({ save: true }), 150))
+      .catch((error) => petLog("重新加载桌宠失败：" + ((error && error.message) || error)));
+  }, 260);
+}
+
+function buildTrayMenu() {
+  const { Menu } = require("electron");
+  return Menu.buildFromTemplate([
+    { label: "♡ 一键归位", click: () => recenterPet() },
+    { label: "显示 / 隐藏桌宠", click: () => togglePet() },
+    { label: "重新加载桌宠", click: () => reloadPet() },
+    { type: "separator" },
+    { label: "立即刷新余额", click: () => { void tick(); } },
+    { type: "separator" },
+    { label: "桌宠不显示时，点这里把她找回来", enabled: false },
+  ]);
+}
+
+function ensureTray() {
+  if (tray || disposed) return;
+  let TrayClass = null;
+  try {
+    TrayClass = require("electron").Tray;
+  } catch {
+    TrayClass = null;
+  }
+  if (!TrayClass) return;
+  const image = trayIconImage();
+  if (!image) return;
+  try {
+    tray = new TrayClass(image);
+    tray.setToolTip("昔涟 · 桌面桌宠");
+    tray.setContextMenu(buildTrayMenu());
+    // Windows 上左键单击直接归位；双击会再触发一次，归位是幂等的
+    tray.on("click", () => recenterPet());
+    tray.on("double-click", () => recenterPet());
+    petLog("托盘图标已就绪");
+  } catch (error) {
+    tray = null;
+    petLog("托盘创建失败：" + ((error && error.message) || error));
+  }
+}
+
+function destroyTray() {
+  if (!tray) return;
+  try { tray.destroy(); } catch { /* 忽略 */ }
+  tray = null;
 }
 
 /* ------------------------------ 状态面板 ------------------------------ */
@@ -1045,6 +1223,15 @@ async function openWidget() {
         /* 忽略 */
       }
     }
+  });
+  // 渲染进程偶尔会因为显卡 / 内存被系统收走，窗口还在但内容空白；自动重载一次
+  win.webContents.on("render-process-gone", (_event, details) => {
+    petLog("渲染进程退出：" + ((details && details.reason) || "unknown"));
+    if (disposed || petReloading) return;
+    setTimeout(() => {
+      if (disposed || petReloading || !win || win.isDestroyed()) return;
+      try { win.reload(); } catch { /* 忽略 */ }
+    }, 800);
   });
   placeWidget(settings);
   if (followMode) attachMainListeners();
@@ -1809,9 +1996,7 @@ module.exports = {
     });
 
     ctx.registerIpc("recenter", async () => {
-      if (!win || win.isDestroyed()) return false;
-      placeWidget();
-      return true;
+      return recenterPet({ save: true });
     });
 
     ctx.registerIpc("moveBy", async (payload) => {
@@ -2444,6 +2629,7 @@ module.exports = {
 
     ctx.onDispose(() => {
       disposed = true;
+      destroyTray();
       if (timer) {
         clearInterval(timer);
         timer = null;
@@ -2454,6 +2640,7 @@ module.exports = {
       }
     });
 
+    ensureTray();
     void tick();
     void startPet();
     // 等窗口先立起来，再把上次没答完的卡放回去
@@ -2475,6 +2662,7 @@ module.exports = {
 
   async unregister() {
     disposed = true;
+    destroyTray();
     stopPet();
     closeWidget();
     if (timer) {
