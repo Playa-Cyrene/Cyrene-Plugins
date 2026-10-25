@@ -37,6 +37,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [xiaomi-health](./plugins/xiaomi-health) | 0.5.4 | 扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均能感知健康数据，可配播报频率 / 风格与早安问候，支持将健康写入长期记忆（L2） | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.4.zip) | 抽卡保底真君 | [xiaomi-health-plugin](https://github.com/ahwhshen/xiaomi-health-plugin) |
 | [ide-account-bridge](./plugins/ide-account-bridge) | 1.1.0 | 复用本机已登录的 Qoder 与 Trae 桌面账号，向 Cyrene 提供 OpenAI 兼容的本地端点，无需 OAuth 或粘贴 API Key；附额度查看与每日签到 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ide-account-bridge-1.1.0.zip) | citie114514 | [citie114514/pi-connect](https://github.com/citie114514/pi-connect/tree/main/cyrene/ide-account-bridge) |
 | [cyrene-hud](./plugins/cyrene-hud) | 0.8.7 | 常驻性能监测&Cyrene状态&自定义快速跳转窗口三合一的仿灵动岛状态栏，可自定义外观 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-hud-0.8.7.zip) | Noimpty | [Cyrene-Agent-Plugin](https://github.com/LZhWi/Cyrene-Agent-Plugin/tree/codex/cyrene-hud-upstream) |
+| [gh-vault](./plugins/gh-vault) | 1.0.0 | 在本机加密保存 GitHub 令牌，Agent 可代发 GitHub API 请求而不看到明文；明文仅在明确要求时取出 | —（待发布） | 昔涟 | — |
 
 ---
 

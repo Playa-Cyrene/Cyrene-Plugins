@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "gh-vault",
+  "name": "GitHub 令牌保险箱",
+  "version": "1.0.0",
+  "description": "在本机加密保存 GitHub 令牌，Agent 可直接代发 GitHub API 请求而不看到明文；明文仅在明确要求时取出",
+  "author": "昔涟",
+  "entry": "index.cjs",
+  "defaultEnabled": false
+}
