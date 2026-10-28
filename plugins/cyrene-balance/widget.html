@@ -88,7 +88,12 @@
   }
 
   /* 位置档位 */
-  .bubble.place-top { top: 4px; bottom: auto; transform-origin: top center; }
+  /* 气泡贴住立绘头顶：窗口高度怎么变都不会和立绘分家 */
+  .bubble.place-top {
+    top: auto;
+    bottom: calc(var(--sprite-bottom, 8px) + 186px);
+    transform-origin: bottom center;
+  }
   .bubble.place-middle { top: 46px; bottom: auto; transform-origin: top center; }
   .bubble.place-bottom { top: auto; bottom: 8px; transform-origin: bottom center; }
   .bubble.place-bottom::after { display: none; }
@@ -1576,7 +1581,11 @@
     lastX = e.screenX; lastY = e.screenY;
     sprite.classList.add("pressed");
     playSound("assets/Ya1.mp3", 0.5);
-    try { sprite.setPointerCapture(e.pointerId); } catch (err) {}
+    ipcRenderer.invoke(CH + "set-dragging", { dragging: true }).catch(() => {});
+    try {
+      sprite.setPointerCapture(e.pointerId);
+      sprite.addEventListener("lostpointercapture", stopDrag, { once: true });
+    } catch (err) {}
     if (pressTimer) clearTimeout(pressTimer);
     pressTimer = setTimeout(() => {
       pressTimer = null;
@@ -1589,6 +1598,8 @@
 
   sprite.addEventListener("pointermove", (e) => {
     if (!dragging) return;
+    // 兜底：pointerup 丢失时，按键已经松开也要立刻结束拖拽
+    if (e.buttons === 0) { stopDrag(); return; }
     const dx = e.screenX - lastX;
     const dy = e.screenY - lastY;
     lastX = e.screenX; lastY = e.screenY;
@@ -1602,9 +1613,18 @@
     }
   });
 
+  function stopDrag() {
+    if (!dragging) return;
+    dragging = false;
+    sprite.classList.remove("pressed");
+    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+    ipcRenderer.invoke(CH + "set-dragging", { dragging: false }).catch(() => {});
+  }
+
   function endDrag() {
     if (!dragging) return;
     dragging = false;
+    ipcRenderer.invoke(CH + "set-dragging", { dragging: false }).catch(() => {});
     sprite.classList.remove("pressed");
     if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
     playSound("assets/Ya2.mp3", 0.5);
@@ -1619,11 +1639,9 @@
   }
 
   sprite.addEventListener("pointerup", endDrag);
-  sprite.addEventListener("pointercancel", () => {
-    dragging = false;
-    sprite.classList.remove("pressed");
-    if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
-  });
+  sprite.addEventListener("pointercancel", stopDrag);
+  document.addEventListener("pointerup", endDrag, true);
+  window.addEventListener("blur", stopDrag);
 
   sprite.addEventListener("contextmenu", (e) => {
     e.preventDefault();

@@ -928,6 +928,9 @@ let hudTimer = null;
 let cpuSnapshot = os.cpus();
 let widgetHeightCache = WIDGET_HEIGHT;
 let widgetWidthCache = WIDGET_WIDTH;
+let widgetDragging = false;
+let pendingWidgetHeight = null;
+let dragFreezeTimer = null;
 
 function cpuUsagePercent() {
   const now = os.cpus();
@@ -1109,6 +1112,11 @@ function stopHud() {
 
 function setWidgetHeight(cssHeight) {
   if (!win || win.isDestroyed()) return;
+  // 拖动期间先冻结窗口高度，松手后再应用，避免气泡相对立绘上下跳
+  if (widgetDragging) {
+    pendingWidgetHeight = cssHeight;
+    return;
+  }
   const scale = widgetScaleCache || 1;
   const css = Math.max(200, Math.min(780, Number(cssHeight) || WIDGET_HEIGHT));
   widgetHeightCache = css;
@@ -2007,6 +2015,32 @@ module.exports = {
       const b = win.getBounds();
       win.setPosition(b.x + Math.round(dx), b.y + Math.round(dy));
       keepInsideMain();
+      return true;
+    });
+
+    ctx.registerIpc("set-dragging", async (payload) => {
+      const dragging = Boolean(payload && payload.dragging);
+      widgetDragging = dragging;
+      if (dragFreezeTimer) {
+        clearTimeout(dragFreezeTimer);
+        dragFreezeTimer = null;
+      }
+      if (dragging) {
+        // 兜底：前端漏发结束信号时，15 秒后自动解冻
+        dragFreezeTimer = setTimeout(() => {
+          dragFreezeTimer = null;
+          widgetDragging = false;
+          if (pendingWidgetHeight != null) {
+            const h = pendingWidgetHeight;
+            pendingWidgetHeight = null;
+            setWidgetHeight(h);
+          }
+        }, 15000);
+      } else if (pendingWidgetHeight != null) {
+        const h = pendingWidgetHeight;
+        pendingWidgetHeight = null;
+        setWidgetHeight(h);
+      }
       return true;
     });
 
