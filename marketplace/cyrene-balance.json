@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "桌面常驻的透明立绘：8 种姿态轮换、5 种情绪特写、44 张去白底小表情",
+    "余额观测：定时读取 DeepSeek 余额，展示余额 / 今日消费 / 今日充值 / 当前峰谷时段",
+    "统一接管提问卡与审批卡：需要选择时展开为 420×580 卡片，作答或结算后自动收回",
+    "任务进度气泡：完成数、进度条与正在做的那一步，单击展开清单、双击打开任务面板",
+    "头顶状态面板：详细 / 简版 / 简版2 三档，CPU、GPU、内存、实时网速与电量",
+    "外观可调：气泡档位与像素宽高、余额与台词字号、小表情大小、立绘缩放、气泡位置与轮播间隔",
+    "今日额度与提醒：80% 预警、超额脉动与提示音；观感记账保留最近 7 天",
+    "托盘一键归位：左键单击托盘图标把桌宠拉回右下角，右键可显示 / 隐藏、重新加载、刷新余额"
+  ],
+  "requirements": [
+    "需要支持插件系统的 Cyrene（manifest apiVersion 1）",
+    "一个 DeepSeek API Key，或已在 Cyrene 里配置过 DeepSeek 模型",
+    "Windows（状态面板的 GPU、网速与电量需要 PowerShell 与 CIM 性能计数器）"
+  ],
+  "setup": [
+    "在 设置 → 插件 里安装并启用本插件，桌宠会自动出现在桌面",
+    "右键立绘可以设置提醒阈值、今日额度、刷新间隔、外观与桌宠行为",
+    "需要单独指定 Key 时，对 Agent 说「把 DeepSeek Key 设成 sk-...」，Key 会存进宿主加密存储",
+    "完整使用说明、Agent 升级后的影响与免责声明见插件目录 README.md",
+    "桌宠不见了？左键单击任务栏托盘里的昔涟头像，一键归位"
+  ],
+  "dataHandling": [
+    "只请求 https://api.deepseek.com/user/balance 读取余额，不向其他域名发送数据",
+    "API Key 保存在宿主加密存储（ctx.deps.secrets），不写进普通插件设置",
+    "阈值、额度、外观设置与 7 天账本保存在插件存储；不上传对话内容，不做统计",
+    "状态面板通过固定 PowerShell 脚本读取网卡、电池与 GPU 计数器，结果只在本机使用"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-balance"
+}

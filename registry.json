@@ -165,6 +165,14 @@
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/better-lessons-0.1.0.zip",
       "sha256": "269ae1d2f49e3d7f84511d264bb0b49227ca1ae825937b79fa22d1acc3050cec",
       "downloads": 0
+    },
+    {
+      "id": "cyrene-balance",
+      "name": "昔涟 · 桌面桌宠",
+      "description": "常驻桌面的唯一桌宠：余额与今日消费、提问与危险操作确认、当前任务进度、头顶状态面板都收在她身上；八种姿态轮换、44 张小表情、三档状态面板，附完整使用说明书、升级影响说明与免责声明",
+      "author": "bestlike093",
+      "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/cyrene-balance",
+      "version": "10.4.3"
     }
   ]
 }
