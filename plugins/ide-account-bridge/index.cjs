@@ -2470,8 +2470,15 @@ var RegionRuntime = class {
     try {
       const raw = await fetchModels(this.region, credential, signal);
       const entries = raw.map(normalizeEntry);
-      if (entries.length > 0) this.catalog.replace(entries);
-      this.catalogFailedAt = 0;
+      if (entries.length > 0) {
+        this.catalog.replace(entries);
+        this.catalogFailedAt = 0;
+        return;
+      }
+      this.catalogFailedAt = Date.now();
+      this.logger?.warn?.(
+        `dsh-connect-qoder[pi]: ${this.region.displayName} catalog came back empty; serving cached catalog`
+      );
     } catch (error) {
       this.catalogFailedAt = Date.now();
       this.logger?.warn?.(
@@ -3805,7 +3812,7 @@ function createTraeShim(options) {
       const url = req.url ?? "/";
       const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
       if (catalogRoute && typeof refreshCatalog === "function") {
-        const haveWire = options.wire?.resolved === true;
+        const haveModels = options.catalog.current().length > 0;
         const refreshed = (async () => {
           try {
             return await refreshCatalog();
@@ -3814,7 +3821,7 @@ function createTraeShim(options) {
             return void 0;
           }
         })();
-        if (!haveWire) await refreshed;
+        if (!haveModels) await refreshed;
       }
       if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) return writeJson(res, 200, { ok: true });
       if (req.method === "GET" && (url === "/v1/models" || url === "/v1/models/")) return writeJson(res, 200, {
@@ -4146,6 +4153,20 @@ var TraeSoloUpstreamClient = class {
   * paygo variants) never surface even though they appear here.
   */
   async fetchModels(signal) {
+    return (await this.fetchModelsDetailed(signal)).models;
+  }
+  /**
+  * Read the callable roster, keeping the per-function failures.
+  *
+  * Returns `{ models, failures }`. A partial union is still returned: the
+  * models the answering functions listed are callable, and refusing them
+  * would take the whole region down for an account that has no access to one
+  * of the modes — a deterministic condition, not a transient one. `failures`
+  * lets the caller retry instead of caching the gap for a full directory TTL.
+  *
+  * @returns `{ models, failures }`; throws only when nothing was discovered.
+  */
+  async fetchModelsDetailed(signal) {
     const [credential, identity] = await Promise.all([this.options.credential(), this.options.identity()]);
     const region = regionOfCredential(credential);
     const base = this.options.baseUrl ?? REGION_GATEWAYS[region].chat;
@@ -4182,9 +4203,8 @@ var TraeSoloUpstreamClient = class {
       this.collectModels(list, directoryFunction, byId);
     }
     const models = [...byId.values()];
-    if (failures.length > 0) throw new Error(`Trae SOLO models directory incomplete (${failures.join("; ")})`);
-    if (models.length === 0) throw new Error("Trae SOLO models response contained no models (empty directory)");
-    return models;
+    if (models.length === 0) throw new Error(`Trae SOLO models response contained no models (${failures.join("; ") || "empty directory"})`);
+    return { models, failures };
   }
   /** Merge one function's config list into the shared catalogue (first wins). */
   collectModels(list, directoryFunction, byId) {
@@ -4961,10 +4981,10 @@ var RegionStack = class {
       const store = this.store;
       const hint = region === "ai" ? "solo-sg" : "cn";
       try {
-        const credential = await store.resolve();
+        const credential = await store.current();
         const candidates = store.candidates();
         return await resolveTraeIdentity(
-          candidates.filter((c) => c.edition === credential.edition),
+          credential === void 0 ? [] : candidates.filter((c) => c.edition === credential.edition),
           hint
         );
       } catch {
@@ -5003,9 +5023,6 @@ var RegionStack = class {
       catalog: this.catalog,
       client: this.delegating,
       logger: this.logger,
-      // Lets the shim tell "no directory worth serving from" (block on the
-      // discovery) from "cache available" (refresh in the background).
-      wire: this.wire,
       // Lets a request refresh the directory, mirroring what the Pi port does
       // from `auth.apiKey.resolve()`.
       refreshCatalog: () => this.refreshCatalog(),
@@ -5037,15 +5054,29 @@ var RegionStack = class {
    * upstream answers `4001 param is invalid`. Discovery is cached after the
    * first success, and a failure resets the cache so the next request retries.
    */
-  async ensureReady() {
+  async ensureReady({ rediscover = false, signal } = {}) {
     const shim = await this.ensureShim();
-    if (this.modelsReady === false && this.modelsPending === void 0) {
-      const flight = this.discoverModels().then((models) => {
-        if (models.length > 0) {
-          this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
+    if ((this.modelsReady === false || rediscover) && this.modelsPending === void 0) {
+      const flight = this.discoverModels(signal).then((outcome) => {
+        if (outcome.models.length === 0) {
+          this.modelsFailedAt = Date.now();
+          this.logger?.warn?.(
+            `trae: model directory unavailable for ${this.region}; keeping the previous directory`,
+            outcome.failures
+          );
+          return false;
+        }
+        this.applyDirectory(outcome.models, outcome.wire);
+        if (outcome.complete) {
           this.modelsDiscoveredAt = Date.now();
-          this.modelsReady = true;
           this.modelsFailedAt = 0;
+          this.modelsReady = true;
+        } else {
+          this.modelsFailedAt = Date.now();
+          this.logger?.warn?.(
+            `trae: model directory for ${this.region} is incomplete; serving it but retrying on the next request`,
+            outcome.failures
+          );
         }
         return true;
       }).catch((error) => {
@@ -5061,6 +5092,25 @@ var RegionStack = class {
     return shim;
   }
   /**
+   * Land a discovered directory: replace the catalog and the wire map together.
+   *
+   * Only ever called with a non-empty result, so a failed or empty discovery
+   * can never clear the maps a live request depends on.
+   */
+  applyDirectory(models, wire) {
+    this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
+    this.wire.callableKeys.clear();
+    for (const model of models) {
+      this.wire.callableKeys.add(model.id.trim().toLowerCase());
+      this.wire.callableKeys.add(model.name.trim().toLowerCase());
+    }
+    this.wire.byId.clear();
+    this.wire.byName.clear();
+    for (const [id, target] of wire) this.wire.byId.set(id, target);
+    for (const [name, target] of wire) this.wire.byName.set(name, target);
+    this.wire.resolved = true;
+  }
+  /**
    * Re-discover the model directory when it has gone stale.
    *
    * Called once per request from the shim, the way the Pi port refreshes from
@@ -5070,16 +5120,17 @@ var RegionStack = class {
    * Qoder side.
    *
    * `force` skips the TTL check so the panel's explicit "refresh" button can
-   * pick up new models inside the 30-minute window.
+   * pick up new models inside the 30-minute window. `signal` bounds the
+   * discovery for callers that must not wait forever (activation warm-up); it
+   * belongs to the flight that created the slot, never to a joiner.
    *
    * @returns the shim when a discovery ran, or `null` when this was a no-op.
    */
-  async refreshCatalog({ force = false } = {}) {
+  async refreshCatalog({ force = false, signal } = {}) {
     if (this.modelsPending !== void 0) return this.modelsPending;
     if (!force && this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
     if (!force && Date.now() - this.modelsFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS2) return null;
-    this.modelsReady = false;
-    return this.ensureReady();
+    return this.ensureReady({ rediscover: true, signal });
   }
   /**
    * The loopback base URL when the shim is running, or a placeholder.
@@ -5109,30 +5160,72 @@ var RegionStack = class {
   }
   /**
    * Fetch the live model directory and merge the two Trae sources (remote
-   * skeleton + wire config names), then rebuild the callable-key maps.
+   * skeleton + wire config names).
+   *
+   * Returns an outcome instead of throwing, so the caller can tell "upstream is
+   * down" from "the account has no models" without either one wiping the
+   * directory it already serves:
+   *
+   * - `models` — the merged roster, empty when nothing could be discovered.
+   * - `wire` — id/name → `config_name` mappings for those models.
+   * - `complete` — every directory function and both sources answered. When
+   *   false, the models are still usable, but a source is missing models, so
+   *   the caller keeps retrying instead of caching the gap for 30 minutes.
+   * - `failures` — one short string per failed source/function, for the log.
+   *
+   * Nothing here mutates the live catalog or wire map: only the caller does,
+   * and only on a non-empty result.
    */
   async discoverModels(signal) {
-    const [remote, solo] = await Promise.all([
-      this.remoteCatalog.fetchModels(signal).catch(() => []),
-      this.upstream.fetchModels(signal).catch(() => [])
+    const [remoteResult, soloResult] = await Promise.all([
+      this.remoteCatalog.fetchModels(signal).then(
+        (models) => ({ models, failures: [] }),
+        (error) => ({ models: [], failures: [`remote: ${String(error).slice(0, 120)}`] })
+      ),
+      // The SOLO source exposes per-function failures alongside a partial
+      // roster; `fetchModels` is the plain-array form for callers that do not
+      // care. Fall back when an older extraction lacks the detailed variant.
+      typeof this.upstream.fetchModelsDetailed === "function" ? this.upstream.fetchModelsDetailed(signal).then(
+        (result) => ({ models: result.models, failures: result.failures ?? [] }),
+        (error) => ({ models: [], failures: [`solo: ${String(error).slice(0, 120)}`] })
+      ) : this.upstream.fetchModels(signal).then(
+        (models) => ({ models, failures: [] }),
+        (error) => ({ models: [], failures: [`solo: ${String(error).slice(0, 120)}`] })
+      )
     ]);
-    const merged = mergeTraeModelSources(remote, solo);
-    this.wire.callableKeys.clear();
-    for (const model of merged) {
-      this.wire.callableKeys.add(model.id.trim().toLowerCase());
-      this.wire.callableKeys.add(model.name.trim().toLowerCase());
-    }
-    this.wire.resolved = merged.length > 0;
-    this.wire.byId.clear();
-    this.wire.byName.clear();
-    for (const model of merged) {
-      if (model.wireConfigName !== void 0) {
-        const target = { configName: model.wireConfigName, ...model.wireFunction === void 0 ? {} : { function: model.wireFunction } };
-        this.wire.byId.set(model.id, target);
-        this.wire.byName.set(model.name.trim().toLowerCase(), target);
+    const failures = [...remoteResult.failures, ...soloResult.failures];
+    const merged = mergeTraeModelSources(remoteResult.models, soloResult.models);
+    if (merged.length === 0 && soloResult.models.length > 0) {
+      failures.push("remote: unavailable; serving the SOLO roster without the remote skeleton");
+      for (const model of soloResult.models) {
+        merged.push({
+          id: model.id,
+          name: model.name,
+          input: ["text"],
+          ...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
+          ...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens },
+          ...model.creditMultiplier === void 0 ? {} : { creditMultiplier: model.creditMultiplier },
+          ...model.reasoning === void 0 ? {} : { reasoning: model.reasoning },
+          ...model.id === "" ? {} : { wireConfigName: model.id },
+          ...model.function === void 0 ? {} : { wireFunction: model.function }
+        });
       }
     }
-    return merged;
+    const wire = /* @__PURE__ */ new Map();
+    for (const model of merged) {
+      if (model.wireConfigName !== void 0) {
+        wire.set(model.id, {
+          configName: model.wireConfigName,
+          ...model.wireFunction === void 0 ? {} : { function: model.wireFunction }
+        });
+      }
+    }
+    return {
+      models: merged,
+      wire,
+      complete: failures.length === 0,
+      failures
+    };
   }
 };
 async function createTraeStacks({ cacheRoot, logger, endpoints }) {
@@ -5486,7 +5579,7 @@ var plugin = {
             const credential = await stack.store.resolve().catch(() => void 0);
             if (credential === void 0) continue;
             await stack.ensureShim();
-            await stack.refreshCatalog({ force });
+            await stack.refreshCatalog({ force, signal: deadline() });
           } catch (error) {
             logger.warn(`trae ${stack.region}: \u9884\u70ED\u5931\u8D25`, error instanceof Error ? error.message : String(error));
           }
