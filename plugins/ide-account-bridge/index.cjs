@@ -5096,18 +5096,26 @@ var RegionStack = class {
    *
    * Only ever called with a non-empty result, so a failed or empty discovery
    * can never clear the maps a live request depends on.
+   *
+   * The wire map is keyed by model id, but the bridge resolves a request's
+   * `model` by display name first (`wireResolver(model) ?? wireResolver(name)`),
+   * so the display name needs its own index. Deriving it from `models` — rather
+   * than from the wire map's own keys — is what makes models whose display name
+   * differs from their id (id `glm-5.3`, name `GLM 5.3 Turbo`) still resolve.
    */
   applyDirectory(models, wire) {
     this.catalog.set(deriveCatalog(sanitizeCatalog(models), /* @__PURE__ */ new Set(), {}));
     this.wire.callableKeys.clear();
+    this.wire.byId.clear();
+    this.wire.byName.clear();
     for (const model of models) {
       this.wire.callableKeys.add(model.id.trim().toLowerCase());
       this.wire.callableKeys.add(model.name.trim().toLowerCase());
+      const target = wire.get(model.id);
+      if (target === void 0) continue;
+      this.wire.byId.set(model.id, target);
+      this.wire.byName.set(model.name.trim().toLowerCase(), target);
     }
-    this.wire.byId.clear();
-    this.wire.byName.clear();
-    for (const [id, target] of wire) this.wire.byId.set(id, target);
-    for (const [name, target] of wire) this.wire.byName.set(name, target);
     this.wire.resolved = true;
   }
   /**
