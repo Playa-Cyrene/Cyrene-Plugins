@@ -35,6 +35,9 @@ CLI:  python indextts_server.py --model-dir <dir> --port <port>
 --download-only 只把模型仓库下载到 --model-dir 后退出（供插件的一键引导调用），
 不加载模型、不监听端口；再加 --download-aux 会连同推理必需的辅助模型
 （w2v-bert-2.0 / BigVGAN / semantic_codec / campplus）一起下到 hf_cache/。
+
+--aux-only 只把上述辅助模型补齐到 <model-dir>/hf_cache/ 后退出（不下主模型、不监听端口），
+供插件「一键配置」识别到现有安装、但辅助模型不全时调用。
 """
 
 import argparse
@@ -46,6 +49,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -419,6 +423,166 @@ class _Handler(BaseHTTPRequestHandler):
     do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = _unsupported_method
 
 
+# ---------------------------------------------------------------------------
+# 加固上游下载器
+#
+# 上游 indextts/utils/examples_downloader.py 的 _download_file 固定写 "<目标>.tmp"，
+# 写完立刻 os.replace、没有重试，finally 里删 .tmp 失败还会把原异常盖掉。Windows 上
+# 杀毒软件在扫描刚写完的大文件、或另一个进程在写同一个 .tmp 时，就会 [WinError 32]。
+# 这里提供一个加固版替换它（model_download 回退到 hf-mirror 时用的就是它）。
+# ---------------------------------------------------------------------------
+# 改名退避间隔（秒）：合计约 30s。
+_REPLACE_RETRY_DELAYS = (0.5, 1, 2, 3, 5, 8, 10)
+# 删除临时文件的退避间隔（秒）：只是清理，不值得久等。
+_REMOVE_RETRY_DELAYS = (0.2, 0.5, 1)
+
+
+def _is_windows_lock_error(exc) -> bool:
+    """是否是 Windows 上「文件被占用 / 拒绝访问」这类可以等一等再试的 PermissionError。"""
+    return os.name == "nt" and isinstance(exc, PermissionError)
+
+
+def _replace_with_retry(src: str, dst: str) -> None:
+    """os.replace(src, dst)，Windows 上文件被占用时退避重试。
+
+    每次失败都先看目标：已经存在说明别的进程下完了同一个文件（它也是原子改名得来的），
+    直接沿用。重试用尽后写一条中文提示到 stderr，再抛原异常；非 Windows 的权限错误不重试。
+    """
+    attempt = 0
+    while True:
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError as exc:
+            if not _is_windows_lock_error(exc):
+                raise
+            if os.path.isfile(dst):
+                return
+            if attempt >= len(_REPLACE_RETRY_DELAYS):
+                sys.stderr.write(
+                    "[indextts] 无法把下载好的临时文件改名为 %s：文件持续被占用（已重试约 %d 秒）。"
+                    "可能是杀毒软件正在扫描刚下载的文件，或另一个 IndexTTS 进程在下载同一文件；"
+                    "可以把 IndexTTS 安装目录加入杀毒软件白名单后重试。\n"
+                    % (dst, round(sum(_REPLACE_RETRY_DELAYS)))
+                )
+                sys.stderr.flush()
+                raise
+            delay = _REPLACE_RETRY_DELAYS[attempt]
+        # 在 except 块外等待：下一次失败不会被串成 "During handling of the above exception"。
+        time.sleep(delay)
+        attempt += 1
+
+
+def _remove_quietly(path: str) -> None:
+    """删除临时文件：Windows 上被占用时重试几次，最后仍删不掉只写 stderr。任何情况下都不抛异常。"""
+    attempt = 0
+    while True:
+        try:
+            os.remove(path)
+            return
+        except FileNotFoundError:
+            return
+        except Exception as exc:  # noqa: BLE001
+            if _is_windows_lock_error(exc) and attempt < len(_REMOVE_RETRY_DELAYS):
+                delay = _REMOVE_RETRY_DELAYS[attempt]
+            else:
+                try:
+                    sys.stderr.write("[indextts] 无法删除临时文件 %s：%s\n" % (path, exc))
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+        try:
+            time.sleep(delay)
+        except Exception:  # noqa: BLE001
+            return
+        attempt += 1
+
+
+def _download_session():
+    """复用上游 examples_downloader 的 _SESSION（带它的 User-Agent）；没有就直接用 requests。"""
+    try:
+        from indextts.utils import examples_downloader as upstream
+        session = getattr(upstream, "_SESSION", None)
+        if session is not None:
+            return session
+    except Exception:  # noqa: BLE001
+        pass
+    import requests
+    return requests
+
+
+def _robust_download_file(url: str, local_path: str, timeout: int = 60, min_size: int = 0, max_bytes: int = 0) -> None:
+    """上游 _download_file 的加固版：签名、校验与 RuntimeError 文案与上游一致。
+
+    不同之处：临时文件名带 pid（每个进程各用各的，不会两个进程写同一个 .tmp）；
+    改名走 _replace_with_retry；finally 里删临时文件失败不会盖掉原异常。
+    """
+    resp = _download_session().get(url, timeout=timeout, stream=True)
+    try:
+        if resp.status_code < 200 or resp.status_code >= 300:
+            raise RuntimeError(f"Server returned HTTP {resp.status_code} for {url}")
+        content_type = resp.headers.get("Content-Type", "")
+        if "text/html" in content_type:
+            raise RuntimeError(
+                f"Server returned HTML instead of binary file for {url} "
+                f"(Content-Type: {content_type}). The URL may be invalid."
+            )
+
+        tmp_path = f"{local_path}.{os.getpid()}.tmp"
+        try:
+            with open(tmp_path, "wb") as f:
+                received = 0
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    received += len(chunk)
+                    if max_bytes and received >= max_bytes:
+                        break
+            size = os.path.getsize(tmp_path)
+            if min_size and size < min_size:
+                raise RuntimeError(
+                    f"Downloaded file is suspiciously small "
+                    f"({size} bytes) for {url}"
+                )
+            _replace_with_retry(tmp_path, local_path)
+        finally:
+            _remove_quietly(tmp_path)
+    finally:
+        resp.close()
+
+
+def _harden_upstream_downloader() -> bool:
+    """用 _robust_download_file 替换上游 examples_downloader._download_file（幂等）。
+
+    model_download 是在函数体里 `from ... import _download_file` 现取的，所以替换模块属性即生效；
+    若 model_download 顶层也持有同一个引用，一并换掉。上游导入失败、或函数前两个参数不是
+    (url, local_path) 时保持原样。返回加固是否生效。
+    """
+    try:
+        from indextts.utils import examples_downloader as upstream
+    except Exception:  # noqa: BLE001
+        return False
+    original = getattr(upstream, "_download_file", None)
+    if original is _robust_download_file:
+        return True
+    if not callable(original):
+        return False
+    try:
+        params = list(inspect.signature(original).parameters)
+    except (TypeError, ValueError):
+        return False
+    if params[:2] != ["url", "local_path"]:
+        sys.stderr.write("[indextts] 上游 _download_file 的签名与预期不符，保持原样，不做下载加固\n")
+        return False
+    upstream._download_file = _robust_download_file
+    try:
+        from indextts.utils import model_download
+        if getattr(model_download, "_download_file", None) is original:
+            model_download._download_file = _robust_download_file
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
 def _download_model(model_dir: str, engine: str) -> None:
     """Download the IndexTTS main model repo into model_dir (HuggingFace/ModelScope, auto).
 
@@ -438,23 +602,29 @@ def _download_model(model_dir: str, engine: str) -> None:
     print(">> model download complete", flush=True)
 
 
-def _download_aux(model_dir: str) -> None:
+def _download_aux(model_dir: str) -> int:
     """下载 IndexTTS 推理必需的辅助模型到 model_dir/hf_cache/。
 
     IndexTTS2.__init__ 在未传 aux_paths 时会调用 ensure_models_available()，
     首次构造即触发数 GB 下载（w2v-bert-2.0 / BigVGAN / semantic_codec / campplus）；
     放在安装阶段做，避免首次启动被插件的 240s 就绪窗口掐断。
+    老版本上游没有 ensure_models_available（辅助模型由上游在加载时自己处理），此时跳过。
     """
     os.makedirs(model_dir, exist_ok=True)
-    print(">> downloading auxiliary models -> %s" % os.path.join(model_dir, "hf_cache"), flush=True)
     try:
-        from indextts.utils.model_download import ensure_models_available
+        from indextts.utils import model_download
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(
             "无法导入 indextts（请确认依赖已安装，例如在 IndexTTS 目录执行 uv sync）：%s" % exc
         )
+    ensure_models_available = getattr(model_download, "ensure_models_available", None)
+    if ensure_models_available is None:
+        print(">> 当前 IndexTTS 版本没有 ensure_models_available，跳过辅助模型预下载", flush=True)
+        return 0
+    print(">> downloading auxiliary models -> %s" % os.path.join(model_dir, "hf_cache"), flush=True)
     ensure_models_available(model_dir)
     print(">> auxiliary models ready", flush=True)
+    return 0
 
 
 def main():
@@ -472,7 +642,19 @@ def main():
     parser.add_argument("--download-only", action="store_true", default=False, help="Download the model repo into --model-dir and exit")
     parser.add_argument("--download-aux", action="store_true", default=False,
                         help="连同辅助模型（w2v-bert-2.0 / BigVGAN / semantic_codec / campplus）一起下载")
+    parser.add_argument("--aux-only", action="store_true", default=False,
+                        help="只把辅助模型补齐到 --model-dir/hf_cache/ 后退出（不下主模型、不启动服务）")
     args = parser.parse_args()
+
+    # 下载模式与服务模式都要加固：服务进程的 IndexTTS2.__init__ 同样会调 ensure_models_available。
+    try:
+        _harden_upstream_downloader()
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write("[indextts] 下载加固未生效：%s\n" % exc)
+
+    if args.aux_only:
+        _download_aux(args.model_dir)
+        return
 
     if args.download_only:
         _download_model(args.model_dir, args.engine)

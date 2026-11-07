@@ -509,7 +509,14 @@ function serverCwd(modelDir) {
  */
 function serverEnv(modelDir, source) {
   return withEnv(Object.assign(
-    { HF_HUB_CACHE: path.join(modelDir, "hf_cache") },
+    {
+      HF_HUB_CACHE: path.join(modelDir, "hf_cache"),
+      // 管道输出强制 UTF-8：否则 Python 按系统 ANSI 编码（中文 Windows 上是 GBK）写，
+      // Node 按 UTF-8 解，报错里的中文系统信息和中文用户名路径都会变乱码。
+      PYTHONIOENCODING: "utf-8:backslashreplace",
+      // 管道上的 stdout 默认块缓冲，与 stderr 交错时日志顺序会乱。
+      PYTHONUNBUFFERED: "1",
+    },
     modelSourceEnv(source),
   ));
 }
@@ -531,6 +538,9 @@ function runStreaming(cmd, args, options, onLine) {
         if (text && onLine) onLine(text);
       }
     };
+    // 按 UTF-8 流式解码：多字节字符被切在两个 chunk 之间时也不会出乱码。
+    proc.stdout?.setEncoding("utf8");
+    proc.stderr?.setEncoding("utf8");
     proc.stdout?.on("data", feed);
     proc.stderr?.on("data", feed);
     proc.on("error", (err) => {
@@ -636,6 +646,82 @@ function venvPythonPath(installDir) {
   return process.platform === "win32"
     ? path.join(installDir, ".venv", "Scripts", "python.exe")
     : path.join(installDir, ".venv", "bin", "python");
+}
+
+/**
+ * 用 pythonPath 跑 indextts_server.py 的下载模式（opts.args 决定下什么），输出推进 opts.step 的进度。
+ * 先按配置的模型来源（auto = 交给上游探测）；失败就换另一条路再试一次（fallback 语义）。
+ * 两次都失败抛「<failLabel>（官方与镜像均失败）：…」并附最近输出；用户取消不再重试。
+ */
+async function runModelDownload(pythonPath, modelDir, cfg, opts) {
+  const o = opts || {};
+  const step = o.step || "model";
+  const failLabel = o.failLabel || "模型下载失败";
+  const signal = o.signal;
+  const args = [SERVER_SCRIPT].concat(o.args || [], ["--model-dir", modelDir]);
+  const feed = (line) => {
+    pushLog(line);
+    sendProgress(step, line.length > 200 ? line.slice(-200) : line);
+  };
+  const failure = (err, retried) => new Error(
+    failLabel + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
+      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
+  );
+  const secondSource = cfg.modelSource === "modelscope" ? "official" : "modelscope";
+  const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
+  try {
+    await runStreaming(pythonPath, args, {
+      cwd: serverCwd(modelDir),
+      signal: signal,
+      env: serverEnv(modelDir, cfg.modelSource),
+    }, feed);
+  } catch (err) {
+    if (signal && signal.aborted) throw failure(err, false);
+    sendProgress(step, "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
+    try {
+      await runStreaming(pythonPath, args, {
+        cwd: serverCwd(modelDir),
+        signal: signal,
+        env: serverEnv(modelDir, secondSource),
+      }, feed);
+    } catch (err2) {
+      throw failure(err2, true);
+    }
+  }
+}
+
+/**
+ * 逐项检查 <modelDir>/hf_cache 下推理必需的辅助模型，返回缺失项列表（齐全时为空数组）。
+ * 不能只看 hf_cache 在不在：上游一开始就会建这个目录，下载失败留下的空壳也算「有」。
+ */
+function missingAuxModels(modelDir) {
+  const cache = path.join(modelDir || "", "hf_cache");
+  const nonEmptyDir = (p) => {
+    try {
+      return fs.statSync(p).isDirectory() && fs.readdirSync(p).length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const nonEmptyFile = (p) => {
+    try {
+      const st = fs.statSync(p);
+      return st.isFile() && st.size > 0;
+    } catch {
+      return false;
+    }
+  };
+  const missing = [];
+  if (!nonEmptyDir(path.join(cache, "w2v-bert-2.0"))) missing.push("w2v-bert-2.0/");
+  for (const rel of [
+    "semantic_codec_model.safetensors",
+    "campplus_cn_common.bin",
+    "bigvgan/config.json",
+    "bigvgan/bigvgan_generator.pt",
+  ]) {
+    if (!nonEmptyFile(path.join(cache, ...rel.split("/")))) missing.push(rel);
+  }
+  return missing;
 }
 
 /**
@@ -764,37 +850,12 @@ async function bootstrapInstall(installDir, signal) {
     "正在下载模型权重与辅助模型（" + (engine === "v2_5" ? "IndexTTS 2.5" : "IndexTTS 2.0") + "，数 GB，请耐心等待）…",
   );
   const modelDir = path.join(installDir, "checkpoints");
-  const modelArgs = [SERVER_SCRIPT, "--download-only", "--download-aux", "--model-dir", modelDir, "--engine", engine];
-  const feedModel = (line) => {
-    pushLog(line);
-    sendProgress("model", line.length > 200 ? line.slice(-200) : line);
-  };
-  const modelFailure = (err, retried) => new Error(
-    "模型下载失败" + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
-      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
-  );
-  // 先按用户选的来源（auto = 交给上游探测）；失败就换另一条路再试一次（fallback 语义）。
-  const secondSource = cfg.modelSource === "modelscope" ? "official" : "modelscope";
-  const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
-  try {
-    await runStreaming(pythonPath, modelArgs, {
-      cwd: serverCwd(modelDir),
-      signal: signal,
-      env: serverEnv(modelDir, cfg.modelSource),
-    }, feedModel);
-  } catch (err) {
-    if (signal && signal.aborted) throw modelFailure(err, false);
-    sendProgress("model", "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
-    try {
-      await runStreaming(pythonPath, modelArgs, {
-        cwd: serverCwd(modelDir),
-        signal: signal,
-        env: serverEnv(modelDir, secondSource),
-      }, feedModel);
-    } catch (err2) {
-      throw modelFailure(err2, true);
-    }
-  }
+  await runModelDownload(pythonPath, modelDir, cfg, {
+    args: ["--download-only", "--download-aux", "--engine", engine],
+    step: "model",
+    failLabel: "模型下载失败",
+    signal: signal,
+  });
   if (!fs.existsSync(path.join(modelDir, "config.yaml"))) {
     throw new Error("模型下载完成但未找到 checkpoints/config.yaml");
   }
@@ -1055,6 +1116,12 @@ function startServer(options) {
 }
 
 async function doStartServer(options) {
+  // 安装 / 模型下载期间不许起服务：服务进程的 IndexTTS2.__init__ 也会去下同一批辅助模型，
+  // 和安装进程抢同一个文件（Windows 上 [WinError 32]）。启动 IPC、AI 工具、自动重启、
+  // 改配置后的重启都经过这里，一处拦住即可；安装 / 补齐完成后由 oneclick 自己启动服务。
+  if (bootstrapState.active) {
+    throw new Error("安装 / 模型下载正在进行，完成后会自动启动服务，请稍候");
+  }
   const fromRestart = !!(options && options.fromRestart);
   const cfg = loadConfig();
 
@@ -1132,6 +1199,8 @@ async function doStartServer(options) {
       if (ctxRef && process.env.CYRENE_INDEXTTS_DEBUG) ctxRef.log("[IndexTTS] " + trimmed);
     }
   };
+  proc.stdout.setEncoding("utf8");
+  proc.stderr.setEncoding("utf8");
   proc.stdout.on("data", feedServer);
   proc.stderr.on("data", feedServer);
   proc.on("error", (err) => {
@@ -1341,20 +1410,58 @@ const plugin = {
       }
       saveInstallDir(dir);
 
+      // 必须排在快速路径之前：主模型下完后目录看起来已经「装好」，重开窗口再点一键配置
+      // 若走快速路径直接拉起服务，就会和还在下载的安装进程抢同一批辅助模型文件。
+      if (bootstrapState.active) {
+        return { ok: false, error: "已有安装 / 下载任务在进行中，请等它结束" };
+      }
+
       // 快速路径：目录里已经有可用的 Python 与模型
       const detected = detectInstallation(dir);
       if (detected.pythonPath && detected.modelDir) {
-        // 辅助模型缺失时首次启动会先下载数 GB，提示用户（不阻塞配置启动）。
-        const auxPending = !fs.existsSync(path.join(detected.modelDir, "hf_cache"));
         const next = saveConfig(Object.assign({}, loadConfig(), {
           pythonPath: detected.pythonPath,
           modelDir: detected.modelDir,
         }));
+        // 辅助模型不全就先补齐再启动：否则服务启动时 IndexTTS2.__init__ 会去下数 GB，
+        // 多半撞上 240s 就绪窗口。已经用同一配置跑起来的服务不打断（它已经能用了）。
+        const missing = missingAuxModels(detected.modelDir);
+        const alreadyServing = ready && running && activeKey === fingerprint(next);
+        let auxDownloaded = false;
+        if (missing.length && !alreadyServing) {
+          bootstrapLog = [];
+          // 先占位（active = true）：之后的 await 期间，启动请求与再次一键配置都会被拒绝。
+          sendProgress("aux", "正在补齐辅助模型（缺少 " + missing.join("、") + "）…");
+          // 正在启动 / 运行的旧服务也会去下同一批文件，先停掉。
+          if (child) await stopServer();
+          try {
+            await runModelDownload(detected.pythonPath, detected.modelDir, next, {
+              args: ["--aux-only"],
+              step: "aux",
+              failLabel: "辅助模型下载失败",
+              signal: ctxRef ? ctxRef.signal : undefined,
+            });
+            auxDownloaded = true;
+          } catch (err) {
+            const message = err && err.message ? err.message : String(err);
+            finishProgress(message);
+            return {
+              ok: false,
+              mode: "existing",
+              error: "已识别到现有安装，但" + message,
+              detected: detected,
+              config: next,
+              state: getState(),
+            };
+          }
+        }
+        // 清掉上一次留下的报错，同时放开启动限制（doStartServer 开头会检查 bootstrapState.active）。
+        finishProgress(null);
         try {
           await startServer();
           return {
             ok: true, mode: "existing", detected: detected, config: next,
-            auxPending: auxPending, state: getState(),
+            auxDownloaded: auxDownloaded, state: getState(),
           };
         } catch (err) {
           return {
@@ -1368,9 +1475,6 @@ const plugin = {
         }
       }
 
-      if (bootstrapState.active) {
-        return { ok: false, error: "已有安装任务在进行中" };
-      }
       // 先占位：确认弹窗期间也算「进行中」，避免连点两次起两个安装。
       sendProgress("confirm", "等待确认…");
 
@@ -1406,8 +1510,9 @@ const plugin = {
           pythonPath: installed.pythonPath,
           modelDir: installed.modelDir,
         }));
-        await startServer();
+        // 顺序不能反：安装期间 bootstrapState.active 为真，doStartServer 会拒绝启动。
         finishProgress(null);
+        await startServer();
         return { ok: true, mode: "installed", installed: installed, config: next, state: getState() };
       } catch (err) {
         const message = err && err.message ? err.message : String(err);
