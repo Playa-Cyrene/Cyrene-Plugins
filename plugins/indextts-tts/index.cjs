@@ -1430,18 +1430,18 @@ const plugin = {
     ctx.registerIpc("oneclick", async (base) => {
       const dir = typeof base === "string" ? base.trim() : "";
       if (!dir) return { ok: false, error: "请先选择安装目录" };
+      // 必须排在快速路径之前：主模型下完后目录看起来已经「装好」，重开窗口再点一键配置
+      // 若走快速路径直接拉起服务，就会和还在下载的安装进程抢同一批辅助模型文件。
+      // 也要排在 mkdirSync / saveInstallDir 之前：被拒绝的请求不该建目录、也不该改掉已保存的安装目录。
+      if (bootstrapState.active) {
+        return { ok: false, error: "已有安装 / 下载任务在进行中，请等它结束" };
+      }
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch (err) {
         return { ok: false, error: "无法创建目录 " + dir + "：" + err.message };
       }
       saveInstallDir(dir);
-
-      // 必须排在快速路径之前：主模型下完后目录看起来已经「装好」，重开窗口再点一键配置
-      // 若走快速路径直接拉起服务，就会和还在下载的安装进程抢同一批辅助模型文件。
-      if (bootstrapState.active) {
-        return { ok: false, error: "已有安装 / 下载任务在进行中，请等它结束" };
-      }
 
       // 快速路径：目录里已经有可用的 Python 与模型
       const detected = detectInstallation(dir);
@@ -1460,8 +1460,10 @@ const plugin = {
           bootstrapLog = [];
           // 先占位（active = true）：之后的 await 期间，启动请求与再次一键配置都会被拒绝。
           sendProgress("aux", "正在补齐辅助模型（缺少 " + missing.join("、") + "）…");
-          // 正在启动 / 运行的旧服务也会去下同一批文件，先停掉。
-          if (child) await stopServer();
+          // 正在启动 / 运行的旧服务会去下同一批文件；已排好的自动重启也会在下载期间触发、
+          // 被拒绝后白占一次崩溃预算。两种都先 stopServer（它会清掉重启定时器、重置预算）。
+          const stoppedService = !!(child || restartTimer);
+          if (stoppedService) await stopServer();
           removeEmptyAuxFiles(detected.modelDir);
           try {
             await runModelDownload(detected.pythonPath, detected.modelDir, next, {
@@ -1472,11 +1474,15 @@ const plugin = {
             });
           } catch (err) {
             const message = err && err.message ? err.message : String(err);
-            finishProgress(message);
+            // 停掉的服务不自动恢复（恢复了它也会在启动窗口里去下同一批文件），但要如实说出来。
+            const error = "已识别到现有安装"
+              + (stoppedService ? "（补齐前已停止原来在运行 / 启动中的服务，未恢复）" : "")
+              + "，但" + message;
+            finishProgress(error);
             return {
               ok: false,
               mode: "existing",
-              error: "已识别到现有安装，但" + message,
+              error: error,
               detected: detected,
               config: next,
               state: getState(),
