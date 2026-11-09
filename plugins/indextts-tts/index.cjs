@@ -690,9 +690,20 @@ async function runModelDownload(pythonPath, modelDir, cfg, opts) {
   }
 }
 
+/** 推理必需的辅助模型单文件（相对 <modelDir>/hf_cache）；另有目录 w2v-bert-2.0/。 */
+const AUX_FILES = [
+  "semantic_codec_model.safetensors",
+  "campplus_cn_common.bin",
+  "bigvgan/config.json",
+  "bigvgan/bigvgan_generator.pt",
+];
+
 /**
  * 逐项检查 <modelDir>/hf_cache 下推理必需的辅助模型，返回缺失项列表（齐全时为空数组）。
  * 不能只看 hf_cache 在不在：上游一开始就会建这个目录，下载失败留下的空壳也算「有」。
+ * 判断标准与上游 ensure_models_available 对齐，否则 --aux-only 补了也修不好：
+ *   - w2v-bert-2.0/ 只看目录非空（上游也只看这个；只下了一部分的目录两边都认不出来，README 里说明了要手动删）；
+ *   - 单文件要求存在且非空。上游只看存在，所以补齐前要先用 removeEmptyAuxFiles 删掉 0 字节的坏文件。
  */
 function missingAuxModels(modelDir) {
   const cache = path.join(modelDir || "", "hf_cache");
@@ -713,15 +724,31 @@ function missingAuxModels(modelDir) {
   };
   const missing = [];
   if (!nonEmptyDir(path.join(cache, "w2v-bert-2.0"))) missing.push("w2v-bert-2.0/");
-  for (const rel of [
-    "semantic_codec_model.safetensors",
-    "campplus_cn_common.bin",
-    "bigvgan/config.json",
-    "bigvgan/bigvgan_generator.pt",
-  ]) {
+  for (const rel of AUX_FILES) {
     if (!nonEmptyFile(path.join(cache, ...rel.split("/")))) missing.push(rel);
   }
   return missing;
+}
+
+/**
+ * 删掉辅助模型里 0 字节的单文件（中断的复制会留下这种坏文件），返回删掉的相对路径。
+ * 上游对单文件只看「存在」：不删的话 --aux-only 会直接跳过它，每次一键配置都白跑一遍。
+ * 删不掉（被占用等）就留着，补齐后的复查会把它报出来。
+ */
+function removeEmptyAuxFiles(modelDir) {
+  const cache = path.join(modelDir || "", "hf_cache");
+  const removed = [];
+  for (const rel of AUX_FILES) {
+    const p = path.join(cache, ...rel.split("/"));
+    try {
+      const st = fs.statSync(p);
+      if (st.isFile() && st.size === 0) {
+        fs.rmSync(p, { force: true });
+        removed.push(rel);
+      }
+    } catch { /* 不存在或删不掉 */ }
+  }
+  return removed;
 }
 
 /**
@@ -1428,12 +1455,14 @@ const plugin = {
         const missing = missingAuxModels(detected.modelDir);
         const alreadyServing = ready && running && activeKey === fingerprint(next);
         let auxDownloaded = false;
+        let auxMissing = [];
         if (missing.length && !alreadyServing) {
           bootstrapLog = [];
           // 先占位（active = true）：之后的 await 期间，启动请求与再次一键配置都会被拒绝。
           sendProgress("aux", "正在补齐辅助模型（缺少 " + missing.join("、") + "）…");
           // 正在启动 / 运行的旧服务也会去下同一批文件，先停掉。
           if (child) await stopServer();
+          removeEmptyAuxFiles(detected.modelDir);
           try {
             await runModelDownload(detected.pythonPath, detected.modelDir, next, {
               args: ["--aux-only"],
@@ -1441,7 +1470,6 @@ const plugin = {
               failLabel: "辅助模型下载失败",
               signal: ctxRef ? ctxRef.signal : undefined,
             });
-            auxDownloaded = true;
           } catch (err) {
             const message = err && err.message ? err.message : String(err);
             finishProgress(message);
@@ -1454,6 +1482,9 @@ const plugin = {
               state: getState(),
             };
           }
+          // 以补齐后的实际结果为准：老版本上游会跳过预下载，删不掉的坏文件上游也会跳过。
+          auxMissing = missingAuxModels(detected.modelDir);
+          auxDownloaded = auxMissing.length === 0;
         }
         // 清掉上一次留下的报错，同时放开启动限制（doStartServer 开头会检查 bootstrapState.active）。
         finishProgress(null);
@@ -1461,7 +1492,7 @@ const plugin = {
           await startServer();
           return {
             ok: true, mode: "existing", detected: detected, config: next,
-            auxDownloaded: auxDownloaded, state: getState(),
+            auxDownloaded: auxDownloaded, auxMissing: auxMissing, state: getState(),
           };
         } catch (err) {
           return {

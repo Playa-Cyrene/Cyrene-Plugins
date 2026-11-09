@@ -312,7 +312,11 @@
           const what = res.mode === "installed" ? "已安装并启动"
             : res.auxDownloaded ? "已补齐辅助模型并启动"
             : "已配置并启动";
-          showMsg(what + "：" + res.state.baseUrl, true);
+          // 补齐跑完了但文件仍不全（老版本 IndexTTS 不支持预下载等）：如实说，不报「已补齐」。
+          const stillMissing = res.auxMissing && res.auxMissing.length
+            ? "\n注意：辅助模型仍不全（缺少 " + res.auxMissing.join("、") + "），服务加载时 IndexTTS 可能还会自己去下载。"
+            : "";
+          showMsg(what + "：" + res.state.baseUrl + stillMissing, true);
         } else if (res.canceled) {
           showMsg("已取消安装");
         } else {
