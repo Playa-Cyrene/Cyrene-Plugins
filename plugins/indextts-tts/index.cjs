@@ -1464,6 +1464,22 @@ const plugin = {
           // 被拒绝后白占一次崩溃预算。两种都先 stopServer（它会清掉重启定时器、重置预算）。
           const stoppedService = !!(child || restartTimer);
           if (stoppedService) await stopServer();
+          // stopServer 在 5s 内没能结束进程时只记下 killFailure 就返回；那个进程可能还在下同一批文件。
+          // 之前就停不掉、至今还活着的进程同理。这时补齐会重新制造抢文件的问题，直接放弃。
+          const stuck = currentKillFailure();
+          if (stuck) {
+            const error = "已识别到现有安装，但原来的 IndexTTS 服务停不下来：" + stuck
+              + "。为免两个进程同时下载同一批文件，没有开始补齐辅助模型；结束该进程后再点一次「一键配置并启动」。";
+            finishProgress(error);
+            return {
+              ok: false,
+              mode: "existing",
+              error: error,
+              detected: detected,
+              config: next,
+              state: getState(),
+            };
+          }
           removeEmptyAuxFiles(detected.modelDir);
           try {
             await runModelDownload(detected.pythonPath, detected.modelDir, next, {
