@@ -648,10 +648,23 @@ function venvPythonPath(installDir) {
     : path.join(installDir, ".venv", "bin", "python");
 }
 
+const SOURCE_LABELS = { auto: "自动探测", modelscope: "ModelScope / hf-mirror", official: "官方 HuggingFace" };
+
+/**
+ * 模型下载依次尝试的来源。选了具体来源：先它、再另一条。
+ * 选了 auto：先交给上游探测，失败后两条强制路线都要试——探测选的是哪条插件不知道，
+ * 只补一条的话可能把探测选过的那条又跑一遍、官方一次都没试，却报「官方与镜像均失败」。
+ */
+function modelSourceAttempts(source) {
+  if (source === "modelscope") return ["modelscope", "official"];
+  if (source === "official") return ["official", "modelscope"];
+  return ["auto", "modelscope", "official"];
+}
+
 /**
  * 用 pythonPath 跑 indextts_server.py 的下载模式（opts.args 决定下什么），输出推进 opts.step 的进度。
- * 先按配置的模型来源（auto = 交给上游探测）；失败就换另一条路再试一次（fallback 语义）。
- * 两次都失败抛「<failLabel>（官方与镜像均失败）：…」并附最近输出；用户取消不再重试。
+ * 按 modelSourceAttempts 的顺序换来源重试（fallback 语义），任一成功即返回。
+ * 全部失败抛「<failLabel>（官方与镜像均失败）：…」并附最近输出；用户取消不再重试。
  */
 async function runModelDownload(pythonPath, modelDir, cfg, opts) {
   const o = opts || {};
@@ -667,27 +680,25 @@ async function runModelDownload(pythonPath, modelDir, cfg, opts) {
     failLabel + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
       + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
   );
-  const secondSource = cfg.modelSource === "modelscope" ? "official" : "modelscope";
-  const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
-  try {
-    await runStreaming(pythonPath, args, {
-      cwd: serverCwd(modelDir),
-      signal: signal,
-      env: serverEnv(modelDir, cfg.modelSource),
-    }, feed);
-  } catch (err) {
-    if (signal && signal.aborted) throw failure(err, false);
-    sendProgress(step, "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
+  const sources = modelSourceAttempts(cfg.modelSource);
+  let lastErr = null;
+  for (let i = 0; i < sources.length; i += 1) {
+    if (lastErr) {
+      sendProgress(step, "下载失败（" + lastErr.message + "），改用 " + SOURCE_LABELS[sources[i]] + " 重试…");
+    }
     try {
       await runStreaming(pythonPath, args, {
         cwd: serverCwd(modelDir),
         signal: signal,
-        env: serverEnv(modelDir, secondSource),
+        env: serverEnv(modelDir, sources[i]),
       }, feed);
-    } catch (err2) {
-      throw failure(err2, true);
+      return;
+    } catch (err) {
+      if (signal && signal.aborted) throw failure(err, false);
+      lastErr = err;
     }
   }
+  throw failure(lastErr, true);
 }
 
 /** 推理必需的辅助模型单文件（相对 <modelDir>/hf_cache）；另有目录 w2v-bert-2.0/。 */

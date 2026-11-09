@@ -13,6 +13,7 @@
   - **加固上游的 hf-mirror 回退下载**：上游从 ModelScope 下载失败、回退到 hf-mirror 时（报错里的 BigVGAN 就是这条路：ModelScope 上没有它），用的下载函数把文件写到固定的 `<目标>.tmp`，写完立刻改名、不重试，删临时文件失败还会盖掉原异常。插件的服务端现在在启动时把这个函数换成加固版：临时文件名带进程号（`<目标>.<pid>.tmp`，进程之间互不干扰）；改名遇到文件被占用时退避重试约 30 秒，期间发现目标已被别的进程下好、且大小一致就直接沿用；仍失败会给出中文提示并保留原始报错，不再被「During handling of the above exception…」盖掉。校验规则与报错文案和上游一致。**这项重试只覆盖 hf-mirror 回退这一条路**：官方 HuggingFace、ModelScope 和 `w2v-bert-2.0` 用的是各自 SDK 的下载器，不经过它，那几条路上杀毒软件导致的占用不会被重试（见「已知限制」）。
 - **「已装好」时先补齐辅助模型再启动**：快速路径不再只看 `hf_cache` 目录在不在（上游一开始就会建这个目录，下载失败的空壳也算「有」），而是逐项检查 `w2v-bert-2.0/`、`semantic_codec_model.safetensors`、`campplus_cn_common.bin`、`bigvgan/config.json`、`bigvgan/bigvgan_generator.pt`。缺了就先停掉正在启动的旧服务（以及已经排好的自动重启），删掉其中 0 字节的坏文件（上游对已存在的文件不会重下），再补齐（来源与回退规则同一键安装），最后启动。已经用同一配置跑起来的服务不会被打断。成功提示以补齐后的实际结果为准：补齐了写「已补齐辅助模型并启动」，仍不全（例如老版本 IndexTTS 不支持预下载）会如实提示缺哪些。补齐失败时如果停掉过原来的服务，报错里会写明它已停止、没有恢复。旧版那句「再点一次一键配置完成预下载」并不成立（快速路径从不预下载），已删除。
 - 安装 / 下载进行中再点「一键配置」被拒绝时，不再顺手创建新目录、改掉已保存的安装目录。
+- **「模型来源」为「自动」时重试真的换路**：此前探测的那条失败后固定改走 ModelScope / hf-mirror，如果探测选的本来就是它，就是同一条路跑了两遍、官方一次都没试，却报「官方与镜像均失败」。现在「自动」失败后 ModelScope / hf-mirror 和官方 HuggingFace 各再试一次（一键安装的模型下载和补齐辅助模型都适用）。
 - **一键配置成功后清掉旧的红字报错**：此前快速路径启动成功后，上一次失败的报错会一直挂在窗口里。
 - **日志不再乱码、不再乱序**：Python 子进程改用 UTF-8 输出（`PYTHONIOENCODING`）并关闭缓冲（`PYTHONUNBUFFERED`），插件按 UTF-8 流式解码——报错里的中文系统信息和中文用户名路径能正常显示。
 
@@ -76,7 +77,7 @@
 | 禁用 FP16 | 默认用 FP16/BF16 省显存；老显卡上精度不足可能出杂音或报错，勾上改用 FP32（更慢、更吃显存）。改了要重启服务生效 |
 | GitHub 镜像前缀 | 仓库 zip / `uv` / CPython 的镜像前缀（默认 `https://gh-proxy.com/`、`https://ghfast.top/`），**仅在官方源失败后回退**；多个用逗号分隔，留空 = 只用官方 |
 | PyPI 镜像 | `uv sync` 装依赖**失败后**回退用的索引（默认清华源 `https://pypi.tuna.tsinghua.edu.cn/simple`），留空 = 只用官方 PyPI |
-| 模型来源 | `自动`（默认，上游按网络探测）/ `ModelScope / hf-mirror`（国内）/ `官方 HuggingFace`。它决定**先试哪条路**：失败会自动换另一条路再试一次 |
+| 模型来源 | `自动`（默认，上游按网络探测）/ `ModelScope / hf-mirror`（国内）/ `官方 HuggingFace`。它决定**先试哪条路**：失败会自动换另一条路再试一次；选`自动`时探测的那条失败后，两条路各再试一次（探测选了哪条插件不知道，这样保证官方和 ModelScope 都试过） |
 
 ## 提供的工具
 
@@ -97,9 +98,9 @@
 - **镜像回退（可选，默认已填好一组国内镜像）**：以上下载**一律先走官方源，只有官方失败时才按「高级选项 → 镜像」的配置重试**，全部失败才报错。镜像请求都由本机发起、只承载上面这些公开资源，**不上传任何用户数据、不涉及密钥**：
   - GitHub 镜像前缀（默认 `gh-proxy.com`、`ghfast.top`）：`codeload.github.com` 与 `github.com` 两处下载失败时，改为经该代理拉取；同一前缀也用于 `UV_PYTHON_INSTALL_MIRROR`（uv 自己下载的 CPython 来自 `github.com/astral-sh/python-build-standalone/releases`）；
   - PyPI 镜像（默认 `pypi.tuna.tsinghua.edu.cn`）：`uv sync` 失败后作为 uv 的默认索引（`UV_DEFAULT_INDEX` / `UV_INDEX_URL`）重试；
-  - 模型权重：先按「模型来源」选的路径下载，失败后换另一条路再试一次——带 `USE_MODELSCOPE=true`（并设 `HF_ENDPOINT=hf-mirror.com`）走 ModelScope / hf-mirror，或带 `USE_MODELSCOPE=false` 走官方 HuggingFace。这两个是 IndexTTS 自带下载器认的变量（`indextts/utils/network_detection.py`），`hf-mirror.com` 也是上游自己就有的回退点。
+  - 模型权重：先按「模型来源」选的路径下载，失败后换另一条路再试一次（选「自动」时，探测的那条失败后两条路各再试一次）——带 `USE_MODELSCOPE=true`（并设 `HF_ENDPOINT=hf-mirror.com`）走 ModelScope / hf-mirror，或带 `USE_MODELSCOPE=false` 走官方 HuggingFace。这两个是 IndexTTS 自带下载器认的变量（`indextts/utils/network_detection.py`），`hf-mirror.com` 也是上游自己就有的回退点。
   - **信任提示**：仓库 zip 与 `uv` 二进制下载下来是要执行的，经第三方代理下载等于信任该代理不会替换内容；上游 zip 本身又是 `main` 分支、未固定版本、未做哈希校验（见上）。介意的话把镜像前缀清空，即只用官方源。
-- **补齐辅助模型时的网络访问**：点「一键配置并启动」识别到现有安装、但 `checkpoints/hf_cache/` 下辅助模型不全时，插件会用该安装的 Python 运行 `indextts_server.py --aux-only`，由 IndexTTS 自带的下载器补齐 `w2v-bert-2.0`、BigVGAN、semantic_codec、campplus。来源与回退规则和一键安装相同（先按「模型来源」，失败换另一条路再试一次）。这一步**不弹窗确认**：不补的话，服务启动时 IndexTTS 也会去下同样这些文件。补齐前插件会删掉上述单文件里 **0 字节**的坏文件（只删这几个文件、只删 0 字节的，不碰别的内容），否则上游看到文件存在就不会重下。
+- **补齐辅助模型时的网络访问**：点「一键配置并启动」识别到现有安装、但 `checkpoints/hf_cache/` 下辅助模型不全时，插件会用该安装的 Python 运行 `indextts_server.py --aux-only`，由 IndexTTS 自带的下载器补齐 `w2v-bert-2.0`、BigVGAN、semantic_codec、campplus。来源与回退规则和一键安装相同（先按「模型来源」，失败换另一条路；「自动」失败后两条路各再试一次）。这一步**不弹窗确认**：不补的话，服务启动时 IndexTTS 也会去下同样这些文件。补齐前插件会删掉上述单文件里 **0 字节**的坏文件（只删这几个文件、只删 0 字节的，不碰别的内容），否则上游看到文件存在就不会重下。
 - **文件读写**：服务运行期间只读取插件目录内的 `indextts_server.py`、你指定的模型目录，以及 Cyrene 请求中携带的参考音频路径；**不写宿主数据目录**。**一键安装会写你指定的安装目录**（IndexTTS 仓库文件、`.venv/`、`checkpoints/` 以及下载缓存 `.cyrene-bootstrap/`）。配置保存在 Cyrene 的插件私有存储中（卸载重装不丢）。
 - **密钥**：不涉及任何 API key，不读取、不落盘。
 - **输出格式**：默认返回**原始 WAV 字节**（GPT-SoVITS api_v2 契约——Cyrene 的 GPT-SoVITS 通道用 `resp.arrayBuffer()` 直接读字节）。IndexTTS 推理只产出 WAV，本服务不含 mp3 编码器，故不谎报格式。`/tts` 端点精确匹配（`/foo/tts` 会 404）；`?json=1`（或 `X-Json-Audio: 1`）可切换成 JSON + base64；非 GET/POST 的请求一律返回 JSON 501，不会漏出 Python 默认的 HTML。
