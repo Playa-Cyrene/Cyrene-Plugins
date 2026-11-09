@@ -1,7 +1,7 @@
 import { catalogPayload, extractLoop } from './output/index.js';
 import { KERNEL_BOOTSTRAP } from './kernel/index.js';
 import { planOpSuggestion } from '../catalog/index.js';
-import { extCheckOp } from './plan/ext-check.js';
+import { extMeshCheckOp } from './plan/ext-check.js';
 import { createRenderGuardOp } from './plan/render-guard.js';
 import { createShapeSearch } from './plan/shape-search/index.js';
 export function createPlanDispatch(E) {
@@ -61,9 +61,9 @@ export function createPlanDispatch(E) {
         if (o === 'catalog' || o === 'catalog_help' || o === 'help_all')
             return catalogPayload(payload);
         // v0.9.6：渲染状态跟踪的 op 在**本地**处理（读磁盘标记，不占 Blender 往返）
-        // -③：外部通路（资产门 glTF-Validator / 第二交通路 open3d）—— 本地 spawn，不占 Blender
-        if (o === 'gltf_validate' || o === 'ext_mesh_check')
-            return await extCheckOp(o, payload);
+        // 外部网格检查在本机独立进程执行，不占 Blender 往返。
+        if (o === 'ext_mesh_check')
+            return await extMeshCheckOp(payload);
         if (o === 'render_state' ||
             o === 'render_wait' ||
             o === 'render_reset' ||

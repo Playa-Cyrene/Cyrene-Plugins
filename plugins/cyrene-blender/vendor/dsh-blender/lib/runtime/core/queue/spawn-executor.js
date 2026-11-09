@@ -38,10 +38,11 @@ function frameRange(params) {
 }
 /** A fixed internal Python entry for render parameters: no caller script is ever accepted. */
 function renderPrelude(params) {
-    const lines = ['import bpy, json, os'];
+    // 仅调整后台渲染副本，确保输出请求范围内的每一帧。
+    const lines = ['import bpy, json, os', 's=bpy.context.scene', 's.frame_step=1', 's.render.use_file_extension=True'];
     const res = params.resolution;
     if (Array.isArray(res) && res.length === 2)
-        lines.push('s=bpy.context.scene', 's.render.resolution_x=' + Number(res[0]), 's.render.resolution_y=' + Number(res[1]), 's.render.resolution_percentage=100');
+        lines.push('s.render.resolution_x=' + Number(res[0]), 's.render.resolution_y=' + Number(res[1]), 's.render.resolution_percentage=100');
     if (params.engine)
         lines.push('s.render.engine=' + JSON.stringify(asString(params.engine)));
     if (params.samples !== undefined) {

@@ -14,16 +14,9 @@ export function toWslPath(winPath) {
  * representation is the fallback; WSL always gets the WSL path.
  */
 export function extCandidates(input) {
-    const { op, extDir, runner, winPath, wslPath, isWin } = input;
+    const { extDir, runner, winPath, wslPath, isWin } = input;
     const first = isWin ? winPath : wslPath;
     const second = isWin ? wslPath : winPath;
-    if (op === 'gltf_validate') {
-        return [
-            ['node', runner, first],
-            ['node', runner, second],
-            ['wsl.exe', '-e', 'node', runner, wslPath],
-        ];
-    }
     const venvBin = path.join(extDir, 'venv', 'bin', 'python');
     return [
         [venvBin, runner, first],
@@ -69,11 +62,9 @@ export function runExtCandidates(cp, cands) {
  * runtime/ext (field report).
  */
 export function extInstallHint(input) {
-    const { op, extDir, winPath, isWin, tried } = input;
+    const { extDir, winPath, isWin, tried } = input;
     const extAbs = path.resolve(extDir);
-    const installCmd = op === 'gltf_validate'
-        ? 'cd ' + (isWin ? '/d "' : '"') + extAbs + '" && npm i gltf-validator'
-        : isWin
+    const installCmd = isWin
             ? 'cd /d "' + extAbs + '" && py -3 -m venv venv && venv\\Scripts\\pip install open3d'
             : 'cd "' + extAbs + '" && python3 -m venv venv && venv/bin/pip install open3d';
     return {

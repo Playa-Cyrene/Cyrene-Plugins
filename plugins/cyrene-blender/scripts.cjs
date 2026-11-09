@@ -29,7 +29,7 @@ objects = list(s.objects)
 result = {'name': s.name, 'filePath': bpy.data.filepath, 'object_count': len(objects), 'truncated': len(objects) > 500,
  'objects': [{'name': o.name, 'type': o.type, 'location': list(o.location), 'rotation': list(o.rotation_euler), 'rotationMode': o.rotation_mode, 'scale': list(o.scale)} for o in objects[:500]],
  'camera': s.camera.name if s.camera else None, 'frame': s.frame_current, 'frameStart': s.frame_start, 'frameEnd': s.frame_end,
- 'fps': s.render.fps, 'resolution': [s.render.resolution_x, s.render.resolution_y], 'engine': s.render.engine}
+ 'fps': s.render.fps, 'fpsBase': s.render.fps_base, 'resolution': [s.render.resolution_x, s.render.resolution_y], 'engine': s.render.engine}
 ` + resultScript('result');
 }
 
@@ -60,7 +60,7 @@ old_base = s.render.fps_base
 try:
  if d['render']:
   s.render.fps = d['render']['fps']
-  s.render.fps_base = 1.0
+  s.render.fps_base = d['render'].get('fpsBase', 1.0)
  bpy.ops.wm.save_as_mainfile(filepath=d['file'], copy=True, check_existing=False)
 finally:
  s.render.fps = old_fps

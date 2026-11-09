@@ -8,7 +8,9 @@
   },
   "patches": [
     "Explicit Blender initialization order, disable embedded autoexec, Python error exit code 20.",
-    "Reject browser Origin/Sec-Fetch-Site and non-loopback Host on HTTP and WebSocket."
+    "Reject browser Origin/Sec-Fetch-Site and non-loopback Host on HTTP and WebSocket.",
+    "Set frame_step=1 and use_file_extension=True only in the background render process for contiguous PNG sequences.",
+    "Remove the unsupported glTF validator runner, dispatch path and operation catalog entry."
   ],
   "runtimeScope": [
     "lib/runtime",

@@ -192,7 +192,12 @@
   function renderJobs(jobs) {
     setText("job-count", jobs.filter((job) => activeStatuses.has(jobStatus(job))).length);
     byId("jobs-empty").hidden = jobs.length > 0;
-    const nodes = jobs.slice(0, 30).map((job) => {
+    // 优先展示全部活动任务，历史记录的显示上限不应隐藏取消入口。
+    const visibleJobs = [
+      ...jobs.filter((job) => activeStatuses.has(jobStatus(job))),
+      ...jobs.filter((job) => !activeStatuses.has(jobStatus(job))).slice(0, 30),
+    ];
+    const nodes = visibleJobs.map((job) => {
       const id = jobId(job), status = jobStatus(job);
       const card = document.createElement("article");
       card.className = "job-card";
