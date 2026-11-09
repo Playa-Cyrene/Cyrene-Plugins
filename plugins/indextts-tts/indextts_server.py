@@ -442,12 +442,23 @@ def _is_windows_lock_error(exc) -> bool:
     return os.name == "nt" and isinstance(exc, PermissionError)
 
 
+def _same_size_file(path: str, size: int) -> bool:
+    """path 是文件且大小正好是 size。"""
+    try:
+        return os.path.isfile(path) and os.path.getsize(path) == size
+    except OSError:
+        return False
+
+
 def _replace_with_retry(src: str, dst: str) -> None:
     """os.replace(src, dst)，Windows 上文件被占用时退避重试。
 
-    每次失败都先看目标：已经存在说明别的进程下完了同一个文件（它也是原子改名得来的），
-    直接沿用。重试用尽后写一条中文提示到 stderr，再抛原异常；非 Windows 的权限错误不重试。
+    每次失败都先看目标：已经存在且大小与自己下好的临时文件一致，说明别的进程下完了同一个文件，
+    直接沿用。大小不一致不能沿用：上游的 ModelScope / HuggingFace / 迁移分支用 shutil.copy2
+    直接写目标文件，不是原子的，别的进程可能还在复制，此时继续重试。
+    重试用尽后写一条中文提示到 stderr，再抛原异常；非 Windows 的权限错误不重试。
     """
+    expected_size = os.path.getsize(src)
     attempt = 0
     while True:
         try:
@@ -456,7 +467,7 @@ def _replace_with_retry(src: str, dst: str) -> None:
         except PermissionError as exc:
             if not _is_windows_lock_error(exc):
                 raise
-            if os.path.isfile(dst):
+            if _same_size_file(dst, expected_size):
                 return
             if attempt >= len(_REPLACE_RETRY_DELAYS):
                 sys.stderr.write(
