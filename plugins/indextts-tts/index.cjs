@@ -712,9 +712,10 @@ const AUX_FILES = [
 /**
  * 逐项检查 <modelDir>/hf_cache 下推理必需的辅助模型，返回缺失项列表（齐全时为空数组）。
  * 不能只看 hf_cache 在不在：上游一开始就会建这个目录，下载失败留下的空壳也算「有」。
- * 判断标准与上游 ensure_models_available 对齐，否则 --aux-only 补了也修不好：
+ * 判断标准要让 --aux-only 补得回来：
  *   - w2v-bert-2.0/ 只看目录非空（上游也只看这个；只下了一部分的目录两边都认不出来，README 里说明了要手动删）；
- *   - 单文件要求存在且非空。上游只看存在，所以补齐前要先用 removeEmptyAuxFiles 删掉 0 字节的坏文件。
+ *   - 单文件要求「看起来完整」（auxFileLooksComplete）。上游对单文件只看存在，
+ *     所以补齐前要先用 removeBrokenAuxFiles 删掉判为损坏的，上游才会重下。
  */
 function missingAuxModels(modelDir) {
   const cache = path.join(modelDir || "", "hf_cache");
@@ -725,39 +726,108 @@ function missingAuxModels(modelDir) {
       return false;
     }
   };
-  const nonEmptyFile = (p) => {
-    try {
-      const st = fs.statSync(p);
-      return st.isFile() && st.size > 0;
-    } catch {
-      return false;
-    }
-  };
   const missing = [];
   if (!nonEmptyDir(path.join(cache, "w2v-bert-2.0"))) missing.push("w2v-bert-2.0/");
   for (const rel of AUX_FILES) {
-    if (!nonEmptyFile(path.join(cache, ...rel.split("/")))) missing.push(rel);
+    if (!auxFileLooksComplete(path.join(cache, ...rel.split("/")))) missing.push(rel);
   }
   return missing;
 }
 
+/** 从文件 fd 的 position 处读 length 字节。 */
+function readAt(fd, position, length) {
+  const buf = Buffer.alloc(length);
+  const got = fs.readSync(fd, buf, 0, length, position);
+  return got === length ? buf : buf.subarray(0, got);
+}
+
+/** zip「中央目录结束」记录的签名 PK\x05\x06；完整的 zip 文件末尾一定有它。 */
+const ZIP_EOCD_SIG = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+/** EOCD 记录 22 字节 + 最长 65535 字节的注释：签名只可能出现在文件最后这么多字节里。 */
+const ZIP_EOCD_SEARCH = 22 + 65535;
+/** safetensors 规范允许的 JSON 头上限（100MB）。 */
+const SAFETENSORS_MAX_HEADER = 100 * 1024 * 1024;
+
 /**
- * 删掉辅助模型里 0 字节的单文件（中断的复制会留下这种坏文件），返回删掉的相对路径。
- * 上游对单文件只看「存在」：不删的话 --aux-only 会直接跳过它，每次一键配置都白跑一遍。
+ * 判断一个辅助模型单文件是否完整（不存在 / 0 字节 / 认出截断 → false）。
+ * 上游 ModelScope / HuggingFace / 迁移分支用 shutil.copy2 直接写目标文件，中途被打断（比如一键配置
+ * 补齐前停掉了正在启动、正在复制的服务）会留下非空但截断的文件。只读文件头 / 文件尾，按格式认：
+ *   - .safetensors：8 字节小端头长度 N + N 字节 JSON 头 + 数据区，数据区长度 = 各张量 data_offsets 末端的最大值；
+ *   - .pt / .bin：torch.save 的新格式是 zip，末尾必须有中央目录结束记录；旧的 pickle 格式认不出，放行；
+ *   - .json：必须能解析。
+ * 认不出的格式、读不了的文件一律放行：宁可漏判，也不能把好文件当坏的删掉、反复重下。
+ * 不写死文件大小或校验值：上游更新这些文件后会把好文件判坏。
+ */
+function auxFileLooksComplete(p) {
+  let st;
+  try {
+    st = fs.statSync(p);
+  } catch {
+    return false;
+  }
+  if (!st.isFile() || st.size === 0) return false;
+  const ext = path.extname(p).toLowerCase();
+  if (ext === ".json") {
+    if (st.size > 16 * 1024 * 1024) return true; // 配置文件不会这么大，认不出就放行
+    try {
+      JSON.parse(fs.readFileSync(p, "utf8").replace(/^﻿/, ""));
+      return true;
+    } catch (err) {
+      return !(err instanceof SyntaxError); // 解析失败 = 截断；读不了 = 放行
+    }
+  }
+  if (ext !== ".safetensors" && ext !== ".pt" && ext !== ".bin") return true;
+  let fd;
+  try {
+    fd = fs.openSync(p, "r");
+    if (ext === ".safetensors") {
+      if (st.size < 8) return false;
+      const headerLen = Number(readAt(fd, 0, 8).readBigUInt64LE(0));
+      if (headerLen <= 0 || headerLen > SAFETENSORS_MAX_HEADER) return false; // 不是合法的 safetensors
+      if (8 + headerLen > st.size) return false; // 连 JSON 头都没写完
+      let header;
+      try {
+        header = JSON.parse(readAt(fd, 8, headerLen).toString("utf8"));
+      } catch {
+        return false;
+      }
+      let dataEnd = 0;
+      for (const [name, info] of Object.entries(header || {})) {
+        if (name === "__metadata__" || !info || !Array.isArray(info.data_offsets)) continue;
+        dataEnd = Math.max(dataEnd, Number(info.data_offsets[1]) || 0);
+      }
+      return st.size >= 8 + headerLen + dataEnd;
+    }
+    // .pt / .bin
+    if (st.size < 4 || readAt(fd, 0, 4).readUInt32LE(0) !== 0x04034b50) return true; // 不是 zip：旧格式，放行
+    const tailLen = Math.min(st.size, ZIP_EOCD_SEARCH);
+    return readAt(fd, st.size - tailLen, tailLen).lastIndexOf(ZIP_EOCD_SIG) !== -1;
+  } catch {
+    return true; // 打不开 / 读不了（被占用等）：判断不了，放行
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * 删掉辅助模型里判为损坏的单文件（0 字节或认出截断），返回删掉的相对路径。
+ * 上游对单文件只看「存在」：不删的话 --aux-only 会直接跳过它，每次一键配置都白跑一遍、服务还会加载坏模型。
  * 删不掉（被占用等）就留着，补齐后的复查会把它报出来。
  */
-function removeEmptyAuxFiles(modelDir) {
+function removeBrokenAuxFiles(modelDir) {
   const cache = path.join(modelDir || "", "hf_cache");
   const removed = [];
   for (const rel of AUX_FILES) {
     const p = path.join(cache, ...rel.split("/"));
+    if (!fs.existsSync(p) || auxFileLooksComplete(p)) continue;
     try {
-      const st = fs.statSync(p);
-      if (st.isFile() && st.size === 0) {
+      if (fs.statSync(p).isFile()) {
         fs.rmSync(p, { force: true });
         removed.push(rel);
       }
-    } catch { /* 不存在或删不掉 */ }
+    } catch { /* 删不掉 */ }
   }
   return removed;
 }
@@ -1491,7 +1561,7 @@ const plugin = {
               state: getState(),
             };
           }
-          removeEmptyAuxFiles(detected.modelDir);
+          removeBrokenAuxFiles(detected.modelDir);
           try {
             await runModelDownload(detected.pythonPath, detected.modelDir, next, {
               args: ["--aux-only"],
