@@ -170,7 +170,7 @@
           <option value="official">官方 HuggingFace</option>
         </select>
         <p class="hint" style="margin:6px 0 0">
-          先按这里选的来源下载，失败会自动换另一条路（官方 ⇄ ModelScope / hf-mirror）再试一次；自动 = 先按网络探测。
+          先按这里选的来源下载，失败会自动换另一条路（官方 ⇄ ModelScope / hf-mirror）再试一次；自动 = 先按网络探测，失败后两条路各再试一次。
         </p>
         <p class="hint" style="margin:6px 0 0">
           以上镜像与来源改完记得点「保存配置」——「一键配置并启动」用的也是已保存的配置。
@@ -197,6 +197,16 @@
     }
 
     let formLoaded = false;
+    /** 一键配置的 IPC 还没返回：期间「一键配置」保持禁用，不被定时刷新重新点亮。 */
+    let oneclickBusy = false;
+    /** 服务启动中 / 运行中（renderStatus 记录）：此时「启动」本来就该禁用。 */
+    let serviceBusy = false;
+
+    // 安装 / 模型下载进行中：「一键配置」和「启动」都禁用（后端也会拒绝，这里只是别让人白点）。
+    function applyInstallLock(installing) {
+      el("oneclick").disabled = !!installing || oneclickBusy;
+      el("start").disabled = !!installing || serviceBusy;
+    }
 
     // 只在初次加载与保存后填充表单，避免定时刷新把用户尚未保存的输入冲掉。
     function renderForm(cfg) {
@@ -229,9 +239,9 @@
         : (state.lastError ? "最近错误：" + state.lastError : "");
 
       // 启动中也能点「停止」取消（模型加载最长 240s）。
-      const busy = state.starting || state.running;
-      el("start").disabled = busy;
-      el("stop").disabled = !busy;
+      serviceBusy = !!(state.starting || state.running);
+      el("stop").disabled = !serviceBusy;
+      applyInstallLock(!!(state.bootstrap && state.bootstrap.active));
     }
 
     // 安装 / 下载进度（刷新与推送共用，安装中途重开窗口也能看到）。
@@ -289,6 +299,7 @@
         return;
       }
       showMsg("正在处理…");
+      oneclickBusy = true;
       el("oneclick").disabled = true;
       try {
         const res = await invoke("oneclick", dir);
@@ -298,13 +309,14 @@
           renderStatus(res.state);
         }
         if (res.ok) {
-          const what = res.mode === "installed" ? "已安装并启动" : "已配置并启动";
-          if (res.auxPending) {
-            showMsg("已配置并启动，但辅助模型（checkpoints/hf_cache）尚未下载：首次启动会先下载数 GB，"
-              + "可能超出就绪窗口——建议再点一次「一键配置并启动」完成预下载。", true);
-          } else {
-            showMsg(what + "：" + res.state.baseUrl, true);
-          }
+          const what = res.mode === "installed" ? "已安装并启动"
+            : res.auxDownloaded ? "已补齐辅助模型并启动"
+            : "已配置并启动";
+          // 补齐跑完了但文件仍不全（老版本 IndexTTS 不支持预下载等）：如实说，不报「已补齐」。
+          const stillMissing = res.auxMissing && res.auxMissing.length
+            ? "\n注意：辅助模型仍不全（缺少 " + res.auxMissing.join("、") + "），服务加载时 IndexTTS 可能还会自己去下载。"
+            : "";
+          showMsg(what + "：" + res.state.baseUrl + stillMissing, true);
         } else if (res.canceled) {
           showMsg("已取消安装");
         } else {
@@ -313,13 +325,15 @@
       } catch (err) {
         showMsg("一键配置失败：" + (err && err.message ? err.message : err));
       } finally {
-        el("oneclick").disabled = false;
+        oneclickBusy = false;
+        refresh();
       }
     });
 
     // 安装 / 下载进度推送
     ipcRenderer.on("plugin:indextts-tts:progress", (_event, p) => {
       renderBootstrap(p);
+      applyInstallLock(!!(p && p.active));
       if (p && p.error) showMsg(p.error);
     });
 
