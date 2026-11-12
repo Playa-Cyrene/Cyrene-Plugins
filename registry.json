@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-11-11",
+  "updatedAt": "2026-11-12",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -62,7 +62,7 @@
       "name": "Minecraft 机器人",
       "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射。插件目前仍处于测试期，暂不支持会更改游戏机制的模组。",
       "author": "Cyrene",
-      "downloads": 18,
+      "downloads": 19,
       "version": "0.10.0-beta.1",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip",
       "sha256": "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
