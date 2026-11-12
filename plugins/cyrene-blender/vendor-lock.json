@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/sixtysevenlf/dsh-blender-plugin",
+  "version": "3.1.0-alpha.1",
+  "commit": "68513f23e068eaa36cd958af9ba9aa068c64752b",
+  "sha256": {
+    "dsh-blender-plugin-3.1.0-alpha.1.tgz": "9f1fd4ae6260c418dcc4a80e354b41a226e201a965c8dc6e1d8c322e21e5b426",
+    "dsh_blender_bridge.zip": "c50e04bb518f1f5aa867aaa7b7980f79ac51148acf1975042e5586201601caca"
+  },
+  "patches": [
+    "Explicit Blender initialization order, disable embedded autoexec, Python error exit code 20.",
+    "Reject browser Origin/Sec-Fetch-Site and non-loopback Host on HTTP and WebSocket.",
+    "Set frame_step=1 and use_file_extension=True only in the background render process for contiguous PNG sequences.",
+    "Remove the unsupported glTF validator runner, dispatch path and operation catalog entry."
+  ],
+  "runtimeScope": [
+    "lib/runtime",
+    "runtime",
+    "extension",
+    "LICENSE",
+    "package.json"
+  ]
+}

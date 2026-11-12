@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Blender 工作台</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <link rel="stylesheet" href="settings.css" />
+  <script src="settings.js" defer></script>
+</head>
+<body class="standalone">
+  <main class="panel" id="panel" aria-busy="false">
+    <header class="panel-header">
+      <div>
+        <h1>Blender 控制</h1>
+        <p class="muted">连接 Blender，读取场景并提交渲染。</p>
+      </div>
+      <span class="status-pill" id="gateway-status" role="status">正在连接宿主</span>
+    </header>
+
+    <div class="toolbar" aria-label="网关操作">
+      <button class="primary" id="start-gateway" type="button" disabled>启动网关</button>
+      <button id="stop-gateway" type="button" disabled>停止网关</button>
+      <button id="refresh" type="button">刷新诊断</button>
+      <span class="toolbar-hint" id="gateway-detail">等待插件状态</span>
+    </div>
+    <p class="notice notice-error" id="error-message" role="alert" hidden></p>
+    <p class="feedback" id="feedback" role="status" aria-live="polite">正在读取配置…</p>
+
+    <div class="instance-row">
+      <label for="instance-select">当前 Blender</label>
+      <select id="instance-select" disabled aria-describedby="instance-hint">
+        <option value="">暂无可用实例</option>
+      </select>
+    </div>
+    <p class="muted instance-hint" id="instance-hint">打开 Blender 并启用桥接插件后，点击刷新诊断。</p>
+
+    <nav class="tabs" role="tablist" aria-label="Blender 插件设置">
+      <button id="tab-connection" class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="view-connection" data-tab="connection">连接配置</button>
+      <button id="tab-scene" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-scene" data-tab="scene" tabindex="-1">场景与截图</button>
+      <button id="tab-render" class="tab" type="button" role="tab" aria-selected="false" aria-controls="view-render" data-tab="render" tabindex="-1">渲染任务 <span id="job-count" class="count">0</span></button>
+    </nav>
+
+    <section class="tab-view" id="view-connection" role="tabpanel" aria-labelledby="tab-connection">
+      <form id="config-form">
+        <div class="field-grid">
+          <label class="field full-width" for="node-path"><span>Node.js 程序路径</span><input id="node-path" name="nodePath" type="text" autocomplete="off" spellcheck="false" placeholder="node.exe 的完整路径" /><small class="muted">网关需要 Node.js 24.9 或更新版本。</small></label>
+          <label class="field full-width" for="blender-path"><span>Blender 程序路径</span><input id="blender-path" name="blenderPath" type="text" autocomplete="off" spellcheck="false" placeholder="blender.exe 的完整路径" /></label>
+          <label class="field port-field" for="gateway-port"><span>网关端口</span><input id="gateway-port" name="port" type="number" min="1024" max="65535" step="1" value="39878" required /></label>
+          <label class="field" for="output-dir"><span>渲染输出目录</span><input id="output-dir" name="outputDir" type="text" autocomplete="off" spellcheck="false" placeholder="保存截图和渲染结果的文件夹" /></label>
+        </div>
+        <div class="form-footer"><button id="save-config" class="primary" type="submit" disabled>保存配置</button><span id="config-hint" class="muted">路径请填写在本机可访问的位置。</span></div>
+      </form>
+      <div class="connection-note">
+        <p>先启动网关，再在 Blender 中启用配套桥接插件。当前版本仅在一个 Blender 实例就绪时开放场景操作。</p>
+        <p id="ownership-note">本面板只停止由当前插件启动的网关。</p>
+      </div>
+    </section>
+
+    <section class="tab-view" id="view-scene" role="tabpanel" aria-labelledby="tab-scene" hidden>
+      <div class="section-toolbar"><button id="inspect-scene" type="button" disabled>读取场景对象</button><button id="capture-preview" class="primary" type="button" disabled>获取视口截图</button></div>
+      <div class="scene-grid">
+        <section class="surface">
+          <div class="surface-heading"><h2>场景对象</h2><span class="muted" id="object-count">尚未读取</span></div>
+          <input id="object-filter" type="search" aria-label="筛选场景对象" placeholder="按名称筛选" autocomplete="off" />
+          <p class="empty-state" id="scene-empty">选择实例后读取场景。</p>
+          <ul id="object-list" class="object-list" aria-label="场景对象列表"></ul>
+          <p class="file-path" id="scene-file" hidden></p>
+        </section>
+        <section class="surface preview-surface">
+          <div class="surface-heading"><h2>视口截图</h2><span class="muted" id="preview-time"></span></div>
+          <div class="preview-stage"><img id="preview-image" alt="当前 Blender 视口截图" hidden /><p id="preview-empty" class="empty-state">获取截图后在这里预览。</p></div>
+          <p class="file-path" id="preview-path" hidden></p>
+        </section>
+      </div>
+    </section>
+
+    <section class="tab-view" id="view-render" role="tabpanel" aria-labelledby="tab-render" hidden>
+      <form id="render-form">
+        <div class="render-fields">
+          <label class="field" for="render-kind"><span>渲染类型</span><select id="render-kind"><option value="still">当前帧</option><option value="animation">动画</option></select></label>
+          <label class="field" for="resolution"><span>分辨率比例</span><div class="input-unit"><input id="resolution" type="number" min="1" max="100" step="1" value="50" required /><span>%</span></div></label>
+          <label class="field animation-field" for="frame-start" hidden><span>开始帧</span><input id="frame-start" type="number" min="0" max="100000" step="1" value="1" disabled /></label>
+          <label class="field animation-field" for="frame-end" hidden><span>结束帧</span><input id="frame-end" type="number" min="0" max="100000" step="1" value="480" disabled /></label>
+          <label class="field animation-field" for="render-fps" hidden><span>每秒帧数</span><input id="render-fps" type="number" min="1" max="120" step="1" value="60" disabled /></label>
+        </div>
+        <div class="form-footer"><button id="submit-render" class="primary" type="submit" disabled>渲染当前帧</button><span class="muted" id="render-hint">使用当前场景的相机和渲染设置。</span></div>
+      </form>
+      <div class="surface-heading jobs-heading"><h2>任务进度</h2><span id="jobs-updated" class="muted">自动更新</span></div>
+      <p class="empty-state" id="jobs-empty">还没有渲染任务。</p>
+      <div id="job-list" class="job-list" aria-label="渲染任务列表"></div>
+    </section>
+
+    <details class="diagnostics"><summary>操作记录 <span class="muted" id="log-count">0</span></summary><ol id="operation-log" class="operation-log" aria-label="最近操作记录"></ol></details>
+  </main>
+</body>
+</html>
