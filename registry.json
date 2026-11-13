@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-11-12",
+  "updatedAt": "2026-11-13",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -41,7 +41,7 @@
       "description": "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
       "author": "Downfallofthedownfall",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/indextts-tts",
-      "downloads": 66,
+      "downloads": 67,
       "version": "1.1.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip",
       "sha256": "2366bc5a5d12235f8a2bd9b8f5f230b62ae536d74298cc488a1f18c253694fa3"
