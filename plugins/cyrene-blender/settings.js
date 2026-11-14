@@ -16,6 +16,9 @@
   let pollTimer = 0;
   let stateRequest = null;
   let previewSource = "";
+  let previewFile = "";
+  let previewData = null;
+  let pairingPid = null;
   const cancellingJobs = new Set();
 
   function text(value, fallback = "") {
@@ -79,6 +82,7 @@
     actionIds.forEach((id) => { byId(id).disabled = busy || !bridge; });
     byId("start-gateway").disabled = busy || !state || Boolean(gateway.running);
     byId("stop-gateway").disabled = busy || !gateway.running || !gateway.owned;
+    byId("show-addon-token").disabled = busy || !gateway.running || !gateway.owned;
     byId("save-config").disabled = busy || !state || !configDirty || Boolean(gateway.running);
     if (configDirty) setText("config-hint", gateway.running ? "有未保存的修改，请先停止网关再保存。" : "有未保存的修改。");
     ["inspect-scene", "capture-preview", "submit-render"].forEach((id) => { byId(id).disabled = busy || !canOperate; });
@@ -96,6 +100,10 @@
   }
 
   function renderGateway(gateway) {
+    if (!gateway.running || pairingPid !== gateway.health?.gateway?.pid) {
+      pairingPid = null;
+      byId("addon-token").value = "";
+    }
     const status = byId("gateway-status");
     status.textContent = gateway.error ? "连接需检查" : gateway.running ? "网关已连接" : "网关未启动";
     status.dataset.tone = gateway.error ? "error" : gateway.running ? "success" : "neutral";
@@ -171,7 +179,7 @@
 
   function renderPreview() {
     const preview = state?.preview;
-    const source = previewUrl(preview);
+    const source = previewUrl(previewData?.filePath === preview?.filePath ? previewData : null);
     const image = byId("preview-image");
     if (source !== previewSource) {
       previewSource = source;
@@ -227,6 +235,7 @@
       meta.className = "job-meta";
       const parts = [id || "任务编号待确认"];
       if (Number.isFinite(job.frameStart) && Number.isFinite(job.frameEnd)) parts.push("帧 " + job.frameStart + "–" + job.frameEnd);
+      if (Number.isFinite(job.resolutionPercentage)) parts.push("分辨率 " + job.resolutionPercentage + "%");
       if (Number.isFinite(job.currentFrame)) parts.push("当前帧 " + job.currentFrame);
       meta.textContent = parts.join(" · ");
       card.append(meta);
@@ -276,6 +285,17 @@
     stateRequest = (async () => {
       let next = await invoke(refresh ? "refresh" : "get-state");
       if (!isState(next) && refresh) next = await invoke("get-state");
+      const filePath = text(next.preview?.filePath);
+      if (filePath !== previewFile || (filePath && !previewData)) {
+        try {
+          const image = filePath ? await invoke("get-preview", { filePath }) : null;
+          previewData = image?.filePath === filePath ? image : null;
+          previewFile = filePath;
+        } catch (_) {
+          previewData = null;
+          // Retry on the next poll without hiding otherwise valid state.
+        }
+      }
       if (!disposed) render(next);
       return next;
     })();
@@ -341,7 +361,7 @@
     });
     setText("submit-render", animation ? "提交动画渲染" : "渲染当前帧");
     const start = Number(byId("frame-start").value), end = Number(byId("frame-end").value), fps = Number(byId("render-fps").value);
-    setText("render-hint", animation && fps > 0 && end >= start ? "共 " + (end - start + 1) + " 帧，约 " + ((end - start + 1) / fps).toFixed(2) + " 秒。输出 PNG 序列，每个任务最多 3600 帧。" : "使用当前场景的相机和渲染设置。");
+    setText("render-hint", animation && fps > 0 && end >= start ? "共 " + (end - start + 1) + " 帧，约 " + ((end - start + 1) / fps).toFixed(2) + " 秒。输出 PNG 序列，每个任务最多 3600 帧、运行最长 1 小时。" : "使用当前场景的相机；比例和帧率留空沿用工程。每个任务最多 3600 帧、运行最长 1 小时。");
     bridge?.ready?.();
   }
 
@@ -360,6 +380,15 @@
       await invoke("save-config", config);
       configDirty = false;
       setText("config-hint", "配置已保存，可以启动网关。");
+    });
+  });
+  byId("show-addon-token").addEventListener("click", () => {
+    void action("读取连接码", async () => {
+      const pairing = await invoke("get-addon-token");
+      pairingPid = pairing.pid;
+      byId("addon-token").value = pairing.token;
+      byId("addon-token").focus();
+      byId("addon-token").select();
     });
   });
   byId("start-gateway").addEventListener("click", () => {
@@ -395,11 +424,12 @@
     event.preventDefault();
     let request;
     try {
-      request = { kind: byId("render-kind").value, resolutionPercentage: numberField("resolution", 1, 100, "分辨率比例") };
+      request = { kind: byId("render-kind").value };
+      if (byId("resolution").value.trim()) request.resolutionPercentage = numberField("resolution", 1, 100, "分辨率比例");
       if (request.kind === "animation") {
         request.frameStart = numberField("frame-start", 0, 100000, "开始帧");
         request.frameEnd = numberField("frame-end", 0, 100000, "结束帧");
-        request.fps = numberField("render-fps", 1, 120, "每秒帧数");
+        if (byId("render-fps").value.trim()) request.fps = numberField("render-fps", 1, 120, "每秒帧数");
         if (request.frameEnd < request.frameStart) throw new Error("结束帧不能小于开始帧。");
         if (request.frameEnd - request.frameStart + 1 > 3600) throw new Error("每个动画任务最多渲染 3600 帧，请缩短帧范围。");
       }

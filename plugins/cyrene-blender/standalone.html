@@ -52,6 +52,9 @@
         <div class="form-footer"><button id="save-config" class="primary" type="submit" disabled>保存配置</button><span id="config-hint" class="muted">路径请填写在本机可访问的位置。</span></div>
       </form>
       <div class="connection-note">
+        <label class="field" for="addon-token"><span>Blender 连接码</span><input id="addon-token" type="text" readonly autocomplete="off" spellcheck="false" placeholder="启动网关后点击下方按钮" /></label>
+        <button id="show-addon-token" type="button" disabled>显示本次连接码</button>
+        <p class="muted">复制到配套扩展的「Cyrene 连接码」后连接。重启网关后需更新；连接码不要发送给 Agent 或其他人。</p>
         <p>先启动网关，再在 Blender 中启用配套桥接插件。当前版本仅在一个 Blender 实例就绪时开放场景操作。</p>
         <p id="ownership-note">本面板只停止由当前插件启动的网关。</p>
       </div>
@@ -79,13 +82,14 @@
       <form id="render-form">
         <div class="render-fields">
           <label class="field" for="render-kind"><span>渲染类型</span><select id="render-kind"><option value="still">当前帧</option><option value="animation">动画</option></select></label>
-          <label class="field" for="resolution"><span>分辨率比例</span><div class="input-unit"><input id="resolution" type="number" min="1" max="100" step="1" value="50" required /><span>%</span></div></label>
+          <label class="field" for="resolution"><span>分辨率比例</span><div class="input-unit"><input id="resolution" type="number" min="1" max="100" step="1" placeholder="沿用工程" /><span>%</span></div></label>
           <label class="field animation-field" for="frame-start" hidden><span>开始帧</span><input id="frame-start" type="number" min="0" max="100000" step="1" value="1" disabled /></label>
           <label class="field animation-field" for="frame-end" hidden><span>结束帧</span><input id="frame-end" type="number" min="0" max="100000" step="1" value="480" disabled /></label>
-          <label class="field animation-field" for="render-fps" hidden><span>每秒帧数</span><input id="render-fps" type="number" min="1" max="120" step="1" value="60" disabled /></label>
+          <label class="field animation-field" for="render-fps" hidden><span>每秒帧数</span><input id="render-fps" type="number" min="1" max="120" step="1" placeholder="沿用工程" disabled /></label>
         </div>
         <div class="form-footer"><button id="submit-render" class="primary" type="submit" disabled>渲染当前帧</button><span class="muted" id="render-hint">使用当前场景的相机和渲染设置。</span></div>
       </form>
+      <p class="muted">每个任务从开始运行起最多 1 小时，超时终止并保留已输出的帧。后台使用出厂偏好，不加载用户插件或 GPU 设备偏好；请先测试单帧。</p>
       <div class="surface-heading jobs-heading"><h2>任务进度</h2><span id="jobs-updated" class="muted">自动更新</span></div>
       <p class="empty-state" id="jobs-empty">还没有渲染任务。</p>
       <div id="job-list" class="job-list" aria-label="渲染任务列表"></div>

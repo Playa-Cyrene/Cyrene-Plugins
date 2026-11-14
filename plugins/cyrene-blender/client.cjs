@@ -14,10 +14,11 @@ function errorText(value) {
 }
 
 class GatewayClient {
-  constructor(port, hostId, signal) {
+  constructor(port, hostId, signal, token = '') {
     this.port = port;
     this.hostId = hostId;
     this.signal = signal;
+    this.token = token;
   }
 
   request(route, body, options = {}) {
@@ -30,6 +31,7 @@ class GatewayClient {
         method: bytes ? 'POST' : 'GET', signal: combined,
         headers: {
           'content-type': 'application/json',
+          'x-cyrene-token': this.token,
           ...(bytes ? { 'content-length': bytes.length } : {}),
           'x-dsh-host-id': this.hostId,
           'x-dsh-session-id': session,

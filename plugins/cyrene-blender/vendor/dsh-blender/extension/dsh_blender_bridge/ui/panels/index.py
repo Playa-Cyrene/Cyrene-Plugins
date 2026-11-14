@@ -40,7 +40,7 @@ class DSHBB_PT_Panel(bpy.types.Panel):
         activity = self._activity_snapshot()
         self._draw_activity(layout, activity)
         self._draw_connection(layout, scene, context)
-        self._draw_selection(layout, scene, activity)
+        # Selection → DSH uses an upstream HTTP interface, not Cyrene IPC.
 
     @staticmethod
     def _activity_snapshot():
@@ -97,9 +97,12 @@ class DSHBB_PT_Panel(bpy.types.Panel):
             col.operator("dshbb.stop_server", text="Disconnect from DSH", icon="X")
         else:
             col.label(text="Not connected to the DSH Gateway", icon="RADIOBUT_OFF")
+            if server is not None and server.handshake_error:
+                col.label(text=str(server.handshake_error)[:120], icon="ERROR")
             preferences = get_dshbb_addon_preferences(context)
             if preferences is not None:
                 col.prop(preferences, "gateway_port")
+                col.prop(preferences, "gateway_token")
             else:
                 col.label(text="Gateway port: %d" % port)
             col.operator("dshbb.start_server", text="Connect to DSH", icon="PLAY")

@@ -157,11 +157,12 @@ class WebSocketClient:
     """Blocking WebSocket client used by the single Gateway connection thread."""
 
     def __init__(self, host: str, port: int, path: str = DEFAULT_WS_PATH,
-                 max_message_size: int = MAX_MESSAGE_SIZE):
+                 max_message_size: int = MAX_MESSAGE_SIZE, token: str = ""):
         self.host = host
         self.port = int(port)
         self.path = path or DEFAULT_WS_PATH
         self.max_message_size = int(max_message_size)
+        self.token = token
         self._sock = None
         self._buffer = b""
         self._send_lock = threading.Lock()
@@ -175,6 +176,8 @@ class WebSocketClient:
     # -- connection lifecycle ------------------------------------------------
     def connect(self, timeout: float = 5.0) -> "WebSocketClient":
         """Open the TCP connection and complete the HTTP Upgrade handshake."""
+        if len(self.token) != 64 or any(ch not in "0123456789abcdef" for ch in self.token):
+            raise WebSocketError("请从 Cyrene 工作台复制本次连接码，粘贴到扩展后重新连接")
         sock = socket.create_connection((self.host, self.port), timeout=timeout)
         try:
             sock.settimeout(timeout)
@@ -186,8 +189,9 @@ class WebSocketClient:
                 "Connection: Upgrade\r\n"
                 "Sec-WebSocket-Key: %s\r\n"
                 "Sec-WebSocket-Version: %d\r\n"
+                "X-Cyrene-Token: %s\r\n"
                 "\r\n"
-            ) % (self.path, self.host, self.port, key, WEBSOCKET_VERSION)
+            ) % (self.path, self.host, self.port, key, WEBSOCKET_VERSION, self.token)
             sock.sendall(request.encode("ascii"))
 
             response = b""

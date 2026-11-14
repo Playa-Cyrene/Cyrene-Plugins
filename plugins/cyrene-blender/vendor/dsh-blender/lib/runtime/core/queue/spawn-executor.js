@@ -43,6 +43,10 @@ function renderPrelude(params) {
     const res = params.resolution;
     if (Array.isArray(res) && res.length === 2)
         lines.push('s.render.resolution_x=' + Number(res[0]), 's.render.resolution_y=' + Number(res[1]), 's.render.resolution_percentage=100');
+    if (params.resolution_percentage !== undefined)
+        lines.push('s.render.resolution_percentage=' + Number(params.resolution_percentage));
+    if (params.fps !== undefined)
+        lines.push('s.render.fps=' + Number(params.fps), 's.render.fps_base=' + Number(params.fps_base ?? 1));
     if (params.engine)
         lines.push('s.render.engine=' + JSON.stringify(asString(params.engine)));
     if (params.samples !== undefined) {
@@ -207,8 +211,12 @@ function killTree(child) {
     }
 }
 function spawnBlender(opts, prepared, jobId) {
+    // Background scenes do not need host-control or addon-pairing credentials.
+    const env = { ...process.env, DSH_JOB_ID: jobId };
+    delete env.CYRENE_GATEWAY_TOKEN;
+    delete env.CYRENE_ADDON_TOKEN;
     return (opts.spawnImpl || spawn)(opts.blenderExe || BLENDER_EXE, prepared.args, {
-        env: { ...process.env, DSH_JOB_ID: jobId },
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
         detached: !IS_WIN,

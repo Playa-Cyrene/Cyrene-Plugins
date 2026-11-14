@@ -8,6 +8,10 @@ export function createRouter(E) {
             json(res, 403, { ok: false, error: 'browser_or_non_loopback_request_denied' });
             return;
         }
+        if (!E.authenticate?.(req)) {
+            json(res, 401, { ok: false, error: 'gateway_authentication_required' });
+            return;
+        }
         const url = new URL(req.url || '/', 'http://' + E.HOST + ':' + String(E.PORT));
         const p = url.pathname;
         E.bump(p);

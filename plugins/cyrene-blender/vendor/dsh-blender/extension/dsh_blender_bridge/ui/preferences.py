@@ -5,6 +5,7 @@ from bpy.props import IntProperty
 
 from ..compat import ADDON_MODULE
 from ..gateway_schema import GATEWAY_DEFAULT_PORT
+from ..config import get_gateway_token, set_gateway_token
 
 class DSHBB_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = ADDON_MODULE  # pyright: ignore[reportAssignmentType]
@@ -17,6 +18,16 @@ class DSHBB_AddonPreferences(bpy.types.AddonPreferences):
         default=GATEWAY_DEFAULT_PORT,
         min=1024,
         max=65535,
+    )
+    gateway_token: bpy.props.StringProperty(
+        name="Cyrene 连接码",
+        description="从 Cyrene 工作台复制本次连接码；重启网关后须更新，再断开并重新连接",
+        subtype="PASSWORD",
+        options={'SKIP_SAVE'},
+        get=lambda self: get_gateway_token(),
+        set=lambda self, value: set_gateway_token(value),
+        default="",
+        maxlen=64,
     )
     hyper3d_api_key: bpy.props.StringProperty(
         name="Hyper3D API Key",
@@ -60,18 +71,7 @@ class DSHBB_AddonPreferences(bpy.types.AddonPreferences):
         layout.label(text="DSH Gateway:", icon='URL')
         connection_box = layout.box()
         connection_box.prop(self, "gateway_port", text="Gateway Port")
-
-        layout.separator()
-        layout.label(text="Virtual Display (virtual-gui):", icon='DISPLAY')
-        display_box = layout.box()
-        display_box.operator(
-            "dshbb.install_virtual_display_deps",
-            text="Install missing prerequisites",
-        )
-        display_box.label(
-            text="同一份计划也由终端 /blender doctor --fix 使用；一键只执行 Gateway 给出的 pkexec 命令",
-            icon='INFO',
-        )
+        connection_box.prop(self, "gateway_token")
 
         layout.separator()
         layout.label(text="3D Generation:", icon='SHADERFX')

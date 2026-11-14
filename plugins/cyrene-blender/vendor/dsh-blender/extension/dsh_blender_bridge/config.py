@@ -105,11 +105,22 @@ _user_stopped_server = False
 # Resolution order: env DSHBB_GATEWAY_PORT -> add-on preference -> default.
 GATEWAY_HOST = "127.0.0.1"
 GATEWAY_PATH = ADDON_WS_PATH
+_cyrene_gateway_token = ""
 
 
 def get_gateway_host():
     """Gateway host is fixed to loopback; the Gateway is always local."""
     return GATEWAY_HOST
+
+
+def get_gateway_token():
+    """Runtime-only pairing code, never an AddonPreferences IDProperty."""
+    return _cyrene_gateway_token
+
+
+def set_gateway_token(value):
+    global _cyrene_gateway_token
+    _cyrene_gateway_token = str(value or "").strip()
 
 
 def get_gateway_port():
@@ -165,7 +176,8 @@ def _dshbb_ensure_server_running():
 
     scene.dshbb_server_running = server.running
 
-    return None if server.running else 1.0
+    # Missing/invalid pairing codes require user input, not background retries.
+    return None if server.running or server.handshake_error else 1.0
 
 
 def _dshbb_schedule_auto_start(delay=0.5):
@@ -195,6 +207,7 @@ def register_auto_start():
 
 def unregister_auto_start():
     """Remove callbacks owned by the add-on before it is disabled."""
+    set_gateway_token("")
     if _dshbb_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_dshbb_load_post)
     if bpy.app.timers.is_registered(_dshbb_ensure_server_running):

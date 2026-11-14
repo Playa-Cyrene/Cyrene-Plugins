@@ -45,6 +45,9 @@ class BlenderService {
     const defaults = { nodePath: 'node', blenderPath: '', port: 39878, outputDir: path.join(this.root, 'output') };
     this.config = validateConfig(ctx.storage.get('config') || defaults, defaults);
     this.controller = new AbortController();
+    this.authToken = '';
+    this.addonToken = '';
+    this.previewData = null;
     this.client = new GatewayClient(this.config.port, this.hostId, this.controller.signal);
     this.child = null;
     this.closed = false;
@@ -73,6 +76,18 @@ class BlenderService {
   }
 
   getState() { return structuredClone(this.state); }
+
+  getPreview(input) {
+    // Only return the last captured image; IPC cannot request arbitrary files.
+    if (!this.previewData || input?.filePath !== this.state.preview?.filePath) return null;
+    return { ...this.state.preview, dataUrl: this.previewData };
+  }
+
+  getAddonToken() {
+    if (!this.child || !this.state.gateway.running || !this.addonToken) throw new Error('请先启动网关。');
+    // This credential only pairs the addon; it cannot authorize HTTP commands.
+    return { token: this.addonToken, pid: this.child.pid };
+  }
 
   async saveConfig(input) {
     if (this.child) throw new Error('请先停止网关，再修改连接配置。');
@@ -110,10 +125,14 @@ class BlenderService {
     assertStarting();
     this.logs = '';
     this.state.gateway.error = null;
+    this.authToken = crypto.randomBytes(32).toString('hex');
+    this.addonToken = crypto.randomBytes(32).toString('hex');
+    this.client = new GatewayClient(this.config.port, this.hostId, this.controller.signal, this.authToken);
     const child = spawn(this.config.nodePath, [entry], {
       cwd: workdir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env, DSH_HOST_ID: this.hostId,
+        CYRENE_GATEWAY_TOKEN: this.authToken, CYRENE_ADDON_TOKEN: this.addonToken,
         DSH_BLENDER_GATEWAY_PORT: String(this.config.port), DSH_BLENDER_WORKDIR: workdir,
         DSH_QUEUE_STATE: path.join(workdir, 'state', 'queue.json'),
         DSH_BLENDER_CONFIG: configPath, DSH_BLENDER_VIRTUAL_GUI: 'off',
@@ -134,6 +153,8 @@ class BlenderService {
       if (!this.stopping) {
         this.generation++;
         this.controller.abort();
+        this.authToken = '';
+        this.addonToken = '';
         this.interruptJobs('网关连接已中断，无法继续确认任务执行状态；请检查 Blender 后再提交。');
         this.state.gateway.error = `网关已退出 (${code ?? signal})。${this.logs.slice(-2000)}`;
       }
@@ -228,8 +249,9 @@ class BlenderService {
     await fs.mkdir(folder, { recursive: true });
     const filePath = path.join(folder, `${Date.now()}-${crypto.randomUUID()}.png`);
     await fs.writeFile(filePath, png, { flag: 'wx' });
-    this.state.preview = { filePath, dataUrl: `data:image/png;base64,${png.toString('base64')}`, capturedAt: new Date().toISOString() };
-    return { filePath, capturedAt: this.state.preview.capturedAt, hint: '需要图像分析时，使用 Cyrene 的 Read 工具读取此绝对路径。' };
+    this.state.preview = { filePath, capturedAt: new Date().toISOString() };
+    this.previewData = `data:image/png;base64,${png.toString('base64')}`;
+    return { ...this.state.preview, hint: '工作台可直接查看预览。仅在宿主权限允许读取该路径时使用 Read 分析；project-read-only 只能读工作区内文件，可先把输出目录设为工作区内。读取被拒绝时说明限制，不得声称已看图。' };
   }
 
   async saveCopy(signal) {
@@ -244,22 +266,23 @@ class BlenderService {
   async render(input = {}, signal) {
     if (!['still', 'animation'].includes(input.kind)) throw new Error('渲染类型必须为 still 或 animation。');
     if (!this.config.blenderPath) throw new Error('请先配置 Blender 可执行文件的完整路径。');
-    const percentage = scripts.number(input.resolutionPercentage ?? 50, '分辨率百分比', 1, 100, true);
+    if (input.resolutionPercentage !== undefined) scripts.number(input.resolutionPercentage, '分辨率百分比', 1, 100, true);
     const scene = await this.inspect(signal);
-    const fps = scripts.number(input.fps === undefined ? scene.fps : input.fps, '帧率', 1, 120, true);
+    const percentage = scripts.number(input.resolutionPercentage === undefined ? scene.resolutionPercentage : input.resolutionPercentage, '分辨率百分比', 1, input.resolutionPercentage === undefined ? 32767 : 100, true);
+    const fps = scripts.number(input.fps === undefined ? scene.fps : input.fps, '帧率', 1, input.fps === undefined ? 32767 : 120, true);
     const fpsBase = input.fps === undefined ? scripts.number(scene.fpsBase ?? 1, '帧率基数', Number.MIN_VALUE, Number.MAX_VALUE) : 1;
     const start = scripts.number(input.frameStart ?? (input.kind === 'still' ? scene.frame : scene.frameStart), '起始帧', 0, 100000, true);
     const end = scripts.number(input.kind === 'still' ? start : (input.frameEnd ?? scene.frameEnd), '结束帧', start, Math.min(start + 3599, 100000), true);
     const folder = path.join(this.config.outputDir, 'renders', `${Date.now()}-${crypto.randomUUID()}`);
     await fs.mkdir(folder, { recursive: true });
     const file = path.join(folder, 'scene.blend');
-    const saved = await this.act(scripts.snapshotScript(file, { fps, fpsBase }), signal);
+    const saved = await this.act(scripts.snapshotScript(file, true), signal);
     await fs.access(file);
-    const resolution = saved.resolution.map(x => Math.max(4, Math.round(scripts.number(x, '场景分辨率', 4, 32768, true) * percentage / 100)));
+    const resolution = saved.resolution.map(x => scripts.number(x, '场景分辨率', 4, 65536, true));
     const outputDir = path.join(folder, 'frames');
-    const response = await this.client.request('/job', { surface: 'queue', op: 'submit', kind: 'render', file, frames: [start, end], resolution, format: 'PNG', output: outputDir + path.sep, outdir: outputDir, timeout_ms: 3600000 }, { signal });
+    const response = await this.client.request('/job', { surface: 'queue', op: 'submit', kind: 'render', file, frames: [start, end], fps, fps_base: fpsBase, resolution, resolution_percentage: percentage, format: 'PNG', output: outputDir + path.sep, outdir: outputDir, timeout_ms: 3600000 }, { signal });
     if (!response.job?.id) throw new Error('网关没有返回渲染任务编号。');
-    const job = { ...response.job, outputDir, snapshot: file, fps, fpsBase, frameStart: start, frameEnd: end };
+    const job = { ...response.job, outputDir, snapshot: file, fps, fpsBase, resolution, resolutionPercentage: percentage, timeoutMs: 3600000, frameStart: start, frameEnd: end };
     this.state.jobs = [job, ...this.state.jobs];
     this.trimJobHistory();
     return job;
@@ -338,7 +361,7 @@ class BlenderService {
     this.stopping = true;
     this.generation++;
     this.controller.abort();
-    const cleanupClient = new GatewayClient(this.config.port, this.hostId);
+    const cleanupClient = new GatewayClient(this.config.port, this.hostId, undefined, this.authToken);
     const child = this.child;
     if (child) {
       // 先取消本插件作业，再结束自己启动的进程树；不接管或终止其他网关。
@@ -358,6 +381,8 @@ class BlenderService {
     this.interruptJobs(child ? '网关已停止，未能确认任务取消结果；请检查 Blender 后再提交。' : '网关连接已中断，无法确认任务执行状态；请检查 Blender 后再提交。');
     this.child = null;
     this.session = null;
+    this.authToken = '';
+    this.addonToken = '';
     this.state.gateway = { running: false, owned: false, health: null, error: null };
     this.state.instances = [];
     this.state.selectedInstanceId = null;

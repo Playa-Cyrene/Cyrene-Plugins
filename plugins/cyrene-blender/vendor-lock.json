@@ -10,7 +10,10 @@
     "Explicit Blender initialization order, disable embedded autoexec, Python error exit code 20.",
     "Reject browser Origin/Sec-Fetch-Site and non-loopback Host on HTTP and WebSocket.",
     "Set frame_step=1 and use_file_extension=True only in the background render process for contiguous PNG sequences.",
-    "Remove the unsupported glTF validator runner, dispatch path and operation catalog entry."
+    "Remove the unsupported glTF validator runner, dispatch path and operation catalog entry.",
+    "Require independent per-launch 256-bit credentials for all HTTP routes and addon WebSocket upgrades; fail closed without configuration.",
+    "Add a nonpersistent pairing field and authenticated WebSocket transport to the bundled Blender extension; hide DSH-only UI actions.",
+    "Apply fps/fps_base and native resolution percentage only in background renders, and remove gateway credentials from their environment."
   ],
   "runtimeScope": [
     "lib/runtime",

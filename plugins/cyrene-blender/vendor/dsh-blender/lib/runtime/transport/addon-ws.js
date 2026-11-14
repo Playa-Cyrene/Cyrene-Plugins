@@ -35,6 +35,7 @@ export class AddonGateway {
     deadAfterMs;
     maxMessageBytes;
     onEvent;
+    authenticate;
     heartbeat = null;
     nextEpoch = 1;
     closed = false;
@@ -44,6 +45,7 @@ export class AddonGateway {
         this.deadAfterMs = opts.deadAfterMs || HEARTBEAT_DEAD_MS;
         this.maxMessageBytes = opts.maxMessageBytes || MAX_MESSAGE_BYTES;
         this.onEvent = opts.onEvent;
+        this.authenticate = opts.authenticate || (() => false);
     }
     /** Attach the /addon WebSocket upgrade path to the Gateway HTTP server. */
     attach(server) {
@@ -130,6 +132,10 @@ export class AddonGateway {
     handleUpgrade(req, socket, head) {
         if (req.headers.origin || req.headers['sec-fetch-site'] || !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(String(req.headers.host || ''))) {
             socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+            return;
+        }
+        if (!this.authenticate(req)) {
+            socket.end('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
             return;
         }
         if (this.closed) {

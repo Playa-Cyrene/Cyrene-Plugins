@@ -1,7 +1,7 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
-const allowed = new Set(['get-state', 'save-config', 'start-gateway', 'stop-gateway', 'refresh', 'select-instance', 'inspect-scene', 'capture-preview', 'submit-render', 'cancel-job']);
+const allowed = new Set(['get-state', 'get-preview', 'get-addon-token', 'save-config', 'start-gateway', 'stop-gateway', 'refresh', 'select-instance', 'inspect-scene', 'capture-preview', 'submit-render', 'cancel-job']);
 
 contextBridge.exposeInMainWorld('CyrenePanel', {
   invoke(channel, ...args) {

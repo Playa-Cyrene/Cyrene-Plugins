@@ -1,6 +1,7 @@
 // Gateway HTTP app assembly: one loopback server, the existing 29 routes, and
 // the /addon WebSocket upgrade. No addon listener, no second port.
 import http from 'node:http';
+import { createTokenVerifier } from '../auth.js';
 import { createEngine, engineProvenance } from '../engine.js';
 import { createSelectionStore } from '../selectionstore.js';
 import { describeConfig } from '../config.js';
@@ -37,10 +38,13 @@ function addonEventSink(opts, registryRef) {
 }
 /** Build the Gateway app without listening; tests and the process entry share it. */
 export function createGatewayApp(opts = {}) {
+    // Fail closed before constructing the engine or restoring any queue.
+    const authenticate = createTokenVerifier(opts.authToken ?? process.env.CYRENE_GATEWAY_TOKEN);
+    const authenticateAddon = createTokenVerifier(opts.addonToken ?? process.env.CYRENE_ADDON_TOKEN);
     const port = opts.port ?? GATEWAY_DEFAULT_PORT;
     const host = opts.host ?? HOST;
     const registryRef = { current: null };
-    const addonGateway = new AddonGateway({ ...opts, onEvent: addonEventSink(opts, registryRef) });
+    const addonGateway = new AddonGateway({ ...opts, authenticate: authenticateAddon, onEvent: addonEventSink(opts, registryRef) });
     const addonClient = new GatewayAddonClient(addonGateway);
     installPresencePublisher(addonClient);
     const engine = createEngine({ addonClient: addonClient });
@@ -84,7 +88,7 @@ export function createGatewayApp(opts = {}) {
         hostErrText,
     };
     const routes = createRoutes(E);
-    const server = http.createServer(createRouter({ HOST: host, PORT: port, bump, routes }));
+    const server = http.createServer(createRouter({ HOST: host, PORT: port, bump, routes, authenticate }));
     addonGateway.attach(server);
     const app = {
         server,

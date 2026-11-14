@@ -36,6 +36,7 @@ from .config import (
     get_credential,
     get_gateway_host,
     get_gateway_port,
+    get_gateway_token,
     gateway_url,
     online_access_enabled,
     online_access_error,
@@ -81,6 +82,7 @@ class DSHBlenderBridgeServer(*command_mixins()):
         self._configured_gateway_host = gateway_host
         self.gateway_host = gateway_host or get_gateway_host()
         self.gateway_port = int(gateway_port) if gateway_port else get_gateway_port()
+        self.gateway_token = ""
         self.running = False
         self.connected = False
         self.handshake_error = ""
@@ -131,6 +133,10 @@ class DSHBlenderBridgeServer(*command_mixins()):
         if not self._configured_gateway_port:
             self.gateway_host = self._configured_gateway_host or get_gateway_host()
             self.gateway_port = get_gateway_port()
+        self.gateway_token = get_gateway_token()
+        if len(self.gateway_token) != 64 or any(ch not in "0123456789abcdef" for ch in self.gateway_token):
+            self.handshake_error = "请先在下方粘贴 Cyrene 工作台的本次连接码，再连接"
+            return
         self.running = True
         self.handshake_error = ""
         self._project = self._current_project()
@@ -207,7 +213,7 @@ class DSHBlenderBridgeServer(*command_mixins()):
             connection = None
             try:
                 connection = transport.WebSocketClient(
-                    self.gateway_host, self.gateway_port, path=GATEWAY_PATH)
+                    self.gateway_host, self.gateway_port, path=GATEWAY_PATH, token=self.gateway_token)
                 connection.connect(timeout=HANDSHAKE_TIMEOUT_SECONDS)
                 with self._connection_lock:
                     self._connection = connection
@@ -220,6 +226,7 @@ class DSHBlenderBridgeServer(*command_mixins()):
                 print("DSH Blender Bridge connected to the DSH Gateway (instance %s)" % _INSTANCE_ID)
                 self._serve(connection)
             except transport.WebSocketError as exc:
+                self.handshake_error = str(exc)
                 print("DSH Blender Bridge: Gateway connection problem: %s" % str(exc))
             except OSError as exc:
                 print("DSH Blender Bridge: Gateway connection failed: %s" % str(exc))
