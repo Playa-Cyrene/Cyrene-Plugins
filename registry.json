@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-11-06",
+  "updatedAt": "2026-11-13",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -22,7 +22,7 @@
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/system-status",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/system-status-0.1.0.zip",
       "sha256": "443a013a2dae834f38a131d9bb5249689f7d28861d3d0c97ca1939f63d4dcc6d",
-      "downloads": 80
+      "downloads": 81
     },
     {
       "id": "subscription-oauth",
@@ -41,8 +41,8 @@
       "description": "在本机启动 IndexTTS 2.x 语音合成服务，供 Cyrene 的 GPT-SoVITS 通道直接调用",
       "author": "Downfallofthedownfall",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/indextts-tts",
-      "downloads": 66,
-      "version": "1.1.3",
+      "downloads": 67,
+      "version": "1.1.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/indextts-tts-1.1.2.zip",
       "sha256": "2366bc5a5d12235f8a2bd9b8f5f230b62ae536d74298cc488a1f18c253694fa3"
     },
@@ -62,7 +62,7 @@
       "name": "Minecraft 机器人",
       "description": "把 Agent 接入 Minecraft：机器人连接服务器，游戏聊天直接对话，支持移动/跟随/攻击/农耕/交易/自主任务与本能反射。插件目前仍处于测试期，暂不支持会更改游戏机制的模组。",
       "author": "Cyrene",
-      "downloads": 17,
+      "downloads": 19,
       "version": "0.10.0-beta.1",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/minecraft-bot-0.10.0-beta.1.zip",
       "sha256": "6d2e3842fdd3486942f026e5f3831a1344e4f48aecc48d30113a989260136ba5"
@@ -76,7 +76,7 @@
       "version": "0.3.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
       "sha256": "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
-      "downloads": 33
+      "downloads": 35
     },
     {
       "id": "astral-relay",
@@ -109,7 +109,7 @@
       "version": "0.3.1",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/mijia-control-0.3.1.zip",
       "sha256": "d851c48d8ee60b71797d36f67a5453c09923b499c129a89cf8580d4a98d90c3f",
-      "downloads": 6
+      "downloads": 7
     },
     {
       "id": "cyrene-browser",
@@ -129,7 +129,7 @@
       "description": "扫码连接小米运动健康（CN 区），定时同步步数 / 睡眠 / 心率；对话、定时播报、发动态时均可感知健康数据，支持播报频率 / 风格与独立早安问候配置，可选将健康定期写入长期记忆（L2），退出登录删除插件凭据、健康缓存、同步元信息及关联任务（不删除宿主历史内容）",
       "author": "抽卡保底真君",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/xiaomi-health",
-      "downloads": 4,
+      "downloads": 10,
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/xiaomi-health-0.5.4.zip",
       "sha256": "330779958d0f800744ae327081833023210edc7e688771192e5115f05c2d42e5"
     },
