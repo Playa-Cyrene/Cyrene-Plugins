@@ -111,7 +111,7 @@ class BlenderService {
       if (this.closed || this.stopping || this.ctx.signal.aborted || signal.aborted || this.generation !== generation) throw new Error('网关启动已取消。');
     };
     assertStarting();
-    if (process.platform !== 'win32') throw new Error('0.1.0 目前仅支持 Windows。');
+    if (process.platform !== 'win32') throw new Error('目前仅支持 Windows。');
     const { stdout } = await this.runFile(this.config.nodePath, ['--version'], { windowsHide: true, timeout: 5000 });
     assertStarting();
     checkNodeVersion(stdout);

@@ -1,15 +1,21 @@
-# Blender 工作台 0.1.0
+# Blender 工作台 0.1.1
 
 插件作者（市场显示）：**抽卡保底真君**  
 原仓库：[sixtysevenlf/dsh-blender-plugin](https://github.com/sixtysevenlf/dsh-blender-plugin)。上游作者、版权和许可证声明保留在随附源码与 `THIRD_PARTY_NOTICES.md` 中。
 
 把本机 Blender 接入 Cyrene。中文设置面板提供连接检查、场景清单、视口截图、静帧和动画渲染队列。对话工具可以按名称调整现有物体的位置、旋转和缩放，也可以保存独立工程副本。
 
-这是第一版适配插件，基于固定版本的 dsh-blender-plugin 网关与扩展，不需要安装 DSH 主程序。当前只支持 Windows、一个 Blender 实例。它提供制作动态壁纸的操作基础，不会自动完成家具建模、角色动作或壁纸与聊天事件的联动。
+插件基于固定版本的 dsh-blender-plugin 网关与扩展，不需要安装 DSH 主程序。当前只支持 Windows、一个 Blender 实例。它提供制作动态壁纸的操作基础，不会自动完成家具建模、角色动作或壁纸与聊天事件的联动。
+
+## 0.1.1 更新
+
+同步 [上游 PR #96](https://github.com/sixtysevenlf/dsh-blender-plugin/pull/96)，固定提交 `6c5614712972a5cbca52b13d4df9193d76e76b0d`。随包运行时的无头 worker、性能助手和 GPU 前导现在按 Blender 版本选择 EEVEE 引擎标识，修复 Blender 4.2–4.x 中相关配置赋值失败的问题；5.0 起使用恢复后的标识。此更新保留 Cyrene 的鉴权、渲染隔离及扩展适配，工具和连接方式不变，已安装的 0.1.0 Cyrene 桥接扩展可以继续使用。
+
+上游版本仍为 **3.1.0-alpha.1 预发布**，此次同步的是其发布后的修复。三个修复入口已在 Linux Blender 4.3.2 验证；完整 Windows 宿主流程与 Blender 5.x 尚未实测。
 
 ## 安装
 
-1. 在 Cyrene 的插件管理中选择从 ZIP 安装 `cyrene-blender-0.1.0.zip`，安装后手动启用「Blender 工作台」。也可把解压后的 `cyrene-blender` 整个目录放入当前 Cyrene 用户数据目录下的 `plugins`，重启再启用。
+1. 在 Cyrene 的插件管理中选择从 ZIP 安装 `cyrene-blender-0.1.1.zip`，安装后手动启用「Blender 工作台」。也可把解压后的 `cyrene-blender` 整个目录放入当前 Cyrene 用户数据目录下的 `plugins`，重启再启用。
 2. 准备 Node.js 24.9 或更高版本，以及具有实际 `blender.exe` 的 Blender 4.2+。前一轮适配使用 Blender 4.5.15 LTS；本轮修复的后台验证使用 Linux Blender 4.3.2，Windows 宿主全流程尚未重测。微软商店的 `blender-launcher.exe` 不适合作为后台渲染程序，因为它不会可靠转交输出和退出码；建议用官方便携版。
 3. 使用本包随附的 **Cyrene 鉴权适配版**桥接扩展：将 `vendor/dsh-blender/extension/dsh_blender_bridge` 目录内的全部文件压缩为 ZIP，使 `blender_manifest.toml` 位于 ZIP 根目录。在 Blender「编辑 → 偏好设置 → 插件」选择「从磁盘安装」并启用 **DSH Blender Bridge**。已经安装原版扩展的用户需先停用、移除旧版再安装适配版；原版 3.1.0-alpha.1 不支持连接码，无法连接此网关。上游固定版本链接及原始资产 SHA256 仍保留在 `vendor-lock.json` 和 `THIRD_PARTY_NOTICES.md`，用于来源核对，不作为安装包。
 4. 在 Cyrene 的功能插件列表点击 Blender 工作台的「打开」，填写 `node.exe`、`blender.exe` 和输出目录的绝对路径，保存后启动网关。默认端口 **39878**。支持嵌入面板的宿主版本也可直接从插件设置进入。
