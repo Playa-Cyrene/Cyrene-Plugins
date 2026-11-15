@@ -176,6 +176,14 @@
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-balance-10.4.3.zip",
       "sha256": "0cffbb4bec593324b73bf4ce8b5b7faf72c7fe0e37140193a1e02eeaeac5128c",
       "downloads": 0
+    },
+    {
+      "id": "cyrene-blender",
+      "name": "Blender 工作台",
+      "version": "0.1.0",
+      "description": "连接本机 Blender，读取场景、调整物体、查看预览并管理独立渲染任务。",
+      "author": "抽卡保底真君",
+      "homepage": "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-blender"
     }
   ]
 }

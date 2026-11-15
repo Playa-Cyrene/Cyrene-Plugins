@@ -39,6 +39,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [cyrene-hud](./plugins/cyrene-hud) | 0.8.7 | 常驻性能监测&Cyrene状态&自定义快速跳转窗口三合一的仿灵动岛状态栏，可自定义外观 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-hud-0.8.7.zip) | Noimpty | [Cyrene-Agent-Plugin](https://github.com/LZhWi/Cyrene-Agent-Plugin/tree/codex/cyrene-hud-upstream) |
 | [better-lessons](./plugins/better-lessons) | 0.1.0 | learn 模式课堂演出：BLS 剧本在独立窗口逐帧播放，支持键鼠推进、插话续讲、对白回看、回放与清空 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/better-lessons-0.1.0.zip) | yuzu-tanuki | [Cyrene-Better-Lessons](https://github.com/yuzu-tanuki/Cyrene-Better-Lessons) |
 | [cyrene-balance](./plugins/cyrene-balance) | 10.4.3 | 常驻桌面的唯一桌宠：余额与今日消费、提问与危险操作确认、任务进度与头顶状态面板都收在她身上；八种姿态、44 张小表情、三档状态面板，托盘单击即可一键归位 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-balance-10.4.3.zip) | 昔涟 | — |
+| [cyrene-blender](./plugins/cyrene-blender) | 0.1.0 | 连接本机 Blender，读取场景、调整物体、查看预览并管理独立渲染任务。 |  | 抽卡保底真君 | [dsh-blender-plugin（上游）](https://github.com/sixtysevenlf/dsh-blender-plugin) |
 
 ---
 
