@@ -509,7 +509,14 @@ function serverCwd(modelDir) {
  */
 function serverEnv(modelDir, source) {
   return withEnv(Object.assign(
-    { HF_HUB_CACHE: path.join(modelDir, "hf_cache") },
+    {
+      HF_HUB_CACHE: path.join(modelDir, "hf_cache"),
+      // 管道输出强制 UTF-8：否则 Python 按系统 ANSI 编码（中文 Windows 上是 GBK）写，
+      // Node 按 UTF-8 解，报错里的中文系统信息和中文用户名路径都会变乱码。
+      PYTHONIOENCODING: "utf-8:backslashreplace",
+      // 管道上的 stdout 默认块缓冲，与 stderr 交错时日志顺序会乱。
+      PYTHONUNBUFFERED: "1",
+    },
     modelSourceEnv(source),
   ));
 }
@@ -531,6 +538,9 @@ function runStreaming(cmd, args, options, onLine) {
         if (text && onLine) onLine(text);
       }
     };
+    // 按 UTF-8 流式解码：多字节字符被切在两个 chunk 之间时也不会出乱码。
+    proc.stdout?.setEncoding("utf8");
+    proc.stderr?.setEncoding("utf8");
     proc.stdout?.on("data", feed);
     proc.stderr?.on("data", feed);
     proc.on("error", (err) => {
@@ -636,6 +646,190 @@ function venvPythonPath(installDir) {
   return process.platform === "win32"
     ? path.join(installDir, ".venv", "Scripts", "python.exe")
     : path.join(installDir, ".venv", "bin", "python");
+}
+
+const SOURCE_LABELS = { auto: "自动探测", modelscope: "ModelScope / hf-mirror", official: "官方 HuggingFace" };
+
+/**
+ * 模型下载依次尝试的来源。选了具体来源：先它、再另一条。
+ * 选了 auto：先交给上游探测，失败后两条强制路线都要试——探测选的是哪条插件不知道，
+ * 只补一条的话可能把探测选过的那条又跑一遍、官方一次都没试，却报「官方与镜像均失败」。
+ */
+function modelSourceAttempts(source) {
+  if (source === "modelscope") return ["modelscope", "official"];
+  if (source === "official") return ["official", "modelscope"];
+  return ["auto", "modelscope", "official"];
+}
+
+/**
+ * 用 pythonPath 跑 indextts_server.py 的下载模式（opts.args 决定下什么），输出推进 opts.step 的进度。
+ * 按 modelSourceAttempts 的顺序换来源重试（fallback 语义），任一成功即返回。
+ * 全部失败抛「<failLabel>（官方与镜像均失败）：…」并附最近输出；用户取消不再重试。
+ */
+async function runModelDownload(pythonPath, modelDir, cfg, opts) {
+  const o = opts || {};
+  const step = o.step || "model";
+  const failLabel = o.failLabel || "模型下载失败";
+  const signal = o.signal;
+  const args = [SERVER_SCRIPT].concat(o.args || [], ["--model-dir", modelDir]);
+  const feed = (line) => {
+    pushLog(line);
+    sendProgress(step, line.length > 200 ? line.slice(-200) : line);
+  };
+  const failure = (err, retried) => new Error(
+    failLabel + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
+      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
+  );
+  const sources = modelSourceAttempts(cfg.modelSource);
+  let lastErr = null;
+  for (let i = 0; i < sources.length; i += 1) {
+    if (lastErr) {
+      sendProgress(step, "下载失败（" + lastErr.message + "），改用 " + SOURCE_LABELS[sources[i]] + " 重试…");
+    }
+    try {
+      await runStreaming(pythonPath, args, {
+        cwd: serverCwd(modelDir),
+        signal: signal,
+        env: serverEnv(modelDir, sources[i]),
+      }, feed);
+      return;
+    } catch (err) {
+      if (signal && signal.aborted) throw failure(err, false);
+      lastErr = err;
+    }
+  }
+  throw failure(lastErr, true);
+}
+
+/** 推理必需的辅助模型单文件（相对 <modelDir>/hf_cache）；另有目录 w2v-bert-2.0/。 */
+const AUX_FILES = [
+  "semantic_codec_model.safetensors",
+  "campplus_cn_common.bin",
+  "bigvgan/config.json",
+  "bigvgan/bigvgan_generator.pt",
+];
+
+/**
+ * 逐项检查 <modelDir>/hf_cache 下推理必需的辅助模型，返回缺失项列表（齐全时为空数组）。
+ * 不能只看 hf_cache 在不在：上游一开始就会建这个目录，下载失败留下的空壳也算「有」。
+ * 判断标准要让 --aux-only 补得回来：
+ *   - w2v-bert-2.0/ 只看目录非空（上游也只看这个；只下了一部分的目录两边都认不出来，README 里说明了要手动删）；
+ *   - 单文件要求「看起来完整」（auxFileLooksComplete）。上游对单文件只看存在，
+ *     所以补齐前要先用 removeBrokenAuxFiles 删掉判为损坏的，上游才会重下。
+ */
+function missingAuxModels(modelDir) {
+  const cache = path.join(modelDir || "", "hf_cache");
+  const nonEmptyDir = (p) => {
+    try {
+      return fs.statSync(p).isDirectory() && fs.readdirSync(p).length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const missing = [];
+  if (!nonEmptyDir(path.join(cache, "w2v-bert-2.0"))) missing.push("w2v-bert-2.0/");
+  for (const rel of AUX_FILES) {
+    if (!auxFileLooksComplete(path.join(cache, ...rel.split("/")))) missing.push(rel);
+  }
+  return missing;
+}
+
+/** 从文件 fd 的 position 处读 length 字节。 */
+function readAt(fd, position, length) {
+  const buf = Buffer.alloc(length);
+  const got = fs.readSync(fd, buf, 0, length, position);
+  return got === length ? buf : buf.subarray(0, got);
+}
+
+/** zip「中央目录结束」记录的签名 PK\x05\x06；完整的 zip 文件末尾一定有它。 */
+const ZIP_EOCD_SIG = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
+/** EOCD 记录 22 字节 + 最长 65535 字节的注释：签名只可能出现在文件最后这么多字节里。 */
+const ZIP_EOCD_SEARCH = 22 + 65535;
+/** safetensors 规范允许的 JSON 头上限（100MB）。 */
+const SAFETENSORS_MAX_HEADER = 100 * 1024 * 1024;
+
+/**
+ * 判断一个辅助模型单文件是否完整（不存在 / 0 字节 / 认出截断 → false）。
+ * 上游 ModelScope / HuggingFace / 迁移分支用 shutil.copy2 直接写目标文件，中途被打断（比如一键配置
+ * 补齐前停掉了正在启动、正在复制的服务）会留下非空但截断的文件。只读文件头 / 文件尾，按格式认：
+ *   - .safetensors：8 字节小端头长度 N + N 字节 JSON 头 + 数据区，数据区长度 = 各张量 data_offsets 末端的最大值；
+ *   - .pt / .bin：torch.save 的新格式是 zip，末尾必须有中央目录结束记录；旧的 pickle 格式认不出，放行；
+ *   - .json：必须能解析。
+ * 认不出的格式、读不了的文件一律放行：宁可漏判，也不能把好文件当坏的删掉、反复重下。
+ * 不写死文件大小或校验值：上游更新这些文件后会把好文件判坏。
+ */
+function auxFileLooksComplete(p) {
+  let st;
+  try {
+    st = fs.statSync(p);
+  } catch {
+    return false;
+  }
+  if (!st.isFile() || st.size === 0) return false;
+  const ext = path.extname(p).toLowerCase();
+  if (ext === ".json") {
+    if (st.size > 16 * 1024 * 1024) return true; // 配置文件不会这么大，认不出就放行
+    try {
+      JSON.parse(fs.readFileSync(p, "utf8").replace(/^﻿/, ""));
+      return true;
+    } catch (err) {
+      return !(err instanceof SyntaxError); // 解析失败 = 截断；读不了 = 放行
+    }
+  }
+  if (ext !== ".safetensors" && ext !== ".pt" && ext !== ".bin") return true;
+  let fd;
+  try {
+    fd = fs.openSync(p, "r");
+    if (ext === ".safetensors") {
+      if (st.size < 8) return false;
+      const headerLen = Number(readAt(fd, 0, 8).readBigUInt64LE(0));
+      if (headerLen <= 0 || headerLen > SAFETENSORS_MAX_HEADER) return false; // 不是合法的 safetensors
+      if (8 + headerLen > st.size) return false; // 连 JSON 头都没写完
+      let header;
+      try {
+        header = JSON.parse(readAt(fd, 8, headerLen).toString("utf8"));
+      } catch {
+        return false;
+      }
+      let dataEnd = 0;
+      for (const [name, info] of Object.entries(header || {})) {
+        if (name === "__metadata__" || !info || !Array.isArray(info.data_offsets)) continue;
+        dataEnd = Math.max(dataEnd, Number(info.data_offsets[1]) || 0);
+      }
+      return st.size >= 8 + headerLen + dataEnd;
+    }
+    // .pt / .bin
+    if (st.size < 4 || readAt(fd, 0, 4).readUInt32LE(0) !== 0x04034b50) return true; // 不是 zip：旧格式，放行
+    const tailLen = Math.min(st.size, ZIP_EOCD_SEARCH);
+    return readAt(fd, st.size - tailLen, tailLen).lastIndexOf(ZIP_EOCD_SIG) !== -1;
+  } catch {
+    return true; // 打不开 / 读不了（被占用等）：判断不了，放行
+  } finally {
+    if (fd !== undefined) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
+ * 删掉辅助模型里判为损坏的单文件（0 字节或认出截断），返回删掉的相对路径。
+ * 上游对单文件只看「存在」：不删的话 --aux-only 会直接跳过它，每次一键配置都白跑一遍、服务还会加载坏模型。
+ * 删不掉（被占用等）就留着，补齐后的复查会把它报出来。
+ */
+function removeBrokenAuxFiles(modelDir) {
+  const cache = path.join(modelDir || "", "hf_cache");
+  const removed = [];
+  for (const rel of AUX_FILES) {
+    const p = path.join(cache, ...rel.split("/"));
+    if (!fs.existsSync(p) || auxFileLooksComplete(p)) continue;
+    try {
+      if (fs.statSync(p).isFile()) {
+        fs.rmSync(p, { force: true });
+        removed.push(rel);
+      }
+    } catch { /* 删不掉 */ }
+  }
+  return removed;
 }
 
 /**
@@ -764,37 +958,12 @@ async function bootstrapInstall(installDir, signal) {
     "正在下载模型权重与辅助模型（" + (engine === "v2_5" ? "IndexTTS 2.5" : "IndexTTS 2.0") + "，数 GB，请耐心等待）…",
   );
   const modelDir = path.join(installDir, "checkpoints");
-  const modelArgs = [SERVER_SCRIPT, "--download-only", "--download-aux", "--model-dir", modelDir, "--engine", engine];
-  const feedModel = (line) => {
-    pushLog(line);
-    sendProgress("model", line.length > 200 ? line.slice(-200) : line);
-  };
-  const modelFailure = (err, retried) => new Error(
-    "模型下载失败" + (retried ? "（官方与镜像均失败）" : "") + "：" + err.message
-      + (bootstrapLog.length ? "\n\n最近输出：\n" + bootstrapLogTail(25) : ""),
-  );
-  // 先按用户选的来源（auto = 交给上游探测）；失败就换另一条路再试一次（fallback 语义）。
-  const secondSource = cfg.modelSource === "modelscope" ? "official" : "modelscope";
-  const secondLabel = secondSource === "modelscope" ? "ModelScope / hf-mirror" : "官方 HuggingFace";
-  try {
-    await runStreaming(pythonPath, modelArgs, {
-      cwd: serverCwd(modelDir),
-      signal: signal,
-      env: serverEnv(modelDir, cfg.modelSource),
-    }, feedModel);
-  } catch (err) {
-    if (signal && signal.aborted) throw modelFailure(err, false);
-    sendProgress("model", "下载失败（" + err.message + "），改用 " + secondLabel + " 重试…");
-    try {
-      await runStreaming(pythonPath, modelArgs, {
-        cwd: serverCwd(modelDir),
-        signal: signal,
-        env: serverEnv(modelDir, secondSource),
-      }, feedModel);
-    } catch (err2) {
-      throw modelFailure(err2, true);
-    }
-  }
+  await runModelDownload(pythonPath, modelDir, cfg, {
+    args: ["--download-only", "--download-aux", "--engine", engine],
+    step: "model",
+    failLabel: "模型下载失败",
+    signal: signal,
+  });
   if (!fs.existsSync(path.join(modelDir, "config.yaml"))) {
     throw new Error("模型下载完成但未找到 checkpoints/config.yaml");
   }
@@ -1055,6 +1224,12 @@ function startServer(options) {
 }
 
 async function doStartServer(options) {
+  // 安装 / 模型下载期间不许起服务：服务进程的 IndexTTS2.__init__ 也会去下同一批辅助模型，
+  // 和安装进程抢同一个文件（Windows 上 [WinError 32]）。启动 IPC、AI 工具、自动重启、
+  // 改配置后的重启都经过这里，一处拦住即可；安装 / 补齐完成后由 oneclick 自己启动服务。
+  if (bootstrapState.active) {
+    throw new Error("安装 / 模型下载正在进行，完成后会自动启动服务，请稍候");
+  }
   const fromRestart = !!(options && options.fromRestart);
   const cfg = loadConfig();
 
@@ -1132,6 +1307,8 @@ async function doStartServer(options) {
       if (ctxRef && process.env.CYRENE_INDEXTTS_DEBUG) ctxRef.log("[IndexTTS] " + trimmed);
     }
   };
+  proc.stdout.setEncoding("utf8");
+  proc.stderr.setEncoding("utf8");
   proc.stdout.on("data", feedServer);
   proc.stderr.on("data", feedServer);
   proc.on("error", (err) => {
@@ -1334,6 +1511,12 @@ const plugin = {
     ctx.registerIpc("oneclick", async (base) => {
       const dir = typeof base === "string" ? base.trim() : "";
       if (!dir) return { ok: false, error: "请先选择安装目录" };
+      // 必须排在快速路径之前：主模型下完后目录看起来已经「装好」，重开窗口再点一键配置
+      // 若走快速路径直接拉起服务，就会和还在下载的安装进程抢同一批辅助模型文件。
+      // 也要排在 mkdirSync / saveInstallDir 之前：被拒绝的请求不该建目录、也不该改掉已保存的安装目录。
+      if (bootstrapState.active) {
+        return { ok: false, error: "已有安装 / 下载任务在进行中，请等它结束" };
+      }
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch (err) {
@@ -1344,17 +1527,75 @@ const plugin = {
       // 快速路径：目录里已经有可用的 Python 与模型
       const detected = detectInstallation(dir);
       if (detected.pythonPath && detected.modelDir) {
-        // 辅助模型缺失时首次启动会先下载数 GB，提示用户（不阻塞配置启动）。
-        const auxPending = !fs.existsSync(path.join(detected.modelDir, "hf_cache"));
         const next = saveConfig(Object.assign({}, loadConfig(), {
           pythonPath: detected.pythonPath,
           modelDir: detected.modelDir,
         }));
+        // 辅助模型不全就先补齐再启动：否则服务启动时 IndexTTS2.__init__ 会去下数 GB，
+        // 多半撞上 240s 就绪窗口。已经用同一配置跑起来的服务不打断（它已经能用了）。
+        const missing = missingAuxModels(detected.modelDir);
+        const alreadyServing = ready && running && activeKey === fingerprint(next);
+        let auxDownloaded = false;
+        let auxMissing = [];
+        if (missing.length && !alreadyServing) {
+          bootstrapLog = [];
+          // 先占位（active = true）：之后的 await 期间，启动请求与再次一键配置都会被拒绝。
+          sendProgress("aux", "正在补齐辅助模型（缺少 " + missing.join("、") + "）…");
+          // 正在启动 / 运行的旧服务会去下同一批文件；已排好的自动重启也会在下载期间触发、
+          // 被拒绝后白占一次崩溃预算。两种都先 stopServer（它会清掉重启定时器、重置预算）。
+          const stoppedService = !!(child || restartTimer);
+          if (stoppedService) await stopServer();
+          // stopServer 在 5s 内没能结束进程时只记下 killFailure 就返回；那个进程可能还在下同一批文件。
+          // 之前就停不掉、至今还活着的进程同理。这时补齐会重新制造抢文件的问题，直接放弃。
+          const stuck = currentKillFailure();
+          if (stuck) {
+            const error = "已识别到现有安装，但原来的 IndexTTS 服务停不下来：" + stuck
+              + "。为免两个进程同时下载同一批文件，没有开始补齐辅助模型；结束该进程后再点一次「一键配置并启动」。";
+            finishProgress(error);
+            return {
+              ok: false,
+              mode: "existing",
+              error: error,
+              detected: detected,
+              config: next,
+              state: getState(),
+            };
+          }
+          removeBrokenAuxFiles(detected.modelDir);
+          try {
+            await runModelDownload(detected.pythonPath, detected.modelDir, next, {
+              args: ["--aux-only"],
+              step: "aux",
+              failLabel: "辅助模型下载失败",
+              signal: ctxRef ? ctxRef.signal : undefined,
+            });
+          } catch (err) {
+            const message = err && err.message ? err.message : String(err);
+            // 停掉的服务不自动恢复（恢复了它也会在启动窗口里去下同一批文件），但要如实说出来。
+            const error = "已识别到现有安装"
+              + (stoppedService ? "（补齐前已停止原来在运行 / 启动中的服务，未恢复）" : "")
+              + "，但" + message;
+            finishProgress(error);
+            return {
+              ok: false,
+              mode: "existing",
+              error: error,
+              detected: detected,
+              config: next,
+              state: getState(),
+            };
+          }
+          // 以补齐后的实际结果为准：老版本上游会跳过预下载，删不掉的坏文件上游也会跳过。
+          auxMissing = missingAuxModels(detected.modelDir);
+          auxDownloaded = auxMissing.length === 0;
+        }
+        // 清掉上一次留下的报错，同时放开启动限制（doStartServer 开头会检查 bootstrapState.active）。
+        finishProgress(null);
         try {
           await startServer();
           return {
             ok: true, mode: "existing", detected: detected, config: next,
-            auxPending: auxPending, state: getState(),
+            auxDownloaded: auxDownloaded, auxMissing: auxMissing, state: getState(),
           };
         } catch (err) {
           return {
@@ -1368,9 +1609,6 @@ const plugin = {
         }
       }
 
-      if (bootstrapState.active) {
-        return { ok: false, error: "已有安装任务在进行中" };
-      }
       // 先占位：确认弹窗期间也算「进行中」，避免连点两次起两个安装。
       sendProgress("confirm", "等待确认…");
 
@@ -1406,8 +1644,9 @@ const plugin = {
           pythonPath: installed.pythonPath,
           modelDir: installed.modelDir,
         }));
-        await startServer();
+        // 顺序不能反：安装期间 bootstrapState.active 为真，doStartServer 会拒绝启动。
         finishProgress(null);
+        await startServer();
         return { ok: true, mode: "installed", installed: installed, config: next, state: getState() };
       } catch (err) {
         const message = err && err.message ? err.message : String(err);
