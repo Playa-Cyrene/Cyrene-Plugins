@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-11-15",
+  "updatedAt": "2026-11-17",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -11,7 +11,7 @@
       "version": "0.6.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/ripples-of-aion-0.6.0.zip",
       "sha256": "763f1470ce8b450ad0ecdf2fea1ffb55d4f242c89227306cff18d163f8a20b66",
-      "downloads": 60
+      "downloads": 61
     },
     {
       "id": "system-status",
@@ -52,7 +52,7 @@
       "description": "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
       "author": "Playa",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/chat-export",
-      "downloads": 23,
+      "downloads": 24,
       "version": "1.0.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip",
       "sha256": "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
@@ -76,7 +76,7 @@
       "version": "0.3.2",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/bili-music-0.3.2.zip",
       "sha256": "75b06f85c1183e6bfe5ac0dda5478b4a4c2b7f245eeb0387bd809494abf7ab43",
-      "downloads": 35
+      "downloads": 36
     },
     {
       "id": "astral-relay",
@@ -120,7 +120,7 @@
       "version": "0.3.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-browser-0.3.0.zip",
       "sha256": "bb3cd1aad1fb559da34d57bbd1eab6d114dd9b63917314aa13b317db0b61bd40",
-      "downloads": 2
+      "downloads": 4
     },
     {
       "id": "xiaomi-health",
