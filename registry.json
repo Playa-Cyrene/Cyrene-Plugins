@@ -180,12 +180,10 @@
     {
       "id": "cyrene-blender",
       "name": "Blender 工作台",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "连接本机 Blender，读取场景、调整物体、查看预览并管理独立渲染任务。",
       "author": "抽卡保底真君",
       "homepage": "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-blender",
-      "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-blender-0.1.0.zip",
-      "sha256": "c81c4551ce2b888c0ee131697846cdca2f5c878bcdbb2b71c15f84e0156b76ba",
       "downloads": 0
     }
   ]
