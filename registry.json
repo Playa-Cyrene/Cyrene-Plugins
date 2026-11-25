@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-11-25",
+  "updatedAt": "2026-11-26",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -139,7 +139,7 @@
       "description": "复用本机已登录的 Qoder 与 Trae 桌面账号，向 Cyrene 提供 OpenAI 兼容的本地端点，无需 OAuth 或粘贴 API Key；附额度查看与每日签到。",
       "author": "citie114514",
       "homepage": "https://github.com/citie114514/pi-connect/tree/main/cyrene/ide-account-bridge",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "downloads": 0
     },
     {

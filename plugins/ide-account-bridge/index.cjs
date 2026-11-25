@@ -3830,7 +3830,7 @@ function createTraeShim(options) {
       const url = req.url ?? "/";
       const catalogRoute = req.method === "GET" && (url === "/v1/models" || url === "/v1/models/") || req.method === "POST" && (url === "/v1/chat/completions" || url === "/v1/chat/completions/");
       if (catalogRoute && typeof refreshCatalog === "function") {
-        const haveModels = options.catalog.current().length > 0;
+        const haveModels = typeof options.discoveryReady === "function" ? options.discoveryReady() : options.catalog.current().length > 0;
         const refreshed = (async () => {
           try {
             return await refreshCatalog();
@@ -4990,6 +4990,7 @@ var RegionStack = class {
     this.portIndex = portIndex;
     this.modelsDiscoveredAt = 0;
     this.modelsReady = false;
+    this.modelsComplete = false;
     this.modelsPending = void 0;
     this.modelsFailedAt = 0;
     this.region = region;
@@ -5044,6 +5045,16 @@ var RegionStack = class {
       // Lets a request refresh the directory, mirroring what the Pi port does
       // from `auth.apiKey.resolve()`.
       refreshCatalog: () => this.refreshCatalog(),
+      // Whether live discovery has completed at least once.
+      //
+      // The shim must not use `catalog.current().length > 0` for this: the
+      // catalog is seeded with the static fallback at construction, so that
+      // length is non-zero before any upstream call. Waiting on it would mean
+      // never waiting — a cold-start request would then be answered with
+      // fallback ids, and a chat request could reach `TraeSoloBridge` with an
+      // empty wire map, which upstream rejects as `4001 param is invalid`.
+      // `modelsReady` is the flag that actually tracks a completed discovery.
+      discoveryReady: () => this.modelsReady,
       // Absent on the Pi port, which keeps its original random-per-process
       // behaviour.
       ...this.endpoints === void 0 ? {} : {
@@ -5089,8 +5100,10 @@ var RegionStack = class {
           this.modelsDiscoveredAt = Date.now();
           this.modelsFailedAt = 0;
           this.modelsReady = true;
+          this.modelsComplete = true;
         } else {
           this.modelsFailedAt = Date.now();
+          this.modelsComplete = false;
           this.logger?.warn?.(
             `trae: model directory for ${this.region} is incomplete; serving it but retrying on the next request`,
             outcome.failures
@@ -5154,7 +5167,9 @@ var RegionStack = class {
    */
   async refreshCatalog({ force = false, signal } = {}) {
     if (this.modelsPending !== void 0) return this.modelsPending;
-    if (!force && this.modelsReady && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) return null;
+    if (!force && this.modelsReady && this.modelsComplete && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) {
+      return null;
+    }
     if (!force && Date.now() - this.modelsFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS2) return null;
     return this.ensureReady({ rediscover: true, signal });
   }
