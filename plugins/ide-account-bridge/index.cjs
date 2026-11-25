@@ -5096,10 +5096,10 @@ var RegionStack = class {
           return false;
         }
         this.applyDirectory(outcome.models, outcome.wire);
+        this.modelsReady = true;
         if (outcome.complete) {
           this.modelsDiscoveredAt = Date.now();
           this.modelsFailedAt = 0;
-          this.modelsReady = true;
           this.modelsComplete = true;
         } else {
           this.modelsFailedAt = Date.now();
