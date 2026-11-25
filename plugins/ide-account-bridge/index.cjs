@@ -929,7 +929,7 @@ var CLIENT_TYPE = "5";
 var MACHINE_TYPE = "5";
 var DATA_POLICY = "disagree";
 var QUEUE_WAIT_BUDGET_MS = 12e4;
-var QUEUE_WAIT_MAX_SLEEP_MS = 3e4;
+var QUEUE_WAIT_MAX_SLEEP_MS = 6e4;
 var QUEUE_WAIT_MIN_SLEEP_MS = 1e3;
 var ATTEMPT_TIMEOUT_MS = 6e4;
 var CATALOG_TIMEOUT_MS = 3e4;
@@ -1464,7 +1464,15 @@ async function* streamChat(region, credential, request, signal) {
     }
   };
   const url = chatUrl(region);
-  const bodyBytes = encodeBody(Buffer.from(JSON.stringify(body)));
+  const bodyFor = () => encodeBody(
+    Buffer.from(
+      JSON.stringify({
+        ...body,
+        request_id: import_node_crypto3.default.randomUUID(),
+        business: { ...body.business, id: import_node_crypto3.default.randomUUID() }
+      })
+    )
+  );
   async function* readFrames(response) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1524,7 +1532,7 @@ async function* streamChat(region, credential, request, signal) {
       }
     }
   }
-  async function openAttempt() {
+  async function openAttempt(bodyBytes) {
     let response;
     const headers = {
       "Content-Type": "application/json",
@@ -1597,7 +1605,7 @@ async function* streamChat(region, credential, request, signal) {
     let first;
     const attemptStartedAt = Date.now();
     try {
-      stream = readFrames(await openAttempt());
+      stream = readFrames(await openAttempt(bodyFor()));
       first = await stream.next();
     } catch (error) {
       waitedMs += Date.now() - attemptStartedAt;
@@ -1644,8 +1652,9 @@ function queueWaitFor(error, waitedMs, attempt) {
   const hinted = Number(error.retryAfterSeconds) > 0 ? Number(error.retryAfterSeconds) * 1e3 : QUEUE_WAIT_MIN_SLEEP_MS;
   const GRACE_ATTEMPTS = 3;
   const escalated = attempt > GRACE_ATTEMPTS ? QUEUE_WAIT_MIN_SLEEP_MS * 2 ** Math.min(attempt - GRACE_ATTEMPTS, 8) : 0;
-  const target = Math.max(hinted, escalated) * (0.75 + Math.random() * 0.5);
+  const target = Math.max(hinted, escalated) * (1 + Math.random() * 0.15);
   const clamped = Math.max(QUEUE_WAIT_MIN_SLEEP_MS, Math.min(target, QUEUE_WAIT_MAX_SLEEP_MS));
+  if (hinted > 0 && remaining < hinted) return void 0;
   return Math.min(clamped, remaining);
 }
 function failureMessage(failure, region, status, statusText) {
@@ -3348,13 +3357,16 @@ var TraeCredentialStore = class {
   */
   async readAll() {
     const { credentials: desktop } = await this.readDesktopAll();
-    const credentials = [...desktop.filter((credential) => this.matchesRegion(credential))];
-    for (const own of await this.readOwns()) {
-      if (!this.matchesRegion(own)) continue;
-      if (credentials.some((credential) => traeAccountId(credential) === traeAccountId(own))) continue;
-      credentials.push(own);
-    }
-    return credentials;
+    const byAccount = /* @__PURE__ */ new Map();
+    const consider = (credential) => {
+      if (!this.matchesRegion(credential)) return;
+      const id = traeAccountId(credential);
+      const incumbent = byAccount.get(id);
+      if (incumbent === void 0 || credential.expiresAtMs > incumbent.expiresAtMs) byAccount.set(id, credential);
+    };
+    for (const credential of desktop) consider(credential);
+    for (const own of await this.readOwns()) consider(own);
+    return [...byAccount.values()];
   }
   /**
   * Which paths were tried and why each one failed. Read-only and token-free:
@@ -3489,7 +3501,13 @@ var REFRESH_CONTRACT = {
   },
   solo: {
     path: "/cloudide/api/v3/trae/oauth/ExchangeToken",
-    clientId: "ono9krqynydwx5",
+    // Verified 2026-10-12 against a live TRAE SOLO CN install: the SOLO
+    // refresh token is bound to the SOLO client id, not the IDE's. Sending
+    // `ono9krqynydwx5` (the CN/SG IDE id) is rejected with 400 / code 10101
+    // "refresh token is not matched to the client", which surfaces as the
+    // provider disappearing from the model list. With `en1oxy7wnw8j9n` the
+    // same host+path answers 200 and returns a token.
+    clientId: "en1oxy7wnw8j9n",
     deviceInfo: false
   },
   "solo-sg": {
