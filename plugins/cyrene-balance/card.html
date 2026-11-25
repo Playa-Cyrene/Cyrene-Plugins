@@ -1,0 +1,1344 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>昔涟 · 桌宠</title>
+<style>
+  :root {
+    --ink: #5d3a4b;
+    --ink-soft: #8d6276;
+    --line: rgba(226, 138, 178, 0.42);
+    --pink: #ff7fb5;
+    --pink-deep: #ef5f9c;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    color: var(--ink);
+  }
+
+  #stage {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: stretch;
+    padding: 4px 8px 0;
+  }
+
+  /* ============================ 空闲态 ============================ */
+  #idle {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-end;
+    gap: 2px;
+    width: 100%;
+    height: 100%;
+    padding-bottom: 2px;
+    -webkit-app-region: no-drag;
+    cursor: grab;
+  }
+  #idle.dragging { cursor: grabbing; }
+
+  #idleBubble {
+    max-width: 196px;
+    align-self: flex-end;
+    margin-right: 6px;
+    padding: 7px 11px;
+    border-radius: 15px 15px 4px 15px;
+    background: linear-gradient(165deg, #fffbfd 0%, #ffeaf4 100%);
+    box-shadow:
+      0 8px 20px rgba(206, 96, 146, 0.26),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.98);
+    font-size: 12px;
+    line-height: 1.45;
+    color: #7b455d;
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+    transform-origin: bottom right;
+    transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.34, 1.4, 0.64, 1);
+    pointer-events: none;
+    word-break: break-word;
+  }
+  #idleBubble.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  #idleBubble.work {
+    background: linear-gradient(165deg, #fff8fc 0%, #ffe0ee 100%);
+    color: #8a3d60;
+  }
+
+  #petWrap {
+    position: relative;
+    align-self: flex-end;
+    width: 200px;
+    height: 200px;
+    margin-right: 2px;
+    pointer-events: none;
+    animation: breath 3.8s ease-in-out infinite;
+  }
+  #petWrap.working { animation: work-bob 1.6s ease-in-out infinite; }
+  #petFrame {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 8px 14px rgba(206, 96, 146, 0.34));
+    transition: opacity 0.18s ease;
+  }
+  @keyframes breath {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-3px) scale(1.008); }
+  }
+  @keyframes work-bob {
+    0%, 100% { transform: translateY(0) rotate(-0.6deg); }
+    50% { transform: translateY(-5px) rotate(0.8deg); }
+  }
+
+  #statusDot {
+    position: absolute;
+    top: 22px;
+    right: 14px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d7c2cc;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.86);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+  #statusDot.busy {
+    background: #ff6fae;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 12px rgba(255, 111, 174, 0.7);
+    animation: dot-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes dot-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.18); opacity: 0.78; }
+  }
+
+  #idleHint {
+    align-self: center;
+    margin-bottom: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: inset 0 0 0 1px rgba(232, 160, 192, 0.4);
+    font-size: 10.5px;
+    color: #b0708c;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0.94;
+  }
+
+  /* ============================ 卡片态 ============================ */
+  #card {
+    position: relative;
+    width: 100%;
+    max-height: 400px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 14px 15px 13px;
+    border-radius: 22px;
+    background: linear-gradient(168deg, #fffbfd 0%, #ffeef6 58%, #ffdcea 100%);
+    box-shadow:
+      0 12px 30px rgba(206, 96, 146, 0.30),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.98);
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+    transform-origin: bottom center;
+    pointer-events: none;
+    transition: opacity 0.24s ease, transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
+    z-index: 3;
+    display: none;
+  }
+  body.mode-card #card { display: block; }
+  body.mode-card #idle { display: none; }
+  #card.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+  #card::after {
+    content: "";
+    position: absolute;
+    right: 62px;
+    bottom: -9px;
+    width: 20px;
+    height: 12px;
+    background: radial-gradient(circle at 50% 0%, #ffdcea 0%, #ffdcea 64%, transparent 70%);
+  }
+  #card::-webkit-scrollbar { width: 6px; }
+  #card::-webkit-scrollbar-thumb {
+    background: rgba(232, 141, 181, 0.45);
+    border-radius: 99px;
+  }
+  #card::-webkit-scrollbar-track { background: transparent; }
+
+  #card.danger {
+    background: linear-gradient(168deg, #fffafc 0%, #ffe8f0 58%, #ffcfe0 100%);
+    box-shadow:
+      0 14px 34px rgba(198, 62, 110, 0.34),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.98);
+  }
+  #card.danger::after {
+    background: radial-gradient(circle at 50% 0%, #ffcfe0 0%, #ffcfe0 64%, transparent 70%);
+  }
+
+  .kicker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #c07d9c;
+    margin-bottom: 7px;
+  }
+  .kicker::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffa4cb, #ff6fae);
+    box-shadow: 0 0 0 3px rgba(255, 143, 187, 0.18);
+  }
+  .kicker.danger { color: #b64a72; }
+  .kicker.danger::before {
+    background: linear-gradient(135deg, #ff8aa8, #e0447a);
+    box-shadow: 0 0 0 3px rgba(224, 68, 122, 0.16);
+  }
+
+  #intro {
+    font-size: 13.5px;
+    line-height: 1.62;
+    color: #7b455d;
+    margin-bottom: 11px;
+    white-space: pre-line;
+    word-break: break-word;
+  }
+  #intro:empty { display: none; }
+
+  .q { margin-bottom: 12px; }
+  .q:last-of-type { margin-bottom: 10px; }
+  .prompt {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: #6b3f53;
+    margin-bottom: 7px;
+    white-space: pre-line;
+    word-break: break-word;
+  }
+  .idx {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: #e2789f;
+    transform: translateY(-1px);
+  }
+  .opts { display: flex; flex-direction: column; gap: 6px; }
+  .opt {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    width: 100%;
+    text-align: left;
+    padding: 8px 11px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.88);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 12.5px;
+    line-height: 1.45;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  }
+  .opt:hover {
+    border-color: #eb8fbb;
+    background: #fff;
+    transform: translateX(1px);
+    box-shadow: 0 3px 10px rgba(226, 138, 178, 0.18);
+  }
+  .opt:active { transform: scale(0.99); }
+  .opt .dot {
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+    margin-top: 2px;
+    border-radius: 50%;
+    border: 1.5px solid #e39fbe;
+    background: #fff;
+    transition: box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  }
+  .opts.multi .opt .dot { border-radius: 4px; }
+  .opt .body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .opt .label { font-weight: 600; word-break: break-word; white-space: pre-line; }
+  .opt .desc {
+    font-size: 11.5px;
+    font-weight: 400;
+    color: #a6798d;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  .opt.sel {
+    border-color: transparent;
+    background: linear-gradient(135deg, #ffa1ca 0%, #ff79b2 100%);
+    color: #fff;
+    box-shadow: 0 5px 14px rgba(255, 112, 174, 0.34);
+  }
+  .opt.sel .desc { color: rgba(255, 255, 255, 0.86); }
+  .opt.sel .dot {
+    border-color: #ff7fb5;
+    background: #fff;
+    box-shadow: inset 0 0 0 3px #ff8bbc;
+  }
+
+  .custom {
+    width: 100%;
+    margin-top: 6px;
+    padding: 7px 11px;
+    border-radius: 12px;
+    border: 1px dashed rgba(226, 138, 178, 0.5);
+    background: rgba(255, 255, 255, 0.7);
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--ink);
+    outline: none;
+    -webkit-user-select: text;
+    user-select: text;
+    transition: border-color 0.18s ease, background 0.18s ease;
+  }
+  .custom::placeholder { color: #caa0b2; }
+  .custom:focus {
+    border-style: solid;
+    border-color: #f19ac0;
+    background: #fff;
+  }
+
+  #contextWrap { margin-top: 2px; }
+  #contextWrap.hidden { display: none; }
+  #contextInput {
+    width: 100%;
+    padding: 7px 11px;
+    border-radius: 12px;
+    border: 1px dashed rgba(226, 138, 178, 0.5);
+    background: rgba(255, 255, 255, 0.7);
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--ink);
+    outline: none;
+    resize: none;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  #contextInput:focus { border-style: solid; border-color: #f19ac0; background: #fff; }
+
+  .detail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .detail-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    font-size: 12.5px;
+    color: #6b3f53;
+  }
+  .tool-name {
+    font-weight: 700;
+    color: #8c2f52;
+    word-break: break-word;
+  }
+  .tool-id {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 11.5px;
+    color: #a8708a;
+  }
+  .risk {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  .risk-high { background: #ffe0e8; color: #b81f4d; }
+  .risk-medium { background: #fff0da; color: #a96a17; }
+  .risk-low { background: #e6f7ec; color: #2c7a4a; }
+  .risk-unknown { background: #f2edf3; color: #8c6a7c; }
+  .detail-desc {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #8a5a70;
+    word-break: break-word;
+  }
+  .args {
+    margin: 0;
+    padding: 8px 10px;
+    max-height: 104px;
+    overflow: auto;
+    border-radius: 12px;
+    border: 1px dashed rgba(214, 116, 156, 0.46);
+    background: rgba(255, 255, 255, 0.76);
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #7a4c60;
+    white-space: pre-wrap;
+    word-break: break-all;
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  #hint {
+    font-size: 11.5px;
+    color: #b07e93;
+    line-height: 1.4;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .btn-row { display: flex; gap: 7px; flex: 0 0 auto; }
+  #submit {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    padding: 9px 16px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #fff;
+    background: linear-gradient(135deg, #ff9ec8 0%, #ff6fae 100%);
+    box-shadow: 0 6px 16px rgba(255, 111, 174, 0.36);
+    cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  }
+  #submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 9px 20px rgba(255, 111, 174, 0.42); }
+  #submit:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+  #submit:disabled { opacity: 0.42; cursor: default; box-shadow: none; }
+  #submit.allow {
+    background: linear-gradient(135deg, #f4789f 0%, #dd3f74 100%);
+    box-shadow: 0 6px 16px rgba(214, 58, 108, 0.34);
+  }
+  #deny {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 8px 14px;
+    border: 1px solid rgba(198, 112, 150, 0.5);
+    background: rgba(255, 255, 255, 0.9);
+    color: #9a4d6d;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  }
+  #deny:hover:not(:disabled) { background: #fff; border-color: #d98bb0; transform: translateY(-1px); }
+  #deny:disabled { opacity: 0.45; cursor: default; }
+  .hidden { display: none !important; }
+
+  /* 卡片态里的小立绘 */
+  #cardPet {
+    align-self: flex-end;
+    width: 168px;
+    height: 168px;
+    margin: -40px 2px 0 0;
+    pointer-events: none;
+    z-index: 2;
+    display: none;
+    animation: breath 3.8s ease-in-out infinite;
+  }
+  body.mode-card #cardPet { display: block; }
+  #cardPet img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 8px 14px rgba(206, 96, 146, 0.34));
+  }
+
+  #card.sent .actions, #card.sent .q, #card.sent #intro, #card.sent .detail { opacity: 0.35; }
+  #card.sent .q, #card.sent #intro, #card.sent .detail { transition: opacity 0.3s ease; }
+</style>
+</head>
+<body class="mode-idle">
+  <div id="stage">
+    <section id="card">
+      <div class="kicker" id="kicker">昔涟 · 想问你</div>
+      <div id="intro"></div>
+      <div id="questions"></div>
+      <div id="contextWrap" class="hidden">
+        <textarea id="contextInput" rows="2" placeholder="还想补充点什么…（可选）"></textarea>
+      </div>
+      <div class="actions">
+        <span id="hint"></span>
+        <div class="btn-row">
+          <button id="deny" type="button" class="hidden">拒绝</button>
+          <button id="submit" type="button" disabled>就这样告诉她♪</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="cardPet"><img id="cardPetFrame" src="assets/playful.png" alt="" /></div>
+
+    <div id="idle">
+      <div id="idleBubble"></div>
+      <div id="petWrap">
+        <img id="petFrame" src="assets/calm.png" alt="" />
+        <span id="statusDot"></span>
+      </div>
+      <div id="idleHint">双击叫回任务窗</div>
+    </div>
+  </div>
+
+  <script>
+    // 一进来就先挂错误上报：脚本后面怎么崩，外面都能知道崩在哪一行
+    window.addEventListener("error", (event) => {
+      try {
+        window.parent.postMessage(
+          {
+            type: "cyrene-card-error",
+            message: (event && event.message) || "unknown",
+            line: event && event.lineno,
+            file: event && event.filename,
+          },
+          "*",
+        );
+      } catch {
+        /* 忽略 */
+      }
+    });
+
+    // iframe 里默认拿不到 Node；拿不到就退回 postMessage 桥，别让整个脚本当场中断
+    function createBridgeIpcRenderer() {
+      const pending = new Map();
+      let seq = 0;
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (!data || data.type !== "cyrene-ipc-result") return;
+        const entry = pending.get(data.id);
+        if (!entry) return;
+        pending.delete(data.id);
+        if (data.ok) entry.resolve(data.result);
+        else entry.reject(new Error(data.error || "E_IPC_BRIDGE"));
+      });
+      return {
+        invoke(channel, payload) {
+          return new Promise((resolve, reject) => {
+            const id = "bridge-" + ++seq;
+            pending.set(id, { resolve, reject });
+            try {
+              window.parent.postMessage({ type: "cyrene-ipc-invoke", id, channel, payload }, "*");
+            } catch (error) {
+              pending.delete(id);
+              reject(error);
+              return;
+            }
+            setTimeout(() => {
+              if (!pending.has(id)) return;
+              pending.delete(id);
+              reject(new Error("E_IPC_TIMEOUT"));
+            }, 8000);
+          });
+        },
+        on() {},
+      };
+    }
+
+    let ipcRenderer = null;
+    try {
+      ({ ipcRenderer } = require("electron"));
+    } catch {
+      ipcRenderer = createBridgeIpcRenderer();
+    }
+    if (!ipcRenderer) ipcRenderer = createBridgeIpcRenderer();
+
+    const body = document.body;
+    const cardEl = document.getElementById("card");
+    const kickerEl = document.getElementById("kicker");
+    const introEl = document.getElementById("intro");
+    const questionsEl = document.getElementById("questions");
+    const contextWrap = document.getElementById("contextWrap");
+    const contextInput = document.getElementById("contextInput");
+    const hintEl = document.getElementById("hint");
+    const submitBtn = document.getElementById("submit");
+    const denyBtn = document.getElementById("deny");
+    const petFrame = document.getElementById("petFrame");
+    const cardPetFrame = document.getElementById("cardPetFrame");
+    const petWrap = document.getElementById("petWrap");
+    const idleBubble = document.getElementById("idleBubble");
+    const idleHint = document.getElementById("idleHint");
+    const statusDot = document.getElementById("statusDot");
+    const idleEl = document.getElementById("idle");
+
+    const POSES = {
+      calm: "assets/calm.png",
+      confident: "assets/confident.png",
+      playful: "assets/playful.png",
+      love: "assets/love-happy.png",
+      serious: "assets/serious.png"
+    };
+    const FRAMES = ["frame-01", "frame-02", "frame-03", "frame-04", "frame-05", "frame-06", "frame-07", "frame-08"];
+
+    let mode = "idle";       // idle | ask | choice | approval
+    let card = null;
+    let answers = new Map();
+    let pickedValue = null;
+    let sending = false;
+    let working = false;
+    let mainVisible = true;
+    let resident = true;
+    let showStateBubble = true;
+    let doubleClickAction = "toggle";
+    let frameIndex = 0;
+    let frameTimer = null;
+    let bubbleTimer = null;
+    let greetingDone = false;
+
+    /* 预加载，避免切表情时闪 */
+    for (const src of Object.values(POSES)) { const img = new Image(); img.src = src; }
+    for (const name of FRAMES) { const img = new Image(); img.src = "assets/" + name + ".png"; }
+
+    const LINES = [
+      "在呢♪",
+      "要人家帮你想吗？",
+      "轻轻碰一下就好啦",
+      "任务窗收在我身后了",
+      "要不要看看现在在做什么？",
+      "嗯…这题我记着呢",
+      "忙完啦，歇一会儿？"
+    ];
+
+    function setPose(name) {
+      const src = POSES[name] || POSES.calm;
+      if (petFrame.getAttribute("src") !== src) petFrame.src = src;
+      cardPetFrame.src = src;
+    }
+
+    function startFrameAnim() {
+      if (frameTimer) return;
+      frameTimer = setInterval(() => {
+        frameIndex = (frameIndex + 1) % FRAMES.length;
+        petFrame.src = "assets/" + FRAMES[frameIndex] + ".png";
+      }, 210);
+      petWrap.classList.add("working");
+    }
+
+    function stopFrameAnim() {
+      if (frameTimer) {
+        clearInterval(frameTimer);
+        frameTimer = null;
+      }
+      petWrap.classList.remove("working");
+    }
+
+    function showBubble(text, isWork, duration) {
+      if (!showStateBubble) return;
+      idleBubble.textContent = text || "";
+      idleBubble.classList.toggle("work", Boolean(isWork));
+      idleBubble.classList.add("show");
+      if (bubbleTimer) clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => idleBubble.classList.remove("show"), duration || 3200);
+    }
+
+    function randomLine() {
+      return LINES[Math.floor(Math.random() * LINES.length)];
+    }
+
+    function refreshWorking() {
+      statusDot.classList.toggle("busy", working);
+      if (working) {
+        startFrameAnim();
+        if (mode === "idle" && showStateBubble) showBubble("正在做呢…", true, 2600);
+      } else {
+        stopFrameAnim();
+        setPose("calm");
+        if (mode === "idle" && greetingDone && showStateBubble) showBubble("忙完啦♪", false, 2200);
+      }
+    }
+
+    function refreshHint() {
+      if (doubleClickAction === "show") {
+        idleHint.textContent = "双击打开任务窗";
+      } else {
+        idleHint.textContent = mainVisible ? "双击把任务窗收进桌宠" : "双击叫回任务窗";
+      }
+    }
+
+    /* ============================ 空闲态交互 ============================ */
+
+    let pointer = null;
+    let moved = false;
+    let longTimer = null;
+    let lastTapAt = 0;
+    let tapTimer = null;
+
+    function clearLong() {
+      if (longTimer) {
+        clearTimeout(longTimer);
+        longTimer = null;
+      }
+    }
+
+    idleEl.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      pointer = { x: event.screenX, y: event.screenY, at: Date.now() };
+      moved = false;
+      idleEl.classList.add("dragging");
+      try { idleEl.setPointerCapture(event.pointerId); } catch { /* 忽略 */ }
+      ipcRenderer.invoke("plugin:cyrene-balance:noop", { x: event.screenX, y: event.screenY }).catch(() => {});
+      clearLong();
+      longTimer = setTimeout(() => {
+        longTimer = null;
+        if (moved || !pointer) return;
+        if (navigator.vibrate) navigator.vibrate(12);
+        ipcRenderer.invoke("plugin:cyrene-balance:noop", {}).catch(() => {});
+        pointer = null;
+        idleEl.classList.remove("dragging");
+      }, 620);
+    });
+
+    idleEl.addEventListener("pointermove", (event) => {
+      if (!pointer) return;
+      const dx = event.screenX - pointer.x;
+      const dy = event.screenY - pointer.y;
+      if (!moved && Math.hypot(dx, dy) > 5) {
+        moved = true;
+        clearLong();
+      }
+      if (!moved) return;
+      ipcRenderer.invoke("plugin:cyrene-balance:noop", { x: event.screenX, y: event.screenY }).catch(() => {});
+    });
+
+    function endPointer(event) {
+      const wasPointer = pointer;
+      pointer = null;
+      idleEl.classList.remove("dragging");
+      clearLong();
+      ipcRenderer.invoke("plugin:cyrene-balance:noop", {}).catch(() => {});
+      if (!wasPointer || moved) return;
+
+      const now = Date.now();
+      if (now - lastTapAt < 320) {
+        lastTapAt = 0;
+        if (tapTimer) {
+          clearTimeout(tapTimer);
+          tapTimer = null;
+        }
+        ipcRenderer.invoke("plugin:cyrene-balance:noop", {}).catch(() => {});
+        return;
+      }
+      lastTapAt = now;
+      if (tapTimer) clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => {
+        tapTimer = null;
+        ipcRenderer.invoke("plugin:cyrene-balance:noop", {}).catch(() => {});
+        showBubble(randomLine(), false, 2400);
+      }, 260);
+    }
+
+    idleEl.addEventListener("pointerup", endPointer);
+    idleEl.addEventListener("pointercancel", () => {
+      pointer = null;
+      moved = false;
+      clearLong();
+      idleEl.classList.remove("dragging");
+    });
+    idleEl.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      ipcRenderer.invoke("plugin:cyrene-balance:noop", {}).catch(() => {});
+    });
+
+    /* ============================ 卡片渲染 ============================ */
+
+    function setHint(text) {
+      hintEl.textContent = text || "";
+    }
+
+    function resetState() {
+      answers = new Map();
+      pickedValue = null;
+      sending = false;
+      submitBtn.disabled = true;
+      submitBtn.textContent = "就这样告诉她♪";
+      submitBtn.classList.remove("allow");
+      denyBtn.classList.add("hidden");
+      denyBtn.disabled = false;
+      kickerEl.classList.remove("danger");
+      kickerEl.textContent = "昔涟 · 想问你";
+      cardEl.classList.remove("sent", "danger");
+      contextInput.value = "";
+      questionsEl.textContent = "";
+      introEl.textContent = "";
+      contextWrap.classList.add("hidden");
+    }
+
+    function renderQuestion(question, index) {
+      const wrap = document.createElement("div");
+      wrap.className = "q";
+
+      const prompt = document.createElement("div");
+      prompt.className = "prompt";
+      const idx = document.createElement("span");
+      idx.className = "idx";
+      idx.textContent = String(index + 1).padStart(2, "0");
+      const promptText = document.createElement("span");
+      promptText.textContent = question.prompt || "（她没写清楚，直接选一个吧）";
+      prompt.append(idx, promptText);
+      wrap.appendChild(prompt);
+
+      const state = { selected: new Set(), text: "" };
+      answers.set(question.id, state);
+
+      const options = Array.isArray(question.options) ? question.options : [];
+      if (options.length) {
+        const list = document.createElement("div");
+        list.className = "opts" + (question.multiple ? " multi" : "");
+        for (const option of options) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "opt";
+          button.dataset.optionId = option.id;
+
+          const dot = document.createElement("span");
+          dot.className = "dot";
+
+          const bodyEl = document.createElement("span");
+          bodyEl.className = "body";
+          const label = document.createElement("span");
+          label.className = "label";
+          label.textContent = option.label || option.id;
+          bodyEl.appendChild(label);
+          if (option.description) {
+            const desc = document.createElement("span");
+            desc.className = "desc";
+            desc.textContent = option.description;
+            bodyEl.appendChild(desc);
+          }
+
+          button.append(dot, bodyEl);
+          button.addEventListener("click", () => {
+            if (question.multiple) {
+              if (state.selected.has(option.id)) state.selected.delete(option.id);
+              else state.selected.add(option.id);
+            } else {
+              state.selected.clear();
+              state.selected.add(option.id);
+            }
+            syncSelection(wrap, state);
+            refreshAsk();
+          });
+          list.appendChild(button);
+        }
+        wrap.appendChild(list);
+      }
+
+      if (question.customInput && question.customInput.enabled) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "custom";
+        input.placeholder = question.customInput.placeholder || "也可以自己说…";
+        input.addEventListener("input", () => {
+          state.text = input.value;
+          refreshAsk();
+        });
+        wrap.appendChild(input);
+      }
+
+      return wrap;
+    }
+
+    function syncSelection(wrap, state) {
+      for (const button of wrap.querySelectorAll(".opt")) {
+        button.classList.toggle("sel", state.selected.has(button.dataset.optionId));
+      }
+    }
+
+    function isAnswered(question) {
+      const state = answers.get(question.id);
+      if (!state) return false;
+      return state.selected.size > 0 || state.text.trim().length > 0;
+    }
+
+    function allAnswered() {
+      if (!card || !Array.isArray(card.questions)) return false;
+      return card.questions.every(isAnswered);
+    }
+
+    function refreshAsk() {
+      if (mode !== "ask" || !card || sending) return;
+      const total = card.questions.length;
+      const done = card.questions.filter(isAnswered).length;
+      submitBtn.disabled = done < total;
+      if (done < total) setHint(`还有 ${total - done} 个小问题没有选呀`);
+      else setHint("选好了就告诉她吧");
+    }
+
+    function buildSubmission() {
+      const list = card.questions.map((question) => {
+        const state = answers.get(question.id) || { selected: new Set(), text: "" };
+        const selected = [...state.selected];
+        const text = state.text.trim();
+        if (text && selected.length) {
+          return { questionId: question.id, source: "option_with_text", optionIds: selected, text };
+        }
+        if (text) return { questionId: question.id, source: "custom", text };
+        return { questionId: question.id, source: "option", optionId: selected[0] };
+      });
+      const submission = {
+        interactionId: card.interactionId,
+        runId: card.runId,
+        revision: card.revision,
+        answers: list
+      };
+      const extra = contextInput.value.trim();
+      if (extra && card.additionalContextEnabled) submission.additionalContext = extra;
+      return submission;
+    }
+
+    function renderAsk(payload) {
+      setPose("playful");
+      introEl.textContent = payload.intro || "人家想先跟你确认一下～";
+      const questions = Array.isArray(payload.questions) ? payload.questions : [];
+      questions.forEach((question, index) => {
+        questionsEl.appendChild(renderQuestion(question, index));
+      });
+      if (payload.additionalContextEnabled) contextWrap.classList.remove("hidden");
+      setHint(questions.length ? "选好之后，人家就去办" : "她好像没什么要问的…");
+      submitBtn.disabled = true;
+      refreshAsk();
+    }
+
+    function renderChoice(payload) {
+      setPose("confident");
+      kickerEl.textContent = "昔涟 · 想请你定一下";
+      introEl.textContent = "这一步要你点头，人家才敢往下走。";
+
+      const wrap = document.createElement("div");
+      wrap.className = "q";
+      const prompt = document.createElement("div");
+      prompt.className = "prompt";
+      const promptText = document.createElement("span");
+      promptText.textContent = payload.question || "确认一下？";
+      prompt.appendChild(promptText);
+      wrap.appendChild(prompt);
+
+      const options = Array.isArray(payload.options) ? payload.options : [];
+      const list = document.createElement("div");
+      list.className = "opts";
+      const buttons = [];
+
+      const commit = (value) => {
+        pickedValue = value;
+        for (const button of buttons) {
+          button.classList.toggle("sel", button.dataset.value === value);
+        }
+        submitBtn.disabled = false;
+        setHint("选好了就告诉她吧");
+      };
+
+      for (const option of options) {
+        const value = typeof option === "string" ? option : option && (option.value !== undefined ? option.value : option.label);
+        const label = typeof option === "string" ? option : option && (option.label !== undefined ? option.label : option.value);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "opt";
+        button.dataset.value = String(value);
+
+        const dot = document.createElement("span");
+        dot.className = "dot";
+        const bodyEl = document.createElement("span");
+        bodyEl.className = "body";
+        const labelEl = document.createElement("span");
+        labelEl.className = "label";
+        labelEl.textContent = String(label === undefined ? value : label);
+        bodyEl.appendChild(labelEl);
+        if (option && option.description) {
+          const desc = document.createElement("span");
+          desc.className = "desc";
+          desc.textContent = option.description;
+          bodyEl.appendChild(desc);
+        }
+        button.append(dot, bodyEl);
+        button.addEventListener("click", () => commit(String(value)));
+
+        buttons.push(button);
+        list.appendChild(button);
+      }
+
+      wrap.appendChild(list);
+      questionsEl.appendChild(wrap);
+
+      if (!options.length) {
+        setHint("她没有给出选项…");
+        return;
+      }
+      if (payload.default !== undefined && payload.default !== null) {
+        const preset = buttons.find((button) => button.dataset.value === String(payload.default));
+        if (preset) commit(String(payload.default));
+        else setHint("选一个吧");
+      } else {
+        setHint("选一个吧");
+      }
+    }
+
+    const RISK_LABEL = { low: "低风险", medium: "中风险", high: "高风险" };
+
+    function renderApproval(payload) {
+      setPose("serious");
+      cardEl.classList.add("danger");
+      kickerEl.classList.add("danger");
+      kickerEl.textContent = "昔涟 · 需要你点头";
+      introEl.textContent = "接下来这一步会真的动手，人家想先问过你。";
+      contextWrap.classList.add("hidden");
+      denyBtn.classList.remove("hidden");
+      submitBtn.classList.remove("allow");
+      submitBtn.textContent = "允许这次";
+      submitBtn.disabled = false;
+
+      const detail = document.createElement("div");
+      detail.className = "detail";
+
+      const head = document.createElement("div");
+      head.className = "detail-row";
+      const toolName = document.createElement("span");
+      toolName.className = "tool-name";
+      toolName.textContent = payload.toolName || payload.toolId || "未知操作";
+      head.appendChild(toolName);
+      if (payload.toolId && payload.toolId !== payload.toolName) {
+        const toolId = document.createElement("span");
+        toolId.className = "tool-id";
+        toolId.textContent = payload.toolId;
+        head.appendChild(toolId);
+      }
+      const risk = String(payload.risk || "").toLowerCase();
+      const badge = document.createElement("span");
+      badge.className = "risk risk-" + (RISK_LABEL[risk] ? risk : "unknown");
+      badge.textContent = RISK_LABEL[risk] || "风险未标明";
+      head.appendChild(badge);
+      detail.appendChild(head);
+
+      if (payload.toolDescription) {
+        const desc = document.createElement("div");
+        desc.className = "detail-desc";
+        desc.textContent = payload.toolDescription;
+        detail.appendChild(desc);
+      }
+
+      if (payload.args !== undefined && payload.args !== null) {
+        let text = "";
+        try {
+          text = typeof payload.args === "string" ? payload.args : JSON.stringify(payload.args, null, 2);
+        } catch {
+          text = String(payload.args);
+        }
+        if (text.length > 900) text = text.slice(0, 900) + "\n…（后面还有内容）";
+        const pre = document.createElement("pre");
+        pre.className = "args";
+        pre.textContent = text;
+        detail.appendChild(pre);
+      }
+
+      questionsEl.appendChild(detail);
+      setHint("允许之后，这次操作会立刻执行");
+    }
+
+    /* ============================ 卡片显示与提交 ============================ */
+
+    function showCard() {
+      cardEl.classList.add("show");
+    }
+
+    function switchToCard(kind) {
+      mode = kind;
+      body.classList.remove("mode-idle");
+      body.classList.add("mode-card");
+      cardEl.classList.remove("show");
+      requestAnimationFrame(() => showCard());
+    }
+
+    function switchToIdle() {
+      mode = "idle";
+      cardEl.classList.remove("show");
+      body.classList.remove("mode-card");
+      body.classList.add("mode-idle");
+      setPose("calm");
+      resetState();
+      if (working) startFrameAnim();
+      else stopFrameAnim();
+    }
+
+    function fadeCard() {
+      cardEl.classList.remove("show");
+      setHint("");
+      setTimeout(() => {
+        if (!cardEl.classList.contains("show")) switchToIdle();
+      }, 260);
+    }
+
+    function render(payload) {
+      resetState();
+      if (!payload || typeof payload !== "object") return;
+      const kind = payload.kind === "approval" ? "approval" : payload.kind === "choice" ? "choice" : "ask";
+      card = payload.card || payload;
+      switchToCard(kind);
+      if (kind === "ask") renderAsk(card);
+      else if (kind === "choice") renderChoice(card);
+      else renderApproval(card);
+      showCard();
+    }
+
+    function isPreviewRun() {
+      if (!card) return false;
+      const id = mode === "ask" ? card.interactionId : card.id;
+      return typeof id === "string" && id.indexOf("preview-") >= 0;
+    }
+
+    function thanks(isPreview, text) {
+      sending = true;
+      setPose("love");
+      cardEl.classList.add("sent");
+      introEl.textContent = text;
+      setHint(isPreview ? "这只是演练，不会打扰对话" : "");
+      submitBtn.disabled = true;
+      denyBtn.disabled = true;
+      submitBtn.textContent = isPreview ? "预览结束" : "已经送到啦";
+      setTimeout(() => {
+        fadeCard();
+        if (!isPreview) ipcRenderer.invoke("plugin:cyrene-balance:card-collapse", {}).catch(() => {});
+      }, isPreview ? 1400 : 1000);
+    }
+
+    // 卡片里的动作留痕：卡住时能从 ask-debug.log 看出停在哪一步
+    function cardLog(message) {
+      try {
+        ipcRenderer.invoke("plugin:cyrene-balance:card-log", String(message)).catch(() => {});
+      } catch {
+        /* 忽略 */
+      }
+    }
+
+    // 本体没响应时别让按钮永远停在"送过去啦…"
+    function invokeWithTimeout(channel, payload, timeoutMs) {
+      return Promise.race([
+        ipcRenderer.invoke(channel, payload),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error("E_IPC_TIMEOUT")), timeoutMs || 8000);
+        }),
+      ]);
+    }
+
+    async function submitAnswer() {
+      if (!card || sending) return;
+      if (mode === "ask" && !allAnswered()) return;
+      if (mode === "choice" && pickedValue === null) return;
+      cardLog("提交 kind=" + mode + " id=" + String((mode === "ask" ? card.interactionId : card.id) || ""));
+
+      const preview = isPreviewRun();
+      sending = true;
+      submitBtn.disabled = true;
+      denyBtn.disabled = true;
+      submitBtn.textContent = "送过去啦…";
+
+      let result = null;
+      try {
+        if (mode === "ask") {
+          result = await invokeWithTimeout("choice:resolve", {
+            id: card.interactionId,
+            answer: buildSubmission()
+          });
+        } else if (mode === "choice") {
+          result = await invokeWithTimeout("choice:resolve", {
+            id: card.id,
+            answer: pickedValue
+          });
+        } else {
+          result = await invokeWithTimeout("permission:approval-resolve", {
+            id: card.id,
+            allowed: true
+          });
+        }
+      } catch (error) {
+        result = { ok: false, error: error && error.message ? error.message : String(error) };
+      }
+      cardLog("提交结果 " + JSON.stringify(result));
+
+      if (preview) {
+        thanks(true, mode === "approval" ? "预览成功啦♪ 真到这一步，人家会这样拦你一下。" : "预览成功啦♪ 真的有提问时，人家就会这样出现。");
+        return;
+      }
+
+      if (result && result.ok) {
+        thanks(false, mode === "approval" ? "好，人家这就去办。出了事我担着♪" : "收到啦♪ 人家这就去办。");
+        return;
+      }
+
+      sending = false;
+      submitBtn.disabled = false;
+      denyBtn.disabled = false;
+      submitBtn.textContent = mode === "approval" ? "允许这次" : "就这样告诉她♪";
+      setHint("唔，这次没送到…可能已经结束了，刷新看看？");
+    }
+
+    async function rejectApproval() {
+      if (!card || sending || mode !== "approval") return;
+      const preview = isPreviewRun();
+      sending = true;
+      submitBtn.disabled = true;
+      denyBtn.disabled = true;
+
+      if (preview) {
+        thanks(true, "预览结束啦♪ 真的拒绝时，人家就乖乖收手。");
+        return;
+      }
+
+      let result = null;
+      try {
+        cardLog("拒绝审批 id=" + String(card.id || ""));
+        result = await invokeWithTimeout("permission:approval-resolve", {
+          id: card.id,
+          allowed: false
+        });
+      } catch (error) {
+        result = { ok: false, error: error && error.message ? error.message : String(error) };
+      }
+
+      if (result && result.ok) {
+        thanks(false, "好，那人家不碰它。");
+        return;
+      }
+
+      sending = false;
+      submitBtn.disabled = false;
+      denyBtn.disabled = false;
+      setHint("这次审批好像已经结束了…");
+    }
+
+    submitBtn.addEventListener("click", submitAnswer);
+    denyBtn.addEventListener("click", rejectApproval);
+
+    contextInput.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") submitAnswer();
+    });
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        if (mode === "approval") rejectApproval();
+        return;
+      }
+      if (mode === "idle") return;
+      if (event.key === "Enter" && !(event.target instanceof HTMLTextAreaElement) && !(event.target instanceof HTMLInputElement)) {
+        submitAnswer();
+      }
+    });
+
+    /* ============================ 主进程消息 ============================ */
+
+    // 同一张卡片可能同时从 IPC 和 widget 的 postMessage 到达，按 id 去重
+    let lastCardKey = "";
+
+    function cardKeyOf(payload) {
+      if (!payload || typeof payload !== "object" || !payload.card) return "";
+      const card = payload.card;
+      return String(payload.kind || "") + ":" + String(card.interactionId || card.id || "");
+    }
+
+    function acceptCard(payload) {
+      const key = cardKeyOf(payload);
+      if (key && key === lastCardKey && mode !== "idle") return;
+      lastCardKey = key;
+      render(payload);
+      try {
+        const shown = payload && payload.card ? payload.card : {};
+        ipcRenderer
+          .invoke("plugin:cyrene-balance:card-ack", {
+            kind: payload && payload.kind ? payload.kind : "ask",
+            id: shown.interactionId || shown.id || "",
+          })
+          .catch(() => {});
+      } catch {
+        /* 回执失败不影响显示 */
+      }
+      try {
+        window.parent.postMessage({ type: "card-ready" }, "*");
+      } catch {
+        /* 不在 iframe 里时忽略 */
+      }
+    }
+
+    // widget.html 把 payload 转发进 iframe：内嵌在桌宠里时走这条路
+    window.addEventListener("message", (event) => {
+      const data = event.data;
+      if (!data || data.type !== "balance-card" || !data.payload) return;
+      try {
+        acceptCard(data.payload);
+      } catch (error) {
+        setHint("这一题人家没读懂…");
+      }
+    });
+
+    ipcRenderer.on("balance-card:show", (_event, payload) => {
+      try {
+        acceptCard(payload);
+      } catch (error) {
+        setHint("这一题人家没读懂…");
+      }
+    });
+
+    ipcRenderer.on("balance-card:hide", () => {
+      fadeCard();
+    });
+
+    ipcRenderer.on("balance-card:state", (_event, state) => {
+      if (!state || typeof state !== "object") return;
+      working = Boolean(state.working);
+      mainVisible = state.mainVisible !== false;
+      resident = state.resident !== false;
+      showStateBubble = state.showStateBubble !== false;
+      doubleClickAction = state.doubleClickAction === "show" ? "show" : "toggle";
+      refreshWorking();
+      refreshHint();
+      if (!greetingDone && mode === "idle") {
+        greetingDone = true;
+        setPose("confident");
+        showBubble("在呢♪ 双击叫任务窗，长按有我", false, 3600);
+        setTimeout(() => {
+          if (mode === "idle" && !working) setPose("calm");
+        }, 3600);
+      }
+    });
+
+    refreshHint();
+    setTimeout(() => {
+      if (!greetingDone) {
+        greetingDone = true;
+        setPose("confident");
+        showBubble("在呢♪", false, 2400);
+        setTimeout(() => {
+          if (mode === "idle" && !working) setPose("calm");
+        }, 2400);
+      }
+    }, 400);
+  </script>
+</body>
+</html>
+
