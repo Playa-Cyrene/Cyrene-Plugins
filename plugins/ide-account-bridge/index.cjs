@@ -1653,6 +1653,7 @@ function queueWaitFor(error, waitedMs, attempt) {
   const GRACE_ATTEMPTS = 3;
   const escalated = attempt > GRACE_ATTEMPTS ? QUEUE_WAIT_MIN_SLEEP_MS * 2 ** Math.min(attempt - GRACE_ATTEMPTS, 8) : 0;
   const target = Math.max(hinted, escalated) * (1 + Math.random() * 0.15);
+  if (hinted > QUEUE_WAIT_MAX_SLEEP_MS) return void 0;
   const clamped = Math.max(QUEUE_WAIT_MIN_SLEEP_MS, Math.min(target, QUEUE_WAIT_MAX_SLEEP_MS));
   if (hinted > 0 && remaining < hinted) return void 0;
   return Math.min(clamped, remaining);
@@ -2463,8 +2464,11 @@ var RegionRuntime = class {
    */
   async refreshCatalog(signal, { force = false } = {}) {
     if (this.catalogPending !== void 0) return this.catalogPending;
-    if (!force && this.catalog.fresh()) return;
-    if (!force && Date.now() - this.catalogFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS) return;
+    if (!force && this.catalogFailedAt !== 0) {
+      if (Date.now() - this.catalogFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS) return;
+    } else if (!force && this.catalog.fresh()) {
+      return;
+    }
     const flight = this.fetchCatalog(signal).finally(() => {
       if (this.catalogPending === flight) this.catalogPending = void 0;
     });
@@ -2474,8 +2478,20 @@ var RegionRuntime = class {
   /** One catalog fetch. Split out so `refreshCatalog` owns only the slot. */
   async fetchCatalog(signal) {
     this.credentials.invalidate();
-    const credential = await this.resolveCredential();
-    if (credential === void 0) return;
+    let credential;
+    try {
+      credential = await this.resolveCredential();
+    } catch (error) {
+      this.catalogFailedAt = Date.now();
+      this.logger?.warn?.(
+        `dsh-connect-qoder[pi]: ${this.region.displayName} credential resolution failed; serving cached catalog`,
+        error
+      );
+      return;
+    }
+    if (credential === void 0) {
+      return;
+    }
     try {
       const raw = await fetchModels(this.region, credential, signal);
       const entries = raw.map(normalizeEntry);
@@ -3840,6 +3856,10 @@ function createTraeShim(options) {
           }
         })();
         if (!haveModels) await refreshed;
+        const serviceable = typeof options.hasServiceableDirectory === "function" ? options.hasServiceableDirectory() : options.catalog.current().length > 0;
+        if (!serviceable) {
+          return writeError2(res, 503, "model_directory_unavailable", "Trae model directory is not available yet; retry shortly");
+        }
       }
       if (req.method === "GET" && (url === "/healthz" || url === "/healthz/")) return writeJson(res, 200, { ok: true });
       if (req.method === "GET" && (url === "/v1/models" || url === "/v1/models/")) return writeJson(res, 200, {
@@ -5055,6 +5075,13 @@ var RegionStack = class {
       // empty wire map, which upstream rejects as `4001 param is invalid`.
       // `modelsReady` is the flag that actually tracks a completed discovery.
       discoveryReady: () => this.modelsReady,
+      // Whether there is any directory a request can be served from. Unlike
+      // `discoveryReady`, this is false only when *nothing* usable has ever
+      // landed — the static fallback does not count, because its wire entries
+      // do not resolve and the upstream would reject the ids. The shim uses
+      // this after a failed wait to answer with a retryable error instead of
+      // serving fallback models.
+      hasServiceableDirectory: () => this.modelsReady,
       // Absent on the Pi port, which keeps its original random-per-process
       // behaviour.
       ...this.endpoints === void 0 ? {} : {
@@ -5089,6 +5116,7 @@ var RegionStack = class {
       const flight = this.discoverModels(signal).then((outcome) => {
         if (outcome.models.length === 0) {
           this.modelsFailedAt = Date.now();
+          this.modelsComplete = false;
           this.logger?.warn?.(
             `trae: model directory unavailable for ${this.region}; keeping the previous directory`,
             outcome.failures
@@ -5113,6 +5141,7 @@ var RegionStack = class {
       }).catch((error) => {
         this.logger?.warn?.(`trae: model directory discovery failed for ${this.region}`, error);
         this.modelsFailedAt = Date.now();
+        this.modelsComplete = false;
         return false;
       }).finally(() => {
         if (this.modelsPending === flight) this.modelsPending = void 0;
@@ -5167,10 +5196,11 @@ var RegionStack = class {
    */
   async refreshCatalog({ force = false, signal } = {}) {
     if (this.modelsPending !== void 0) return this.modelsPending;
-    if (!force && this.modelsReady && this.modelsComplete && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) {
+    if (!force && this.modelsFailedAt !== 0) {
+      if (Date.now() - this.modelsFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS2) return null;
+    } else if (!force && this.modelsReady && this.modelsComplete && Date.now() - this.modelsDiscoveredAt < CATALOG_TTL_MS2) {
       return null;
     }
-    if (!force && Date.now() - this.modelsFailedAt < CATALOG_RETRY_AFTER_FAILURE_MS2) return null;
     return this.ensureReady({ rediscover: true, signal });
   }
   /**

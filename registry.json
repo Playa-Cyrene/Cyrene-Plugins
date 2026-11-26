@@ -139,7 +139,7 @@
       "description": "复用本机已登录的 Qoder 与 Trae 桌面账号，向 Cyrene 提供 OpenAI 兼容的本地端点，无需 OAuth 或粘贴 API Key；附额度查看与每日签到。",
       "author": "citie114514",
       "homepage": "https://github.com/citie114514/pi-connect/tree/main/cyrene/ide-account-bridge",
-      "version": "1.2.3",
+      "version": "1.2.4",
       "downloads": 0
     },
     {
