@@ -1,10 +1,10 @@
 # 第三方来源与修改
 
-本发行包含 dsh-blender-plugin 3.1.0-alpha.1 的运行资源，来自：
+本发行包含 dsh-blender-plugin 3.1.0-alpha.1 的运行资源及该版本发布后的 EEVEE 兼容修复，来自：
 
 - 项目：<https://github.com/sixtysevenlf/dsh-blender-plugin>
-- 提交：`68513f23e068eaa36cd958af9ba9aa068c64752b`
-- 固定发布：<https://github.com/sixtysevenlf/dsh-blender-plugin/releases/tag/v3.1.0-alpha.1>
+- 同步至提交：`6c5614712972a5cbca52b13d4df9193d76e76b0d`
+- 基础预发布：<https://github.com/sixtysevenlf/dsh-blender-plugin/releases/tag/v3.1.0-alpha.1>，真实标签提交为 `9ee9b5de89ee23ee79f6772625147f56cf31e6df`；上游尚未发布包含本次修复的新版本。
 - Node 网关：BSD-3-Clause，许可证原文位于 `vendor/dsh-blender/LICENSE`。
 - Blender 扩展：GPL-3.0-or-later，许可证原文位于 `vendor/dsh-blender/extension/LICENSE`，版权与衍生声明位于 `vendor/dsh-blender/extension/NOTICE`。
 - 完整 Python 扩展源码随包提供；原版扩展 ZIP 的固定来源为 <https://github.com/sixtysevenlf/dsh-blender-plugin/releases/download/v3.1.0-alpha.1/dsh_blender_bridge.zip>，SHA256 记录在 `vendor-lock.json`；本版安装须使用随附的鉴权适配源码自行打包，原版不兼容连接码。上游 MIT 衍生内容的声明保留在对应 NOTICE 文件中。
@@ -26,6 +26,11 @@
 - `core/queue/spawn-executor.js` 接受显式帧率、分数基数及原生分辨率百分比，只在后台渲染进程应用；不将网关凭据继承给后台 Blender。
 - 实际使用模块与保留模块、网络/文件/进程边界见 README「实际使用的上游模块」。
 
+上游同步（Cyrene 0.1.1，2026-11-15）：
+
+- 纳入 [上游 PR #96](https://github.com/sixtysevenlf/dsh-blender-plugin/pull/96)：`lib/runtime/paths.js`（来自 `runtime/paths.ts`）、`runtime/py/core/perf.py` 和 `runtime/py/core/worker.py` 按 Blender 版本选择 EEVEE 标识，4.2–4.x 使用 `BLENDER_EEVEE_NEXT`，5.0 起使用 `BLENDER_EEVEE`。协议仍为 12，扩展仍为 2.0.0；以上 Cyrene 本地修改全部保留。
+- 0.1.0 记录的 `68513f23e068eaa36cd958af9ba9aa068c64752b` 比实际发布标签仅多一条发布证据文档，运行资源一致；本版将基础发布提交与后续同步提交分别记录。
+
 其余上游实现保持原样。上游 source map、类型声明、Python 缓存和内嵌 ZIP 未纳入运行包。
 
-`vendor-lock.json` 记录原始发布资产哈希。适配层仅启动独立网关，不加载上游面向 DSH 的宿主入口，未分发 DSH 主程序或其 npm peer dependencies。
+`vendor-lock.json` 的 SHA256 仅记录原始 3.1.0-alpha.1 发布资产，不用于校验叠加上游修复和 Cyrene 本地修改后的目录。适配层仅启动独立网关，不加载上游面向 DSH 的宿主入口，未分发 DSH 主程序或其 npm peer dependencies。

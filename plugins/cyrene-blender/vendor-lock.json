@@ -1,11 +1,26 @@
 {
   "repository": "https://github.com/sixtysevenlf/dsh-blender-plugin",
   "version": "3.1.0-alpha.1",
-  "commit": "68513f23e068eaa36cd958af9ba9aa068c64752b",
+  "releaseTag": "v3.1.0-alpha.1",
+  "releaseCommit": "9ee9b5de89ee23ee79f6772625147f56cf31e6df",
+  "commit": "6c5614712972a5cbca52b13d4df9193d76e76b0d",
+  "sha256Scope": "Original v3.1.0-alpha.1 release assets, before the upstream updates and local patches listed below.",
   "sha256": {
     "dsh-blender-plugin-3.1.0-alpha.1.tgz": "9f1fd4ae6260c418dcc4a80e354b41a226e201a965c8dc6e1d8c322e21e5b426",
     "dsh_blender_bridge.zip": "c50e04bb518f1f5aa867aaa7b7980f79ac51148acf1975042e5586201601caca"
   },
+  "upstreamUpdates": [
+    {
+      "pullRequest": "https://github.com/sixtysevenlf/dsh-blender-plugin/pull/96",
+      "commit": "6c5614712972a5cbca52b13d4df9193d76e76b0d",
+      "summary": "Select the EEVEE engine identifier for Blender 4.2–4.x and 5.0+; this fix is not part of a newer upstream release.",
+      "files": [
+        "lib/runtime/paths.js (from runtime/paths.ts)",
+        "runtime/py/core/perf.py",
+        "runtime/py/core/worker.py"
+      ]
+    }
+  ],
   "patches": [
     "Explicit Blender initialization order, disable embedded autoexec, Python error exit code 20.",
     "Reject browser Origin/Sec-Fetch-Site and non-loopback Host on HTTP and WebSocket.",
