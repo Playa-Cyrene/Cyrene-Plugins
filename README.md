@@ -40,6 +40,7 @@ Cyrene 昔涟官方插件收录仓库：开发者通过 Pull Request 提交插�
 | [better-lessons](./plugins/better-lessons) | 0.1.0 | learn 模式课堂演出：BLS 剧本在独立窗口逐帧播放，支持键鼠推进、插话续讲、对白回看、回放与清空 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/better-lessons-0.1.0.zip) | yuzu-tanuki | [Cyrene-Better-Lessons](https://github.com/yuzu-tanuki/Cyrene-Better-Lessons) |
 | [cyrene-balance](./plugins/cyrene-balance) | 10.4.3 | 常驻桌面的唯一桌宠：余额与今日消费、提问与危险操作确认、任务进度与头顶状态面板都收在她身上；八种姿态、44 张小表情、三档状态面板，托盘单击即可一键归位 | [ZIP](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-balance-10.4.3.zip) | 昔涟 | — |
 | [cyrene-blender](./plugins/cyrene-blender) | 0.1.0 | 连接本机 Blender，读取场景、调整物体、查看预览并管理独立渲染任务。 | [下载](https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-blender-0.1.0.zip) | 抽卡保底真君 | [dsh-blender-plugin（上游）](https://github.com/sixtysevenlf/dsh-blender-plugin) |
+| [bdpan-vault](./plugins/bdpan-vault) | 1.0.0 | 在本机保存百度网盘 API Key，Agent 代发请求时 Key 不出现在对话里；主机走白名单，响应自动抹掉 Key 原文 | — | bestlike093 | — |
 
 ---
 

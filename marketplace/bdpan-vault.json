@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "百度网盘 API Key 存在本机，Agent 代发请求时 Key 由插件内部拼接，不出现在工具返回值里",
+    "主机白名单 + 路径校验（只接受 / 开头的 path），Agent 不能把 Key 发到任意外部地址",
+    "响应里如果出现 Key 原文，会被替换成 [REDACTED]",
+    "面板里可以填 Key、看掩码、做连通性测试、删除"
+  ],
+  "requirements": [
+    "需要一个百度网盘开放平台 API Key",
+    "Windows 上自动用 Electron safeStorage（DPAPI）加密；环境不支持时退回明文存储，面板会明确提示"
+  ],
+  "setup": [
+    "在插件市场安装「百度网盘 API 保险箱」，默认不启用，需要手动打开",
+    "打开插件面板，填入 API Key 并保存",
+    "点「测试连接」确认能正常拿到账号信息",
+    "之后 Agent 调 bdpan-vault_api 即可代发请求"
+  ],
+  "dataHandling": [
+    "Key 存在 Cyrene 的插件存储里，键名 bdpanApiKey，不写入用户目录文件",
+    "不启动子进程，不采集遥测",
+    "网络请求只发往白名单内的百度域名：pan/openapi/aippt/apaas/d.pcs/pcs/yun.baidu.com",
+    "响应体上限 400 KB，返回给 Agent 的正文截断到 8000 字符",
+    "bdpan-vault_reveal 会返回明文并留在对话记录里；日常请用 bdpan-vault_api"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/blob/main/plugins/bdpan-vault/README.md"
+}
