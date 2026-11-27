@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "cyrene-keyring",
+  "name": "钥匙环",
+  "version": "0.4.0",
+  "description": "本机密钥库：密码、2FA 验证码、API Key、安全笔记，主密码加密，Agent 只看密文、取用需一次一密确认",
+  "author": "bestlike093",
+  "entry": "index.cjs",
+  "defaultEnabled": false
+}

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "四类条目：密码、2FA 验证码、API Key、安全笔记，统一收进一个本机加密库",
+    "每条单独设置 Agent 权限：只给面板 / 每次确认 / 本次解锁免确认 / 直接给明文",
+    "Agent 只看到 secret:// 引用；取用需一次一密令牌（60 秒、32 字节 hex、用后即焚）",
+    "主密码 scrypt（N=2¹⁷, r=8, p=1）+ AES-256-GCM；换密码只重新包裹 DEK",
+    "Windows Hello 解锁；自动锁、手动锁与阶梯限流",
+    "加密导出 / 导入，可从 cyrene-vault、gh-vault、bdpan-vault、cyrene-totp 与邮件设置迁移",
+    "面板分「条目 / 设置 / 说明」三页，支持搜索、分组、复制与二维码导入"
+  ],
+  "requirements": [
+    "需要支持插件系统的 Cyrene（manifest apiVersion 1）",
+    "Windows 10/11；Windows Hello 解锁需要本机已配置 PIN 或生物识别"
+  ],
+  "setup": [
+    "在 设置 → 插件 里安装并启用本插件，设置页会出现「钥匙环」",
+    "第一次使用先设一个至少 12 位的主密码",
+    "把常用密码、2FA secret 或 API Key 添加进来，再按需要设置每条的 Agent 权限"
+  ],
+  "dataHandling": [
+    "不访问网络；所有条目只保存在插件数据目录的加密库文件里",
+    "主密码不落盘；忘记后只能靠加密备份和导出密码恢复",
+    "Windows Hello 通过 PowerShell 调用本机 Windows API，不启动常驻进程",
+    "Agent 取用受权限档位与一次性令牌约束，明文不会写进日志"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-keyring"
+}

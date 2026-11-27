@@ -1,0 +1,1686 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>钥匙环</title>
+<style>
+  :root {
+    --pink: #f8bbd0;
+    --pink-strong: #ec6d9c;
+    --ink: #3a3338;
+    --muted: #8b8189;
+    --line: #f0dbe4;
+    --bg: #fff9fc;
+    --card: #ffffff;
+    --danger: #c2415f;
+    --ok: #3f8f6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 18px 18px 30px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.5 "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
+  }
+  h1 { margin: 0; font-size: 20px; letter-spacing: 0.5px; }
+  h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); font-weight: 600; }
+  p.hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  p.hint.error { color: var(--danger); }
+  p.hint.ok { color: var(--ok); }
+  .hidden { display: none !important; }
+
+  .center {
+    min-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: 380px;
+    margin: 0 auto;
+    gap: 10px;
+  }
+  .center h1 { text-align: center; font-size: 24px; }
+  .center p.hint { text-align: center; }
+
+  input, select, textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 9px 11px;
+    font: inherit;
+    color: var(--ink);
+    background: #fffdfe;
+  }
+  textarea { min-height: 78px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #f9d3e1; border-color: var(--pink); }
+
+  button {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 7px 13px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--pink); }
+  button.primary { background: var(--pink-strong); border-color: var(--pink-strong); color: #fff; }
+  button.ghost { color: var(--pink-strong); }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  header.bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  header.bar h1 { font-size: 19px; }
+  .bar-gap { flex: 1; min-width: 28px; }
+  .badge {
+    font-size: 11px;
+    color: var(--ok);
+    background: #eef8f2;
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+
+  .toolbar { display: flex; gap: 6px; margin-bottom: 12px; align-items: center; }
+  .toolbar input { flex: 1 1 auto; min-width: 0; }
+  .toolbar select { flex: 0 0 auto; width: 96px; }
+  .toolbar button { flex: 0 0 auto; padding-left: 12px; padding-right: 12px; }
+  .totp-import { border-bottom: 1px dashed var(--line); padding-bottom: 8px; margin-bottom: 2px; }
+  #fTotpPreview { max-height: 90px; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .item {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 14px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(236, 109, 156, 0.05);
+  }
+  .item:hover { border-color: var(--pink); }
+  .item .row1 { display: flex; align-items: baseline; gap: 8px; }
+  .item .title { font-weight: 700; }
+  .item .sub { color: var(--muted); font-size: 12px; word-break: break-all; }
+  .item .tag {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 1px 8px;
+    white-space: nowrap;
+  }
+  .item .tag.warn { color: #b06a24; border-color: #f0dcc0; background: #fdf6ea; }
+  .empty { color: var(--muted); font-size: 13px; padding: 14px 2px; text-align: center; }
+
+  .detail {
+    margin-top: 10px;
+    border-top: 1px dashed var(--line);
+    padding-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    cursor: default;
+  }
+  .field { display: flex; align-items: center; gap: 8px; }
+  .field .k { color: var(--muted); font-size: 12px; width: 64px; flex: none; }
+  .field .v { flex: 1; font-family: "Consolas", monospace; font-size: 13px; word-break: break-all; }
+  .field .v.secret { letter-spacing: 1px; }
+  .field input[type="number"] { flex: none; width: 96px; }
+  .code {
+    font: 700 30px/1.2 "Cascadia Mono", "Consolas", "Courier New", monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.12em;
+    min-width: 4.8em;
+    white-space: nowrap;
+    color: var(--pink-strong);
+  }
+  .progress { height: 4px; background: #f7e3eb; border-radius: 999px; overflow: hidden; }
+  .progress > i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #f6a4c3, #ec6d9c);
+    transform-origin: left center;
+    transition: transform 1s linear;
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px;
+    margin-top: 18px;
+  }
+  .panel h2 { margin-bottom: 6px; }
+  .divider { height: 1px; background: var(--line); margin: 12px 0; }
+  .pane { display: flex; flex-direction: column; gap: 8px; }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(58, 51, 56, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 20;
+  }
+  .modal .box {
+    background: #fff;
+    border-radius: 18px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 88vh;
+    overflow: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid3 { display: grid; grid-template-columns: 1.1fr 0.9fr 0.9fr; gap: 8px; }
+  .row { display: flex; gap: 8px; }
+  .row > button { flex: 1; }
+  .tabs { display: flex; gap: 6px; margin: 8px 0; }
+  .tab {
+    flex: 1; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 10px; padding: 7px 0; font-size: 12px; cursor: pointer;
+  }
+  .tab.active { background: #fde7ef; border-color: var(--pink); color: var(--pink-strong); font-weight: 700; }
+  .preview { max-width: 100%; max-height: 180px; border-radius: 10px; border: 1px solid var(--line); }
+  #legacyList { margin-top: 8px; }
+  #legacyList .item { padding: 7px 10px; font-size: 12px; }
+  #legacyList .item .count { color: var(--pink-strong); font-weight: 700; }
+
+  #auditList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #auditList li { display: flex; gap: 10px; font-size: 12px; }
+  #auditList .who { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .main-tabs { margin-top: 2px; }
+  .spec { display: grid; gap: 6px; margin-top: 8px; }
+  .spec-row {
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 10px; background: var(--card);
+  }
+  .spec-row b { display: block; color: var(--pink-strong); font-size: 12px; margin-bottom: 2px; }
+  .spec-row span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .doc-list { margin: 8px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.7; color: var(--ink); }
+  .doc-list li { margin-bottom: 4px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(12px);
+    background: #3a3338; color: #fff; padding: 8px 16px; border-radius: 999px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: 0.2s ease;
+    max-width: 80%; text-align: center; z-index: 30;
+  }
+  .toast.show { opacity: 0.94; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- 首次使用 -->
+<section id="setupView" class="center hidden">
+  <h1>钥匙环</h1>
+  <p class="hint">给这个库设一个主密码。它不会存在任何地方，忘了就打不开了。</p>
+  <input id="setupPass" type="password" placeholder="主密码（至少 12 位）">
+  <input id="setupPass2" type="password" placeholder="再输一次">
+  <button id="setupBtn" class="primary">创建钥匙环</button>
+  <p id="setupMsg" class="hint"></p>
+</section>
+
+<!-- 解锁 -->
+<section id="lockView" class="center hidden">
+  <h1>钥匙环</h1>
+  <p class="hint" id="lockHint">正在等待 Windows Hello…</p>
+
+  <button id="helloBtn" class="primary hidden">用 Windows Hello 解锁</button>
+  <button id="usePassBtn" class="ghost hidden">改输入主密码</button>
+
+  <div id="passPane" class="hidden">
+    <input id="unlockPass" type="password" placeholder="主密码">
+    <button id="unlockBtn" class="primary">用主密码解锁</button>
+  </div>
+
+  <p id="unlockMsg" class="hint"></p>
+  <button id="helloResetBtn" class="ghost hidden">用 Windows Hello 重置冷却</button>
+  <p id="guardHint" class="hint"></p>
+</section>
+
+<!-- 主界面 -->
+<section id="mainView" class="hidden">
+  <header class="bar">
+    <h1>钥匙环</h1>
+    <span id="lockCountdown" class="badge">已解锁</span>
+    <span class="bar-gap" aria-hidden="true"></span>
+    <button id="lockBtn" class="ghost">锁定</button>
+  </header>
+
+  <div class="tabs main-tabs" id="mainTabs">
+    <button class="tab active" data-page="entries">条目</button>
+    <button class="tab" data-page="settings">设置</button>
+    <button class="tab" data-page="about">说明</button>
+  </div>
+
+  <div id="entriesPage" class="page">
+  <div class="toolbar">
+    <input id="search" placeholder="搜索标题、账号、服务">
+    <select id="typeFilter">
+      <option value="">全部类型</option>
+      <option value="password">密码</option>
+      <option value="totp">2FA 验证码</option>
+      <option value="api_key">API Key</option>
+      <option value="note">笔记</option>
+    </select>
+    <button id="addBtn" class="primary">添加</button>
+  </div>
+
+  <section id="pendingBox" class="panel hidden">
+    <h2>等待你确认</h2>
+    <p class="hint">Agent 想取用下面的东西。允许后才会复制或显示，令牌 60 秒过期、用一次就作废。</p>
+    <ul id="pendingList" class="list"></ul>
+  </section>
+
+  <ul id="list" class="list"><li class="empty">加载中…</li></ul>
+  </div>
+
+  <div id="settingsPage" class="page hidden">
+  <section class="panel">
+    <h2>备份与迁移</h2>
+    <p class="hint">导出的文件用你另设的密码加密，换设备时选这个文件加密码就能导入。</p>
+    <div class="divider"></div>
+    <div class="pane">
+      <input id="exportPass" type="password" placeholder="导出密码（至少 12 位）">
+      <input id="exportPass2" type="password" placeholder="再输一次">
+      <button id="exportBtn" class="primary">导出加密备份</button>
+    </div>
+    <div class="divider"></div>
+    <div class="pane">
+      <input id="importPass" type="password" placeholder="导入密码">
+      <button id="importBtn" class="ghost">选择备份文件并导入</button>
+    </div>
+    <p id="backupMsg" class="hint"></p>
+    <div class="divider"></div>
+    <h3>从旧插件导入</h3>
+    <p class="hint">把 cyrene-vault、gh-vault、bdpan-vault、cyrene-totp 和邮件设置里的密钥搬进来。cyrene-totp 的 secret 按 Base32 校验，和手动添加共用一套去重规则。原插件的数据不会被改动，重复条目会自动跳过。</p>
+    <button id="legacyScanBtn" class="ghost">扫描旧插件数据</button>
+    <ul id="legacyList" class="list"></ul>
+    <button id="legacyImportBtn" class="primary hidden">开始迁移</button>
+    <p id="legacyMsg" class="hint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>自动锁定</h2>
+    <p class="hint">面板最小化或切到后台后，超过设定时间就自动锁回去。无操作锁定的时间可以单独调整；设为「不自动锁」后，只保留主动锁定和关闭宿主。</p>
+    <div class="divider"></div>
+    <div class="field">
+      <span class="k">最小化后</span>
+      <select id="hiddenLockSelect">
+        <option value="10000">10 秒</option>
+        <option value="20000">20 秒</option>
+        <option value="30000">30 秒</option>
+        <option value="60000">1 分钟</option>
+        <option value="120000">2 分钟</option>
+        <option value="180000">3 分钟</option>
+        <option value="600000">10 分钟</option>
+        <option value="3600000">1 小时</option>
+        <option value="custom">自定义…</option>
+      </select>
+    </div>
+    <div class="field hidden" id="hiddenLockCustomRow">
+      <span class="k">自定义</span>
+      <input id="hiddenLockCustom" type="number" min="5" max="3600" value="45">
+      <span class="v">秒（5 到 3600）</span>
+    </div>
+    <button id="hiddenLockSave" class="ghost hidden">保存自定义时间</button>
+    <p id="hiddenLockMsg" class="hint"></p>
+    <div class="divider"></div>
+    <div class="field">
+      <span class="k">无操作后</span>
+      <select id="idleLockSelect">
+        <option value="0">不自动锁</option>
+        <option value="300000">5 分钟</option>
+        <option value="900000">15 分钟</option>
+        <option value="1800000">30 分钟</option>
+        <option value="3600000">1 小时</option>
+        <option value="7200000">2 小时</option>
+        <option value="14400000">4 小时</option>
+        <option value="custom">自定义…</option>
+      </select>
+    </div>
+    <div class="field hidden" id="idleLockCustomRow">
+      <span class="k">自定义</span>
+      <input id="idleLockCustom" type="number" min="1" max="1440" value="45">
+      <span class="v">分钟（1 到 1440）</span>
+    </div>
+    <button id="idleLockSave" class="ghost hidden">保存自定义时间</button>
+    <p id="idleLockMsg" class="hint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Windows Hello</h2>
+    <p class="hint" id="helloHint">检查中…</p>
+    <div class="divider"></div>
+    <button id="helloToggle" class="ghost">启用 Hello 解锁</button>
+    <div class="divider"></div>
+    <h3>主密码进入模式</h3>
+    <p class="hint" id="unlockModeHint">默认关闭：打开面板先试 Hello，通过就直接进，不通过才显示主密码框。</p>
+    <button id="unlockModeToggle" class="ghost">开启「主密码进入模式」</button>
+    <p id="helloMsg" class="hint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>主密码</h2>
+    <div class="pane">
+      <input id="oldPass" type="password" placeholder="当前主密码">
+      <input id="newPass" type="password" placeholder="新主密码（至少 12 位）">
+      <button id="changePassBtn" class="ghost">更换主密码</button>
+    </div>
+    <p id="passMsg" class="hint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>最近操作</h2>
+    <ul id="auditList"><li class="empty">还没有记录</li></ul>
+  </section>
+  </div>
+
+  <div id="aboutPage" class="page hidden">
+    <section class="panel">
+      <h2>这是什么</h2>
+      <p class="hint">钥匙环把密码、2FA 验证码、API Key 和安全笔记收进一个本机加密库。数据只保存在这台电脑上，不上传，也不经过任何服务器。</p>
+      <p class="hint">库文件用 AES-256-GCM 加密，密钥由主密码经 scrypt（N=131072 / r=8 / p=1）派生，或由 Windows Hello 通过 DPAPI 包裹。没有主密码或 Hello，打不开库。</p>
+    </section>
+
+    <section class="panel">
+      <h2>四档权限</h2>
+      <p class="hint">每个条目单独设一档，决定 Agent 能拿它做什么。</p>
+      <div class="spec">
+        <div class="spec-row"><b>仅面板</b><span>Agent 连请求都发不出，只能在面板里查看和复制。</span></div>
+        <div class="spec-row"><b>每次确认</b><span>Agent 发起请求后进「等待你确认」，你允许后值进剪贴板；工具返回值里没有明文。</span></div>
+        <div class="spec-row"><b>本次解锁免确认</b><span>第一次允许时可以勾选「本次解锁都允许」，之后同一解锁周期内直接执行，值仍只进剪贴板。</span></div>
+        <div class="spec-row"><b>明文直读</b><span>不进确认区，Agent 直接拿到明文。明文会进入对话记录，无法撤回。</span></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>怎么用</h2>
+      <ol class="doc-list">
+        <li>第一次打开先设主密码（至少 12 位），库就建好了。</li>
+        <li>在「条目」页点「添加」，选类型填内容。2FA 可以粘贴 otpauth 链接、手动填 secret，或识别二维码截图。</li>
+        <li>Agent 想取用时，「等待你确认」会出现请求。允许后值进剪贴板，30 秒后自动清除。</li>
+        <li>「设置」页可以换主密码、开关 Hello、调自动锁、导出加密备份。</li>
+      </ol>
+    </section>
+
+    <section class="panel">
+      <h2>自动锁定</h2>
+      <p class="hint">手动锁定或关闭 Cyrene 会立刻清掉内存里的密钥，同时清空待确认请求、一次性令牌和本次解锁的免确认名单。无操作锁定默认 5 分钟，可以关掉；面板最小化后另有独立的锁定时间，默认 10 秒。</p>
+    </section>
+
+    <section class="panel">
+      <h2>备份</h2>
+      <p class="hint">导出的是加密备份，用导出时另设的密码保护。换设备时选这个文件加密码就能导入。主密码和导出密码都不保存在任何地方，丢了就打不开。</p>
+    </section>
+
+    <section class="panel">
+      <h2>已知限制</h2>
+      <ul class="doc-list">
+        <li>不防同一 Windows 账户下的恶意程序。它能读进程内存，也能读剪贴板。</li>
+        <li>复制到剪贴板的值 30 秒后自动清除；这段时间里其他程序可能读到它。</li>
+        <li>「明文直读」档会把明文直接交给 Agent，进入对话记录，无法撤回。</li>
+        <li>Windows Hello 的安全性取决于系统账户和硬件，不额外增加一层独立密钥。</li>
+        <li>这是自用工具，没有经过第三方安全审计。</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>免责声明</h2>
+      <p class="hint">本插件按现状提供，不附带任何明示或暗示的担保。主密码、导出密码、Windows Hello 都无法找回；因忘记密码、设备损坏、误删、恶意软件或系统故障造成的数据丢失，由使用者自行承担。</p>
+      <p class="hint">不要把钥匙环当作唯一副本。重要凭据请同时在可信的地方留一份离线备份。使用本插件产生的任何后果，由使用者自行负责。</p>
+    </section>
+
+    <p class="hint" style="text-align:center">cyrene-keyring 0.4.0 · 本机运行</p>
+  </div>
+</section>
+
+<!-- 编辑弹窗 -->
+<div id="editor" class="modal hidden">
+  <div class="box">
+    <h2 id="editorTitle">添加条目</h2>
+    <div class="grid2">
+      <select id="fType">
+        <option value="password">密码</option>
+        <option value="totp">2FA 验证码</option>
+        <option value="api_key">API Key</option>
+        <option value="note">笔记</option>
+    </select>
+        <input id="fGroup" placeholder="分组（可空）">
+    </div>
+    <input id="fTitle" placeholder="标题">
+    <input id="fNote" placeholder="备注（可空）">
+
+    <div id="fieldsPassword" class="pane">
+      <input id="fUsername" placeholder="账号">
+      <input id="fPassword" type="password" placeholder="密码">
+      <input id="fUrl" placeholder="网址（可空）">
+    </div>
+
+    <div id="fieldsTotp" class="pane hidden">
+      <div class="totp-import">
+        <input id="fTotpSource" placeholder="粘贴 otpauth 链接，或直接填 secret">
+        <div class="row">
+          <button id="fTotpParse" class="ghost" type="button">解析 / 填入</button>
+          <button id="fTotpPick" class="ghost" type="button">识别截图</button>
+          <button id="fTotpClip" class="ghost" type="button">从剪贴板</button>
+        </div>
+        <input id="fTotpFile" type="file" accept="image/*" class="hidden">
+        <img id="fTotpPreview" class="preview hidden" alt="">
+        <p id="fTotpMsg" class="hint">粘贴链接、填 secret，或识别一张二维码截图；解析后确认字段再保存。</p>
+      </div>
+      <input id="fIssuer" placeholder="服务名，例如 GitHub">
+      <input id="fAccount" placeholder="账号">
+      <input id="fSecret" placeholder="secret（Base32）">
+      <div class="grid2">
+        <select id="fAlgorithm">
+          <option value="sha1">SHA1</option>
+          <option value="sha256">SHA256</option>
+          <option value="sha512">SHA512</option>
+        </select>
+        <select id="fDigits">
+          <option value="6">6 位</option>
+          <option value="8">8 位</option>
+        </select>
+      </div>
+      <input id="fPeriod" type="number" min="10" max="300" value="30" placeholder="周期（秒）">
+    </div>
+
+    <div id="fieldsApiKey" class="pane hidden">
+      <input id="fService" placeholder="服务名，例如 deepseek">
+      <input id="fKey" type="password" placeholder="Key">
+      <input id="fScope" placeholder="用途（可空）">
+    </div>
+
+    <div id="fieldsNote" class="pane hidden">
+      <textarea id="fBody" placeholder="笔记正文"></textarea>
+    </div>
+
+    <div class="pane">
+      <select id="fAccess">
+        <option value="panel-only">Agent：只给面板</option>
+        <option value="ask">Agent：每次确认（进剪贴板）</option>
+        <option value="session">Agent：本次解锁免确认（进剪贴板）</option>
+        <option value="plaintext">Agent：直接回明文</option>
+      </select>
+      <p class="hint">后两档都只在本次解锁内有效，锁定即失效；「直接回明文」会让内容进入对话记录，只建议给一次性凭据。</p>
+    </div>
+
+    <p id="editorMsg" class="hint"></p>
+    <div class="modal-actions">
+      <button id="editorCancel" class="ghost">取消</button>
+      <button id="editorSave" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="jsQR.js"></script>
+<script>
+  const { ipcRenderer } = require("electron");
+  const CH = (c) => "plugin:cyrene-keyring:" + c;
+
+  const $ = (id) => document.getElementById(id);
+  const TYPE_LABEL = { password: "密码", totp: "2FA 验证码", api_key: "API Key", note: "笔记" };
+  const ACCESS_LABEL = {
+    "panel-only": "仅面板",
+    ask: "每次确认",
+    session: "本次免确认",
+    plaintext: "明文直读",
+  };
+
+  let state = null;
+  let editingId = null;
+  let revealed = null;
+  let totpTimer = null;
+  let toastTimer = null;
+  let lastTouch = 0;
+  // 锁屏页：这一轮锁屏是否已经自动唤起过 Hello；以及此刻是否有 Hello 正在等系统
+  let helloAutoTried = false;
+  let helloPending = false;
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function toast(msg) {
+    const el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
+  }
+
+  function touch() {
+    const now = Date.now();
+    if (now - lastTouch < 10000) return;
+    lastTouch = now;
+    ipcRenderer.invoke(CH("touch")).catch(() => {});
+  }
+
+  async function call(name, payload) {
+    try {
+      return await ipcRenderer.invoke(CH(name), payload);
+    } catch (error) {
+      return { ok: false, message: String(error && error.message ? error.message : error) };
+    }
+  }
+
+  /* ---------- 视图切换 ---------- */
+
+  function show(view) {
+    ["setupView", "lockView", "mainView"].forEach((id) => {
+      $(id).classList.toggle("hidden", id !== view);
+    });
+  }
+
+  const MAIN_PAGES = {
+    entries: "entriesPage",
+    settings: "settingsPage",
+    about: "aboutPage",
+  };
+
+  function setMainPage(page) {
+    const key = MAIN_PAGES[page] ? page : "entries";
+    Object.keys(MAIN_PAGES).forEach((name) => {
+      $(MAIN_PAGES[name]).classList.toggle("hidden", name !== key);
+    });
+    document.querySelectorAll("#mainTabs .tab").forEach((button) => {
+      button.classList.toggle("active", button.dataset.page === key);
+    });
+  }
+
+  document.querySelectorAll("#mainTabs .tab").forEach((button) => {
+    button.addEventListener("click", () => setMainPage(button.dataset.page));
+  });
+
+  async function refresh() {
+    const next = await call("state");
+    if (!next || next.initialized === undefined) return;
+    state = next;
+
+    if (!state.initialized) {
+      show("setupView");
+      return;
+    }
+    if (!state.unlocked) {
+      stopTotp();
+      revealed = null;
+      show("lockView");
+      setMainPage("entries");
+      renderLock();
+      maybeAutoHello();
+      return;
+    }
+
+    helloAutoTried = false;
+    helloPending = false;
+    show("mainView");
+    renderHello();
+    renderSettings();
+    renderPending();
+    renderList();
+  }
+
+  /* ---------- 锁屏 ---------- */
+
+  function renderLock() {
+    const g = (state && state.guard) || {};
+    const h = (state && state.hello) || {};
+    const hiddenMs = (state && state.settings && state.settings.hiddenLockMs) || 10000;
+    const hiddenText = "面板最小化超过 " + humanMs(hiddenMs);
+    const both = g.unlockMode === "both";
+    const canHello = Boolean(h.available && h.enabled);
+    const blocked = Boolean(g.locked);
+    const showPass = !canHello || blocked || both || (helloAutoTried && !helloPending);
+
+    $("helloBtn").classList.toggle("hidden", !canHello || blocked);
+    $("helloBtn").disabled = helloPending;
+    $("helloBtn").textContent = both
+      ? "用 Windows Hello 解锁"
+      : helloAutoTried && !helloPending
+        ? "重试 Windows Hello"
+        : "用 Windows Hello 解锁";
+
+    $("usePassBtn").classList.toggle("hidden", !canHello || both || blocked);
+    $("helloResetBtn").classList.toggle("hidden", !(canHello && blocked));
+
+    $("passPane").classList.toggle("hidden", !showPass);
+    $("unlockPass").disabled = blocked || helloPending;
+    $("unlockBtn").disabled = blocked || helloPending;
+
+    if (both) {
+      $("lockHint").textContent = canHello
+        ? "Hello 和主密码同时有效，输入任意一个都能进。5 分钟没有操作、或" + hiddenText + "，会自动锁回去。"
+        : "输入主密码解锁。5 分钟没有操作、或" + hiddenText + "，会自动锁回去。";
+    } else if (helloPending) {
+      $("lockHint").textContent = "正在等待 Windows Hello…";
+    } else if (canHello && !helloAutoTried) {
+      $("lockHint").textContent = "准备用 Windows Hello 解锁…";
+    } else if (canHello) {
+      $("lockHint").textContent = "Hello 没有通过，可以重试，也可以改用主密码。";
+    } else {
+      $("lockHint").textContent = "输入主密码解锁。5 分钟没有操作、或" + hiddenText + "，会自动锁回去。";
+    }
+
+    let hintText = "";
+    let hintClass = "hint";
+    if (blocked) {
+      hintText = "这一档的 " + g.limit + " 次尝试已经用完，要等" + g.waitText + "才能再试。";
+      hintClass = "hint error";
+    } else if (g.used > 0) {
+      hintText = "当前 " + g.stageLabel + " 档，这一档还剩 " + g.remaining + " 次尝试。";
+    }
+    if (g.jumpDir) {
+      hintText =
+        "检测到系统时间被" +
+        (g.jumpDir === "forward" ? "往前" : "往回") +
+        "调了 " +
+        humanSpan(g.jumpMs) +
+        "，已经按可疑处理。" +
+        hintText;
+    }
+    $("guardHint").textContent = hintText;
+    $("guardHint").className = hintClass;
+  }
+
+  /** 默认模式：进锁屏就自动唤起一次 Hello，通过直接进。并存模式不自动弹。 */
+  async function maybeAutoHello() {
+    if (helloPending || helloAutoTried || !state || state.unlocked) return;
+    // 面板在后台时不要唤起系统验证，否则会白白记一次 Hello 失败
+    if (document.hidden) return;
+    const g = state.guard || {};
+    const h = state.hello || {};
+    if (g.locked) return;
+    if (g.unlockMode === "both") return;
+    if (!h.available || !h.enabled) return;
+    await runHelloUnlock();
+  }
+
+  async function runHelloUnlock() {
+    if (helloPending) return;
+    helloPending = true;
+    helloAutoTried = true;
+    $("unlockMsg").textContent = "";
+    $("unlockMsg").className = "hint";
+    renderLock();
+
+    try {
+      const r = await call("helloUnlock");
+      if (r && r.guard && state) state.guard = r.guard;
+      if (!r || !r.ok) {
+        $("unlockMsg").textContent = (r && r.message) || "没有通过验证";
+        $("unlockMsg").className = "hint error";
+        return;
+      }
+      $("unlockMsg").textContent = "";
+      helloAutoTried = false;
+      await refresh();
+    } finally {
+      helloPending = false;
+      renderLock();
+    }
+  }
+
+  function renderHello() {
+    const h = state && state.hello;
+    const g = (state && state.guard) || {};
+    if (!h) return;
+
+    const hint = $("helloHint");
+    const toggle = $("helloToggle");
+    const modeToggle = $("unlockModeToggle");
+    const modeHint = $("unlockModeHint");
+    const both = g.unlockMode === "both";
+
+    toggle.dataset.on = h.enabled ? "1" : "0";
+    modeToggle.dataset.on = both ? "1" : "0";
+
+    if (!h.available) {
+      hint.textContent = "这台设备用不了 Windows Hello：" + h.text;
+      toggle.textContent = "不可用";
+      toggle.disabled = true;
+      modeToggle.textContent = "开启「主密码进入模式」";
+      modeToggle.disabled = true;
+      modeHint.textContent = "这台设备用不了 Hello，主密码是唯一入口。";
+      return;
+    }
+
+    toggle.disabled = false;
+    hint.textContent = h.enabled
+      ? "已启用。解锁时可以先用 Hello，主密码始终有效。"
+      : "开启后解锁可以直接用 Hello。主密码仍然有效，随时可以关掉。";
+    toggle.textContent = h.enabled ? "关闭 Hello 解锁" : "启用 Hello 解锁";
+
+    modeToggle.disabled = !h.enabled;
+    modeToggle.textContent = both ? "关闭「主密码进入模式」" : "开启「主密码进入模式」";
+    modeHint.textContent = !h.enabled
+      ? "先启用上面的 Hello 解锁，这个模式才有意义。"
+      : both
+        ? "已开启：打开面板会同时给出 Hello 和主密码，输入任意一个都能进。"
+        : "已关闭：打开面板先试 Hello，通过就直接进，不通过才显示主密码框。";
+  }
+
+  /* ---------- 列表 ---------- */
+
+  function filtered() {
+    if (!state) return [];
+    const q = $("search").value.trim().toLowerCase();
+    const type = $("typeFilter").value;
+    return state.entries.filter((entry) => {
+      if (type && entry.type !== type) return false;
+      if (!q) return true;
+      const hay = [entry.title, entry.username, entry.issuer, entry.account, entry.service, entry.group]
+        .filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  let lastListSig = "";
+
+  /* ---------- 待确认请求 ---------- */
+
+  let lastPendingSig = "";
+
+  function renderPending() {
+    const list = (state && state.pending) || [];
+    $("pendingBox").classList.toggle("hidden", !list.length);
+
+    const sig = JSON.stringify(list.map((item) => [item.id, item.title, item.purpose, item.reason]));
+    if (sig === lastPendingSig) return;
+    lastPendingSig = sig;
+
+    if (list.length && $("entriesPage").classList.contains("hidden")) {
+      setMainPage("entries");
+    }
+
+    if (!list.length) {
+      $("pendingList").innerHTML = "";
+      return;
+    }
+
+    $("pendingList").innerHTML = list.map((item) => {
+      const what =
+        item.purpose === "copy" ? "复制到剪贴板" : item.purpose === "totp" ? "显示验证码" : "查看";
+      return (
+        '<li class="item">' +
+          '<div class="row1">' +
+            '<span class="title">' + esc(item.title) + '</span>' +
+            '<span class="sub">' + esc(TYPE_LABEL[item.type] || item.type) + ' · ' + esc(what) + '</span>' +
+          '</div>' +
+          (item.reason ? '<p class="hint">理由：' + esc(item.reason) + '</p>' : "") +
+          '<div class="row">' +
+            '<button class="primary" data-allow="' + esc(item.id) + '">允许</button>' +
+            (item.access === "session"
+              ? '<button class="ghost" data-allow-session="' + esc(item.id) + '">本次解锁都允许</button>'
+              : "") +
+            '<button class="ghost" data-deny="' + esc(item.id) + '">拒绝</button>' +
+          '</div>' +
+        '</li>'
+      );
+    }).join("");
+  }
+
+  $("pendingList").addEventListener("click", async (event) => {
+    const allow = event.target.getAttribute("data-allow");
+    const allowSession = event.target.getAttribute("data-allow-session");
+    const deny = event.target.getAttribute("data-deny");
+    if (!allow && !allowSession && !deny) return;
+    const result = deny
+      ? await call("denyRequest", { id: deny })
+      : await call("confirmRequest", {
+          id: allow || allowSession,
+          remember: Boolean(allowSession),
+        });
+    let message = result && result.message ? result.message : allow ? "已允许" : "已拒绝";
+    if (result && result.ok && result.purpose === "totp" && result.display) {
+      message = "验证码 " + result.display + " 已复制到剪贴板";
+    }
+    toast(message);
+    lastPendingSig = "";
+    await refresh();
+  });
+
+  function grantedOf(id) {
+    return Boolean(state && (state.sessionGranted || []).includes(id));
+  }
+
+  function renderList() {
+    const list = filtered();
+    const ul = $("list");
+
+    // 面板每 1.5 秒轮询一次状态。列表没变化时不重绘，
+    // 否则验证码文本和进度条会被反复重建，看起来一跳一跳。
+    const sig = JSON.stringify([
+      list.map((entry) => [entry.id, entry.title, subOf(entry), entry.access, grantedOf(entry.id)]),
+      revealed ? revealed.id : null,
+    ]);
+    if (sig === lastListSig) return;
+    lastListSig = sig;
+
+    if (!list.length) {
+      ul.innerHTML = '<li class="empty">还没有条目，点右上角添加</li>';
+      return;
+    }
+    ul.innerHTML = list.map((entry) => {
+      const tagClass = entry.access === "panel-only" || entry.access === "plaintext" ? "tag warn" : "tag";
+      const granted = entry.access === "session" && grantedOf(entry.id);
+      const tagText = granted ? "本次已允许" : ACCESS_LABEL[entry.access] || entry.access;
+      const open = revealed && revealed.id === entry.id;
+      return (
+        '<li class="item" data-id="' + esc(entry.id) + '">' +
+          '<div class="row1">' +
+            '<span class="title">' + esc(entry.title) + '</span>' +
+            '<span class="sub">' + esc(subOf(entry)) + '</span>' +
+            '<span class="' + tagClass + '">' + esc(tagText) + '</span>' +
+          '</div>' +
+          (open ? detailHtml(revealed) : "") +
+        '</li>'
+      );
+    }).join("");
+  }
+
+  function subOf(entry) {
+    if (entry.type === "password") return entry.username || "";
+    if (entry.type === "totp") return entry.account || "";
+    if (entry.type === "api_key") return entry.service || "";
+    return TYPE_LABEL[entry.type];
+  }
+
+  function detailHtml(entry) {
+    if (entry.type === "password") {
+      return (
+        '<div class="detail">' +
+          field("账号", entry.username || "—", false, "username") +
+          field("密码", entry.password, true, "password") +
+          (entry.url ? field("网址", entry.url, false, "url") : "") +
+          (entry.note ? '<div class="field"><span class="k">备注</span><span class="v">' + esc(entry.note) + '</span></div>' : "") +
+          actionsHtml() +
+        '</div>'
+      );
+    }
+    if (entry.type === "totp") {
+      return (
+        '<div class="detail">' +
+          '<div class="field"><span class="k">2FA 验证码</span><span class="code" id="totpCode">' + esc(entry.__code || "······") + '</span><button class="ghost" data-copy="totp">复制</button></div>' +
+          '<div class="progress"><i id="totpBar" style="transform:scaleX(1)"></i></div>' +
+          '<div class="field"><span class="k">剩余</span><span class="v" id="totpRemain">—</span></div>' +
+          actionsHtml() +
+        '</div>'
+      );
+    }
+    if (entry.type === "api_key") {
+      return (
+        '<div class="detail">' +
+          field("Key", entry.key, true, "key") +
+          (entry.service ? field("服务", entry.service, false, "") : "") +
+          (entry.scope ? field("用途", entry.scope, false, "") : "") +
+          (entry.note ? '<div class="field"><span class="k">备注</span><span class="v">' + esc(entry.note) + '</span></div>' : "") +
+          actionsHtml() +
+        '</div>'
+      );
+    }
+    return (
+      '<div class="detail">' +
+        '<div class="field"><span class="k">正文</span><span class="v">' + esc(entry.body) + '</span></div>' +
+        actionsHtml() +
+      '</div>'
+    );
+  }
+
+  function field(label, value, secret, fieldName) {
+    const shown = secret && !value.startsWith("•") ? "••••••••" : value;
+    return (
+      '<div class="field">' +
+        '<span class="k">' + esc(label) + '</span>' +
+        '<span class="v' + (secret ? " secret" : "") + '">' + esc(shown || "—") + '</span>' +
+        (secret && fieldName
+          ? '<button class="ghost" data-copy="' + esc(fieldName) + '">复制</button>'
+          : fieldName
+            ? '<button class="ghost" data-copy="' + esc(fieldName) + '">复制</button>'
+            : "") +
+      '</div>'
+    );
+  }
+
+  function actionsHtml() {
+    return (
+      '<div class="modal-actions" style="margin-top:2px">' +
+        '<button class="ghost" data-edit="1">编辑</button>' +
+        '<button class="danger" data-remove="1">删除</button>' +
+      '</div>'
+    );
+  }
+
+  async function reveal(id) {
+    const r = await call("reveal", { id });
+    if (!r.ok) {
+      toast(r.message);
+      return;
+    }
+    revealed = r.entry;
+    renderList();
+    if (r.entry.type === "totp") startTotp(r.entry.id);
+  }
+
+  /* ---------- TOTP 刷新 ---------- */
+
+  function stopTotp() {
+    clearInterval(totpTimer);
+    totpTimer = null;
+  }
+
+  function startTotp(id) {
+    stopTotp();
+    let lastCode = "";
+    const tick = async () => {
+      if (!revealed || revealed.id !== id) return stopTotp();
+      const r = await call("totp", { id });
+      if (!r.ok) return stopTotp();
+      const code = $("totpCode");
+      const bar = $("totpBar");
+      const remain = $("totpRemain");
+      // 只在换码时写文本，避免每秒重建文本节点造成闪动
+      if (code && r.code !== lastCode) {
+        code.textContent = r.code;
+        lastCode = r.code;
+      }
+      if (bar) bar.style.transform = "scaleX(" + Math.max(0.001, Math.min(1, 1 - r.progress)) + ")";
+      if (remain) remain.textContent = r.remaining + " 秒";
+    };
+    tick();
+    totpTimer = setInterval(tick, 1000);
+  }
+
+  /* ---------- 列表点击 ---------- */
+
+  $("list").addEventListener("click", async (ev) => {
+    touch();
+    const copyBtn = ev.target.closest("[data-copy]");
+    const editBtn = ev.target.closest("[data-edit]");
+    const removeBtn = ev.target.closest("[data-remove]");
+    const item = ev.target.closest(".item");
+    if (!item) return;
+    const id = item.getAttribute("data-id");
+
+    if (copyBtn) {
+      ev.stopPropagation();
+      const r = await call("copy", { id, field: copyBtn.getAttribute("data-copy") });
+      toast(r.message);
+      return;
+    }
+    if (editBtn) {
+      ev.stopPropagation();
+      openEditor(revealed);
+      return;
+    }
+    if (removeBtn) {
+      ev.stopPropagation();
+      if (!confirm("确定删除这条？删除后无法恢复。")) return;
+      const r = await call("remove", { id });
+      toast(r.message);
+      if (r.ok) {
+        revealed = null;
+        refresh();
+      }
+      return;
+    }
+    if (revealed && revealed.id === id) {
+      revealed = null;
+      stopTotp();
+      renderList();
+      return;
+    }
+    await reveal(id);
+  });
+
+  /* ---------- 编辑 ---------- */
+
+  function setTypeFields(type) {
+    ["Password", "Totp", "ApiKey", "Note"].forEach((name) => {
+      $("fields" + name).classList.toggle("hidden", name.toLowerCase() !== type.replace("_", ""));
+    });
+  }
+
+  function openEditor(entry) {
+    editingId = entry ? entry.id : null;
+    $("editorTitle").textContent = entry ? "编辑条目" : "添加条目";
+    $("editorMsg").textContent = "";
+
+    const type = entry ? entry.type : "password";
+    $("fType").value = type;
+    $("fType").disabled = Boolean(entry);
+    setTypeFields(type);
+
+    $("fTitle").value = entry ? entry.title || "" : "";
+    $("fGroup").value = entry ? entry.group || "" : "";
+    $("fNote").value = entry ? entry.note || "" : "";
+    const defaultAccess = type === "totp" || type === "api_key" ? "session" : "panel-only";
+    $("fAccess").value = entry ? entry.access : defaultAccess;
+    resetTotpImport();
+
+    $("fUsername").value = entry ? entry.username || "" : "";
+    $("fPassword").value = "";
+    $("fPassword").placeholder = entry ? "留空则不修改" : "密码";
+    $("fUrl").value = entry ? entry.url || "" : "";
+
+    $("fIssuer").value = entry ? entry.issuer || "" : "";
+    $("fAccount").value = entry ? entry.account || "" : "";
+    $("fSecret").value = "";
+    $("fSecret").placeholder = entry ? "留空则不修改" : "secret（Base32）";
+    $("fAlgorithm").value = entry ? entry.algorithm || "sha1" : "sha1";
+    $("fDigits").value = entry ? String(entry.digits || 6) : "6";
+    $("fPeriod").value = entry ? entry.period || 30 : 30;
+
+    $("fService").value = entry ? entry.service || "" : "";
+    $("fKey").value = "";
+    $("fKey").placeholder = entry ? "留空则不修改" : "Key";
+    $("fScope").value = entry ? entry.scope || "" : "";
+
+    $("fBody").value = entry ? entry.body || "" : "";
+
+    $("editor").classList.remove("hidden");
+  }
+
+  function closeEditor() {
+    $("editor").classList.add("hidden");
+    editingId = null;
+  }
+
+  $("fType").addEventListener("change", () => {
+    const type = $("fType").value;
+    setTypeFields(type);
+    if (!editingId && $("fAccess").value === "panel-only" && (type === "totp" || type === "api_key")) {
+      $("fAccess").value = "session";
+    }
+  });
+
+  $("editorCancel").addEventListener("click", closeEditor);
+
+  $("editorSave").addEventListener("click", async () => {
+    const type = $("fType").value;
+    const entry = {
+      type,
+      title: $("fTitle").value.trim(),
+      group: $("fGroup").value.trim(),
+      note: $("fNote").value.trim(),
+      access: $("fAccess").value,
+    };
+
+    if (type === "password") {
+      entry.username = $("fUsername").value.trim();
+      entry.password = $("fPassword").value;
+      entry.url = $("fUrl").value.trim();
+    }
+    if (type === "totp") {
+      entry.issuer = $("fIssuer").value.trim();
+      entry.account = $("fAccount").value.trim();
+      entry.secret = $("fSecret").value;
+      entry.algorithm = $("fAlgorithm").value;
+      entry.digits = Number($("fDigits").value);
+      entry.period = Number($("fPeriod").value) || 30;
+    }
+    if (type === "api_key") {
+      entry.service = $("fService").value.trim();
+      entry.key = $("fKey").value;
+      entry.scope = $("fScope").value.trim();
+    }
+    if (type === "note") {
+      entry.body = $("fBody").value;
+    }
+
+    const r = editingId
+      ? await call("update", { id: editingId, entry })
+      : await call("add", { entry });
+
+    if (!r.ok) {
+      $("editorMsg").textContent = r.message;
+      $("editorMsg").className = "hint error";
+      return;
+    }
+    closeEditor();
+    toast(r.message || "已保存");
+    revealed = null;
+    refresh();
+  });
+
+  /* ---------- 顶部操作 ---------- */
+
+  $("addBtn").addEventListener("click", () => {
+    touch();
+    openEditor(null);
+  });
+
+  /* ---------- 自动锁定时间 ---------- */
+
+  function humanMs(ms) {
+    if (ms < 60000) return Math.max(1, Math.round(ms / 1000)) + " 秒";
+    if (ms < 3600000) return Math.round(ms / 60000) + " 分钟";
+    return Math.round(ms / 3600000) + " 小时";
+  }
+
+  function humanSpan(ms) {
+    const m = Math.abs(Number(ms) || 0);
+    if (m < 60000) return Math.max(1, Math.round(m / 1000)) + " 秒";
+    if (m < 3600000) return Math.round(m / 60000) + " 分钟";
+    if (m < 86400000) return Math.round(m / 3600000) + " 小时";
+    if (m < 365 * 86400000) return Math.round(m / 86400000) + " 天";
+    return Math.round(m / (365 * 86400000)) + " 年";
+  }
+
+  let lastHiddenLockMs = null;
+  let lastIdleLockMs = null;
+
+  function renderSettings() {
+    renderHiddenLock();
+    renderIdleLock();
+  }
+
+  function renderHiddenLock() {
+    const ms = (state && state.settings && state.settings.hiddenLockMs) || 10000;
+    if (ms === lastHiddenLockMs) return;
+    lastHiddenLockMs = ms;
+    const sel = $("hiddenLockSelect");
+    const preset = Array.from(sel.options).some((o) => o.value === String(ms));
+    if (preset) {
+      sel.value = String(ms);
+      $("hiddenLockCustomRow").classList.add("hidden");
+      $("hiddenLockSave").classList.add("hidden");
+    } else {
+      sel.value = "custom";
+      $("hiddenLockCustomRow").classList.remove("hidden");
+      $("hiddenLockSave").classList.remove("hidden");
+      $("hiddenLockCustom").value = String(Math.round(ms / 1000));
+    }
+  }
+
+  function renderIdleLock() {
+    const raw = state && state.settings ? state.settings.idleLockMs : undefined;
+    const ms = typeof raw === "number" ? raw : 300000;
+    if (ms === lastIdleLockMs) return;
+    lastIdleLockMs = ms;
+    const sel = $("idleLockSelect");
+    const preset = Array.from(sel.options).some((o) => o.value === String(ms));
+    if (preset) {
+      sel.value = String(ms);
+      $("idleLockCustomRow").classList.add("hidden");
+      $("idleLockSave").classList.add("hidden");
+    } else {
+      sel.value = "custom";
+      $("idleLockCustomRow").classList.remove("hidden");
+      $("idleLockSave").classList.remove("hidden");
+      $("idleLockCustom").value = String(Math.round(ms / 60000));
+    }
+  }
+
+  async function saveHiddenLock(ms) {
+    const r = await call("setSettings", { hiddenLockMs: ms });
+    if (!r || !r.ok) {
+      $("hiddenLockMsg").textContent = (r && r.message) || "保存失败";
+      $("hiddenLockMsg").className = "hint error";
+      return;
+    }
+    if (state && state.settings) state.settings.hiddenLockMs = r.settings.hiddenLockMs;
+    lastHiddenLockMs = r.settings.hiddenLockMs;
+    $("hiddenLockMsg").textContent = "已保存：" + humanMs(r.settings.hiddenLockMs);
+    $("hiddenLockMsg").className = "hint ok";
+  }
+
+  async function saveIdleLock(ms) {
+    const r = await call("setSettings", { idleLockMs: ms });
+    if (!r || !r.ok) {
+      $("idleLockMsg").textContent = (r && r.message) || "保存失败";
+      $("idleLockMsg").className = "hint error";
+      return;
+    }
+    if (state && state.settings) state.settings.idleLockMs = r.settings.idleLockMs;
+    lastIdleLockMs = r.settings.idleLockMs;
+    $("idleLockMsg").textContent =
+      "已保存：" + (r.settings.idleLockMs === 0 ? "不自动锁" : humanMs(r.settings.idleLockMs));
+    $("idleLockMsg").className = "hint ok";
+  }
+
+  $("hiddenLockSelect").addEventListener("change", async () => {
+    const v = $("hiddenLockSelect").value;
+    if (v === "custom") {
+      $("hiddenLockCustomRow").classList.remove("hidden");
+      $("hiddenLockSave").classList.remove("hidden");
+      $("hiddenLockCustom").focus();
+      return;
+    }
+    $("hiddenLockCustomRow").classList.add("hidden");
+    $("hiddenLockSave").classList.add("hidden");
+    await saveHiddenLock(Number(v));
+  });
+
+  $("hiddenLockSave").addEventListener("click", async () => {
+    const sec = Number($("hiddenLockCustom").value);
+    if (!Number.isFinite(sec) || sec < 5 || sec > 3600) {
+      $("hiddenLockMsg").textContent = "填 5 到 3600 秒之间的整数";
+      $("hiddenLockMsg").className = "hint error";
+      return;
+    }
+    await saveHiddenLock(Math.round(sec * 1000));
+  });
+
+  $("idleLockSelect").addEventListener("change", async () => {
+    const v = $("idleLockSelect").value;
+    if (v === "custom") {
+      $("idleLockCustomRow").classList.remove("hidden");
+      $("idleLockSave").classList.remove("hidden");
+      $("idleLockCustom").focus();
+      return;
+    }
+    $("idleLockCustomRow").classList.add("hidden");
+    $("idleLockSave").classList.add("hidden");
+    await saveIdleLock(Number(v));
+  });
+
+  $("idleLockSave").addEventListener("click", async () => {
+    const min = Number($("idleLockCustom").value);
+    if (!Number.isFinite(min) || min < 1 || min > 1440) {
+      $("idleLockMsg").textContent = "填 1 到 1440 分钟之间的整数";
+      $("idleLockMsg").className = "hint error";
+      return;
+    }
+    await saveIdleLock(Math.round(min * 60000));
+  });
+
+  async function lockNow(auto) {
+    const ms = (state && state.settings && state.settings.hiddenLockMs) || 10000;
+    await call("lock");
+    revealed = null;
+    stopTotp();
+    await refresh();
+    if (auto) toast("面板最小化超过 " + humanMs(ms) + "，已自动锁定");
+  }
+
+  $("lockBtn").addEventListener("click", () => lockNow(false));
+
+  $("helloResetBtn").addEventListener("click", async () => {
+    $("helloResetBtn").disabled = true;
+    const result = await call("helloReset");
+    $("helloResetBtn").disabled = false;
+    $("unlockMsg").textContent = (result && result.message) || "已处理";
+    lastHiddenLockMs = null;
+    lastIdleLockMs = null;
+    await refresh();
+  });
+
+  // 最小化或隐藏超过设定时间自动锁定，提前回来就取消
+  let hiddenLockTimer = null;
+  document.addEventListener("visibilitychange", () => {
+    clearTimeout(hiddenLockTimer);
+    hiddenLockTimer = null;
+    if (!document.hidden) return;
+    const ms = (state && state.settings && state.settings.hiddenLockMs) || 10000;
+    hiddenLockTimer = setTimeout(() => {
+      hiddenLockTimer = null;
+      if (state && state.unlocked) lockNow(true);
+    }, ms);
+  });
+
+  $("search").addEventListener("input", renderList);
+  $("typeFilter").addEventListener("change", renderList);
+
+  /* ---------- 初始化 / 解锁 ---------- */
+
+  $("setupBtn").addEventListener("click", async () => {
+    const p1 = $("setupPass").value;
+    const p2 = $("setupPass2").value;
+    if (p1.length < 12) return toast("主密码至少 12 位");
+    if (p1 !== p2) return toast("两次输入不一致");
+    $("setupBtn").disabled = true;
+    const r = await call("setup", { password: p1 });
+    $("setupBtn").disabled = false;
+    if (!r.ok) {
+      $("setupMsg").textContent = r.message;
+      $("setupMsg").className = "hint error";
+      return;
+    }
+    $("setupPass").value = "";
+    $("setupPass2").value = "";
+    toast("钥匙环已创建");
+    refresh();
+  });
+
+  async function doUnlock() {
+    const pass = $("unlockPass").value;
+    if (!pass) return toast("请输入主密码");
+    $("unlockBtn").disabled = true;
+    const r = await call("unlock", { password: pass });
+    $("unlockBtn").disabled = false;
+    if (r && r.guard && state) state.guard = r.guard;
+    if (!r || !r.ok) {
+      $("unlockMsg").textContent = (r && r.message) || "解锁失败";
+      $("unlockMsg").className = "hint error";
+      renderLock();
+      $("unlockPass").focus();
+      return;
+    }
+    $("unlockPass").value = "";
+    $("unlockMsg").textContent = "";
+    $("unlockMsg").className = "hint";
+    await refresh();
+  }
+
+  $("unlockBtn").addEventListener("click", doUnlock);
+  $("unlockPass").addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") doUnlock();
+  });
+
+  $("helloBtn").addEventListener("click", () => runHelloUnlock());
+
+  $("usePassBtn").addEventListener("click", () => {
+    helloAutoTried = true;
+    helloPending = false;
+    renderLock();
+    $("unlockPass").focus();
+  });
+
+  $("unlockModeToggle").addEventListener("click", async () => {
+    const both = $("unlockModeToggle").dataset.on === "1";
+    $("unlockModeToggle").disabled = true;
+    const r = await call("setUnlockMode", { mode: both ? "hello" : "both" });
+    $("unlockModeToggle").disabled = false;
+    $("helloMsg").textContent = r.message;
+    $("helloMsg").className = "hint " + (r.ok ? "ok" : "error");
+    refresh();
+  });
+
+  $("helloToggle").addEventListener("click", async () => {
+    const on = $("helloToggle").dataset.on === "1";
+    $("helloToggle").disabled = true;
+    const r = await call("setHello", { enabled: !on });
+    $("helloToggle").disabled = false;
+    $("helloMsg").textContent = r.message;
+    $("helloMsg").className = "hint " + (r.ok ? "ok" : "error");
+    refresh();
+  });
+
+  /* ---------- 添加弹窗里的 2FA 填充 ---------- */
+
+  const TOTP_IMPORT_HINT = "粘贴链接、填 secret，或识别一张二维码截图；解析后确认字段再保存。";
+
+  function resetTotpImport() {
+    $("fTotpSource").value = "";
+    $("fTotpMsg").textContent = TOTP_IMPORT_HINT;
+    $("fTotpMsg").className = "hint";
+    $("fTotpPreview").classList.add("hidden");
+    $("fTotpPreview").removeAttribute("src");
+  }
+
+  function fillTotpFields(entry) {
+    $("fIssuer").value = entry.issuer || "";
+    $("fAccount").value = entry.account || "";
+    $("fSecret").value = entry.secret || "";
+    $("fAlgorithm").value = entry.algorithm || "sha1";
+    $("fDigits").value = String(entry.digits || 6);
+    $("fPeriod").value = entry.period || 30;
+    if (!$("fTitle").value.trim()) {
+      $("fTitle").value = entry.title || entry.issuer || entry.account || "";
+    }
+    if (!$("fGroup").value.trim()) $("fGroup").value = "2FA 验证码";
+  }
+
+  async function parseTotpSource() {
+    const raw = $("fTotpSource").value.trim();
+    if (!raw) return toast("先粘贴链接或填 secret");
+    if (/^otpauth:\/\//i.test(raw)) {
+      const parsed = await call("parseUri", { uri: raw });
+      if (!parsed.ok) {
+        $("fTotpMsg").textContent = parsed.message;
+        $("fTotpMsg").className = "hint error";
+        return;
+      }
+      fillTotpFields(parsed.entry);
+      $("fTotpMsg").textContent = "已从链接填入，确认后点保存。";
+      $("fTotpMsg").className = "hint ok";
+      return;
+    }
+    $("fSecret").value = raw;
+    $("fTotpMsg").textContent = "已填入 secret，补上服务名后点保存。";
+    $("fTotpMsg").className = "hint ok";
+  }
+
+  $("fTotpParse").addEventListener("click", parseTotpSource);
+  $("fTotpSource").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      parseTotpSource();
+    }
+  });
+
+
+  async function decodeQr(dataUrl) {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(new Error("图片读不出来"));
+      image.src = dataUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (typeof window.jsQR !== "function") throw new Error("扫码库没加载，用粘贴链接也行");
+    const found = window.jsQR(data.data, data.width, data.height);
+    if (!found || !found.data) throw new Error("没识别出二维码，换一张清晰点的截图试试");
+    return found.data;
+  }
+
+  async function handleQrImage(dataUrl) {
+    $("fTotpPreview").src = dataUrl;
+    $("fTotpPreview").classList.remove("hidden");
+    try {
+      const text = await decodeQr(dataUrl);
+      $("fTotpMsg").textContent = "识别到：" + text.slice(0, 90);
+      $("fTotpMsg").className = "hint";
+      if (!/^otpauth:\/\//i.test(text)) {
+        $("fTotpMsg").textContent = "二维码内容不是 otpauth 链接";
+        $("fTotpMsg").className = "hint error";
+        return;
+      }
+      $("fTotpSource").value = text;
+      const parsed = await call("parseUri", { uri: text });
+      if (!parsed.ok) {
+        $("fTotpMsg").textContent = parsed.message;
+        $("fTotpMsg").className = "hint error";
+        return;
+      }
+      fillTotpFields(parsed.entry);
+      $("fTotpMsg").textContent = "已从截图填入，确认后点保存。";
+      $("fTotpMsg").className = "hint ok";
+    } catch (error) {
+      $("fTotpMsg").textContent = error.message;
+      $("fTotpMsg").className = "hint error";
+    }
+  }
+
+  $("fTotpPick").addEventListener("click", () => $("fTotpFile").click());
+  $("fTotpFile").addEventListener("change", () => {
+    const file = $("fTotpFile").files && $("fTotpFile").files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => handleQrImage(String(reader.result || ""));
+    reader.readAsDataURL(file);
+    $("fTotpFile").value = "";
+  });
+
+  $("fTotpClip").addEventListener("click", async () => {
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((name) => name.startsWith("image/"));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        const reader = new FileReader();
+        reader.onload = () => handleQrImage(String(reader.result || ""));
+        reader.readAsDataURL(blob);
+        return;
+      }
+      toast("剪贴板里没有图片");
+    } catch {
+      toast("读不到剪贴板，试试选择图片");
+    }
+  });
+
+  /* ---------- 从旧插件迁移 ---------- */
+
+  $("legacyScanBtn").addEventListener("click", async () => {
+    const result = await call("legacyScan");
+    const list = $("legacyList");
+    list.innerHTML = "";
+    if (!result.ok) {
+      $("legacyMsg").textContent = result.message;
+      $("legacyMsg").className = "hint error";
+      return;
+    }
+    let total = 0;
+    for (const source of result.sources || []) {
+      total += source.count || 0;
+      const item = document.createElement("li");
+      item.className = "item";
+      item.innerHTML =
+        '<div class="row1"><span class="count">' +
+        esc(source.count) +
+        "</span> " +
+        esc(source.label) +
+        (source.available ? "" : "（没有数据）") +
+        "</div>";
+      list.appendChild(item);
+    }
+    $("legacyImportBtn").classList.toggle("hidden", total === 0);
+    $("legacyMsg").textContent = total
+      ? "找到 " + total + " 条可以迁移的数据。"
+      : "没有找到旧插件里的密钥。";
+    $("legacyMsg").className = "hint";
+  });
+
+  $("legacyImportBtn").addEventListener("click", async () => {
+    const button = $("legacyImportBtn");
+    button.disabled = true;
+    button.textContent = "迁移中…";
+    const result = await call("legacyImport");
+    button.disabled = false;
+    button.textContent = "开始迁移";
+    $("legacyMsg").textContent = result.message || "";
+    $("legacyMsg").className = "hint " + (result.ok ? "ok" : "error");
+    if (result.ok) {
+      toast(result.message || "迁移完成");
+      refresh();
+    }
+  });
+
+  /* ---------- 备份 ---------- */
+
+  $("exportBtn").addEventListener("click", async () => {
+    const p1 = $("exportPass").value;
+    const p2 = $("exportPass2").value;
+    if (p1.length < 12) return toast("导出密码至少 12 位");
+    if (p1 !== p2) return toast("两次密码不一致");
+    $("exportBtn").disabled = true;
+    const r = await call("exportFile", { password: p1 });
+    $("exportBtn").disabled = false;
+    $("backupMsg").textContent = r.ok && r.path ? r.message + "：" + r.path : r.message;
+    $("backupMsg").className = "hint " + (r.ok ? "ok" : "error");
+    if (r.ok) {
+      $("exportPass").value = "";
+      $("exportPass2").value = "";
+    }
+  });
+
+  $("importBtn").addEventListener("click", async () => {
+    const pass = $("importPass").value;
+    if (!pass) return toast("先输入导入密码");
+    $("importBtn").disabled = true;
+    const r = await call("importFile", { password: pass });
+    $("importBtn").disabled = false;
+    $("backupMsg").textContent = r.message;
+    $("backupMsg").className = "hint " + (r.ok ? "ok" : "error");
+    if (r.ok) {
+      $("importPass").value = "";
+      refresh();
+    }
+  });
+
+  /* ---------- 改主密码 ---------- */
+
+  $("changePassBtn").addEventListener("click", async () => {
+    const oldPassword = $("oldPass").value;
+    const newPassword = $("newPass").value;
+    if (!oldPassword) return toast("请输入当前主密码");
+    if (newPassword.length < 12) return toast("新主密码至少 12 位");
+    $("changePassBtn").disabled = true;
+    const r = await call("changePassword", { oldPassword, newPassword });
+    $("changePassBtn").disabled = false;
+    $("passMsg").textContent = r.message;
+    $("passMsg").className = "hint " + (r.ok ? "ok" : "error");
+    if (r.ok) {
+      $("oldPass").value = "";
+      $("newPass").value = "";
+    }
+  });
+
+  /* ---------- 审计 ---------- */
+
+  async function refreshAudit() {
+    if (!state || !state.unlocked) return;
+    const list = await call("audit", { limit: 8 });
+    const ul = $("auditList");
+    if (!Array.isArray(list) || !list.length) {
+      ul.innerHTML = '<li class="empty">还没有记录</li>';
+      return;
+    }
+    const label = {
+      get: "读取", deny: "拒绝", copy: "复制", unlock: "解锁", "unlock-failed": "解锁失败",
+      add: "添加", update: "编辑", remove: "删除", reveal: "查看", export: "导出",
+      import: "导入", lock: "锁定", "change-password": "改密码",
+    };
+    ul.innerHTML = list.map((a) => {
+      const who = (a.id || a.source || "") + (a.type ? " · " + (TYPE_LABEL[a.type] || a.type) : "");
+      const when = new Date(a.at);
+      const pad = (n) => String(n).padStart(2, "0");
+      return (
+        '<li><span class="who">' + esc(label[a.action] || a.action) + " " + esc(who) + '</span>' +
+        '<span class="hint">' + pad(when.getMonth() + 1) + "-" + pad(when.getDate()) + " " +
+        pad(when.getHours()) + ":" + pad(when.getMinutes()) + '</span></li>'
+      );
+    }).join("");
+  }
+
+  /* ---------- 启动 ---------- */
+
+  refresh();
+  setInterval(refresh, 1500);
+  setInterval(() => {
+    if (state && state.unlocked) refreshAudit();
+  }, 6000);
+
+  setInterval(() => {
+    if (!state || !state.unlocked) return;
+    const el = $("lockCountdown");
+    el.textContent = "已解锁";
+  }, 1000);
+</script>
+</body>
+</html>
