@@ -1,10 +1,12 @@
+param([string]$PluginDir = '')
+
 $ErrorActionPreference = 'Stop'
 
 # cyrene-github-dns: apply the requested hosts block.
 # Runs from the scheduled task with highest privileges.
 # Protocol: read data\apply.json, rewrite only our marked block, write data\apply-result.json.
 
-$plugin = Split-Path -Parent $PSScriptRoot
+$plugin = if ($PluginDir) { $PluginDir } else { Split-Path -Parent $PSScriptRoot }
 $data = Join-Path $plugin 'data'
 $hostsPath = 'C:\Windows\System32\drivers\etc\hosts'
 $requestPath = Join-Path $data 'apply.json'
@@ -44,16 +46,33 @@ try {
   $lines = $raw -split '\r?\n'
   $out = New-Object System.Collections.Generic.List[string]
   $inside = $false
+  $pairs = 0
   foreach ($line in $lines) {
     $t = $line.Trim()
-    if ($t -eq $markStart) { $inside = $true; continue }
-    if ($t -eq $markEnd) { $inside = $false; continue }
+    if ($t -eq $markStart) {
+      if ($inside) { throw 'hosts has nested start markers; refusing to modify' }
+      $inside = $true
+      continue
+    }
+    if ($t -eq $markEnd) {
+      if (-not $inside) { throw 'hosts has an end marker without a start marker; refusing to modify' }
+      $inside = $false
+      $pairs++
+      continue
+    }
     if (-not $inside) { $out.Add($line) }
   }
+  if ($inside) { throw 'hosts has an unclosed start marker; refusing to modify' }
+  if ($pairs -gt 1) { throw 'hosts has multiple marked blocks; refusing to modify' }
   while ($out.Count -gt 0 -and $out[$out.Count - 1] -eq '') { $out.RemoveAt($out.Count - 1) }
+
+  if ($action -ne 'apply' -and $action -ne 'clear') { throw 'invalid action: ' + $action }
 
   if ($action -eq 'apply') {
     if ($ip -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { throw 'invalid ip: ' + $ip }
+    foreach ($d in $domains) {
+      if ($d -ne 'github.com' -and $d -ne 'www.github.com') { throw 'invalid domain: ' + $d }
+    }
     $out.Add('')
     $out.Add($markStart)
     foreach ($d in $domains) { $out.Add($ip + ' ' + $d) }

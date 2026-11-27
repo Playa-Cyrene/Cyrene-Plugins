@@ -24,6 +24,7 @@ let win = null
 let scanTimer = null
 let scanBusy = false
 let ctxRef = null
+let disposed = false
 
 function log(...args) {
   try {
@@ -119,6 +120,7 @@ async function waitResult(requestId, timeoutMs = 20000) {
 }
 
 async function applyIp(ip) {
+  if (disposed) throw new Error('插件已停用')
   if (!ip || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error('IP 格式不对')
   await ensureDir()
   const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -137,6 +139,7 @@ async function applyIp(ip) {
 }
 
 async function clearBlock() {
+  if (disposed) throw new Error('插件已停用')
   await ensureDir()
   const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
   await writeJson(APPLY_FILE, { action: 'clear', domains: DOMAINS, requestId, at: new Date().toISOString() })
@@ -208,12 +211,14 @@ async function installTask() {
 function scheduleScan(delayMs, first) {
   if (scanTimer) clearTimeout(scanTimer)
   scanTimer = setTimeout(async () => {
+    if (disposed) return
     try {
       const config = await readConfig()
       if (config.enabled) {
         const scan = await scanNow()
         const currentOk = scan.rows.find((row) => row.ip === config.currentIp && row.ok)
         if (!currentOk && scan.best && scan.best.ip !== config.currentIp) {
+          if (disposed) return
           log('当前 IP 失效，自动切换到 ' + scan.best.ip)
           await applyIp(scan.best.ip)
         }
@@ -221,12 +226,15 @@ function scheduleScan(delayMs, first) {
     } catch (error) {
       log('自动扫描失败：' + (error && error.message ? error.message : error))
     }
+    if (disposed) return
     const next = await readConfig()
+    if (disposed) return
     scheduleScan(Math.max(2, Number(next.intervalMinutes) || 10) * 60000, false)
   }, first ? delayMs : delayMs)
 }
 
 async function register(ctx) {
+  disposed = false
   ctxRef = ctx
   await ensureDir()
 
@@ -318,6 +326,7 @@ async function register(ctx) {
   ctx.registerIpc('install', () => installTask())
 
   ctx.onDispose(() => {
+    disposed = true
     if (scanTimer) clearTimeout(scanTimer)
     scanTimer = null
   })
@@ -349,6 +358,7 @@ async function open() {
 }
 
 async function unregister() {
+  disposed = true
   if (scanTimer) clearTimeout(scanTimer)
   scanTimer = null
   if (win && !win.isDestroyed()) win.close()

@@ -15,7 +15,7 @@
    `%APPDATA%\Cyrene\plugins\cyrene-github-dns\`
 2. 在 Cyrene 聊天窗口的「插件」面板里启用
 3. 点插件卡片的「打开」，进入设置窗口
-4. 第一次使用点「安装计划任务」，在 UAC 弹窗里点「是」
+4. 第一次使用点「安装计划任务」，在 UAC 弹窗里点「是」；更新插件后再点一次「刷新任务」同步固定副本
 5. 点「立即扫描」，等十几秒，再点「应用最优」
 
 ## 数据与备份
@@ -44,8 +44,10 @@
 ## 安全边界
 
 - 插件与 Cyrene 同权限运行，不改 hosts，只写 `data/` 下的请求文件
-- 真正写 hosts 的动作由计划任务以最高权限执行，每次都有备份
-- 只操作自己标记块内的行，不动 hosts 里的其他内容
+- 真正写 hosts 的动作由计划任务以最高权限执行 `C:\ProgramData\cyrene-github-dns\apply-hosts.ps1` 固定副本；该目录关闭继承并限制为 Administrators / SYSTEM 可写，插件目录里的脚本不会被提权执行
+- 请求文件只接受 `apply` / `clear`、IPv4 和 `github.com` / `www.github.com`，不能借它执行任意命令
+- 只操作自己标记块内的行；标记不成对时直接报错，不改写 hosts
+- 每次改写前都有备份
 
 ## 开发
 

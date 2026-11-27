@@ -150,10 +150,10 @@
       $('scanBtn').disabled = Boolean(busy)
       $('applyBtn').disabled = Boolean(busy) || !best
       $('clearBtn').disabled = Boolean(busy) || !state.currentIp
-      $('installBtn').disabled = Boolean(busy) || state.installed
-      $('installBtn').textContent = state.installed ? '任务已安装' : '安装计划任务'
+      $('installBtn').disabled = Boolean(busy)
+      $('installBtn').textContent = state.installed ? '刷新任务' : '安装计划任务'
       $('help').textContent = state.installed
-        ? '写 hosts 由计划任务以最高权限完成，插件本身不提权。hosts 里只会多出一个带标记的块。'
+        ? '写 hosts 由计划任务以最高权限执行 C:\\ProgramData 下的固定副本，插件目录里的脚本不会被提权运行。插件更新后点「刷新任务」同步副本。'
         : '第一次使用需要点「安装计划任务」，会弹一次 UAC。之后所有切换都静默完成。'
 
       if (!rows.length) {
