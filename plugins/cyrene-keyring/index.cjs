@@ -31,6 +31,7 @@ const {
   listView,
   secretOf,
   sortEntries,
+  normalizeAccess,
 } = require("./entries.cjs");
 const { generateTotp, formatCode, parseOtpauth } = require("./totp.cjs");
 const { scanLegacy, collectLegacy } = require("./migrate.cjs");
@@ -70,6 +71,14 @@ let panelWin = null;
 let vaultFile = null;
 let dek = null;
 let entries = [];
+
+/** 读旧库时把 access 迁到当前枚举（always → session），别让旧条目退化成每次询问。 */
+function adoptEntries(rawEntries) {
+  return (Array.isArray(rawEntries) ? rawEntries : []).map((entry) => ({
+    ...entry,
+    access: normalizeAccess(entry.access, entry.type),
+  }));
+}
 let lastActive = 0;
 let guardData = guardLib.normalize(null, 0);
 let idleTimer = null;
@@ -289,7 +298,13 @@ function takeToken(rawToken) {
       period: entry.period,
       algorithm: entry.algorithm,
     });
-    return { entry, value: formatCode(out.code), remaining: out.remaining };
+    // value 保持纯数字，剪贴板和 OTP 输入框都认；display 只给面板看。
+    return {
+      entry,
+      value: out.code,
+      display: formatCode(out.code),
+      remaining: out.remaining,
+    };
   }
   return { entry, value: secretOf(entry) };
 }
@@ -686,7 +701,9 @@ module.exports = {
         pendingRequests.splice(idx, 1);
         const token = issueToken(entry, item.purpose);
         const taken = takeToken(token);
-        if (item.purpose === "copy") copySecret(taken.value);
+        // copy 与 totp 都要落到剪贴板：面板确认后原工具调用已经返回，
+        // 验证码只留在返回值里用户就再也拿不到了。
+        if (item.purpose === "copy" || item.purpose === "totp") copySecret(taken.value);
         const remember = Boolean(payload && payload.remember);
         if (remember && entry.access === "session") sessionGrants.add(entry.id);
 
@@ -703,6 +720,7 @@ module.exports = {
           ok: true,
           purpose: item.purpose,
           value: item.purpose === "copy" ? "" : taken.value,
+          display: item.purpose === "totp" ? taken.display : "",
           remaining: taken.remaining || 0,
           message: remember
             ? "已允许，本次解锁内不再询问这条"
@@ -886,7 +904,7 @@ module.exports = {
         try {
           const opened = unlockVault(vaultFile, password);
           dek = opened.dek;
-          entries = opened.entries;
+          entries = adoptEntries(opened.entries);
         } catch (error) {
           await appendAudit({ action: "unlock-failed", source: "panel", stage: attempt.stage });
           return {
@@ -960,7 +978,7 @@ module.exports = {
         const dekB64 = await dpapiUnprotect(vaultFile.helloWrap);
         const opened = openWithDek(vaultFile, Buffer.from(dekB64, "base64"));
         dek = opened.dek;
-        entries = opened.entries;
+        entries = adoptEntries(opened.entries);
 
         const reset = guardLib.recordSuccess(guardData);
         guardData = reset.guard;
@@ -1182,7 +1200,7 @@ module.exports = {
         requireUnlocked();
         if (!Electron || !Electron.dialog) return { ok: false, message: "当前环境打不开文件对话框" };
         const password = String((payload && payload.password) || "");
-        if (password.length < 8) return { ok: false, message: "导出密码至少 8 位" };
+        if (password.length < 12) return { ok: false, message: "导出密码至少 12 位" };
 
         // 导出时重新用导出密码加密一份，避免把主密码的包裹直接给出去
         const { file } = createVault(password, entries, { now: Date.now() });
@@ -1231,7 +1249,11 @@ module.exports = {
             continue;
           }
           seen.add(key);
-          entries.push({ ...incoming, id: crypto.randomUUID() });
+          entries.push({
+            ...incoming,
+            id: crypto.randomUUID(),
+            access: normalizeAccess(incoming.access, incoming.type),
+          });
           added += 1;
         }
         await persist();

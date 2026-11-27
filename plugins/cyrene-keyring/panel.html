@@ -295,7 +295,7 @@
     <p class="hint">导出的文件用你另设的密码加密，换设备时选这个文件加密码就能导入。</p>
     <div class="divider"></div>
     <div class="pane">
-      <input id="exportPass" type="password" placeholder="导出密码（至少 8 位）">
+      <input id="exportPass" type="password" placeholder="导出密码（至少 12 位）">
       <input id="exportPass2" type="password" placeholder="再输一次">
       <button id="exportBtn" class="primary">导出加密备份</button>
     </div>
@@ -849,7 +849,11 @@
           id: allow || allowSession,
           remember: Boolean(allowSession),
         });
-    toast(result && result.message ? result.message : allow ? "已允许" : "已拒绝");
+    let message = result && result.message ? result.message : allow ? "已允许" : "已拒绝";
+    if (result && result.ok && result.purpose === "totp" && result.display) {
+      message = "验证码 " + result.display + " 已复制到剪贴板";
+    }
+    toast(message);
     lastPendingSig = "";
     await refresh();
   });
@@ -1592,7 +1596,7 @@
   $("exportBtn").addEventListener("click", async () => {
     const p1 = $("exportPass").value;
     const p2 = $("exportPass2").value;
-    if (p1.length < 8) return toast("导出密码至少 8 位");
+    if (p1.length < 12) return toast("导出密码至少 12 位");
     if (p1 !== p2) return toast("两次密码不一致");
     $("exportBtn").disabled = true;
     const r = await call("exportFile", { password: p1 });

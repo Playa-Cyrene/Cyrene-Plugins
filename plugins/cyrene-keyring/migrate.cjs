@@ -17,13 +17,47 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 
-const APP_DIR = path.join(
-  process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
-  "Cyrene"
-);
-const PLUGIN_DATA = path.join(APP_DIR, "plugin-data");
-const SETTINGS_FILE = path.join(APP_DIR, "app-settings.json");
 const LEGACY_DPAPI = path.join(__dirname, "legacy-vault.ps1");
+
+/**
+ * 旧数据目录。优先问 Electron 的 userData（标准安装是 %APPDATA%/live2d-cyrene），
+ * 再退回 %APPDATA%/Cyrene，避免只认一个目录导致「从旧插件导入」永远没有数据。
+ */
+function resolveAppDir() {
+  const candidates = [];
+  try {
+    const electron = require("electron");
+    if (electron && electron.app && typeof electron.app.getPath === "function") {
+      candidates.push(electron.app.getPath("userData"));
+    }
+  } catch {
+    /* 非 Electron 环境 */
+  }
+  const roaming = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
+  candidates.push(path.join(roaming, "live2d-cyrene"));
+  candidates.push(path.join(roaming, "Cyrene"));
+  for (const dir of candidates) {
+    try {
+      if (
+        fs.existsSync(path.join(dir, "plugin-data")) ||
+        fs.existsSync(path.join(dir, "app-settings.json"))
+      ) {
+        return dir;
+      }
+    } catch {
+      /* 继续试下一个 */
+    }
+  }
+  return candidates[0];
+}
+
+function pluginDataDir() {
+  return path.join(resolveAppDir(), "plugin-data");
+}
+
+function settingsFile() {
+  return path.join(resolveAppDir(), "app-settings.json");
+}
 
 /** 旧保险箱里已知的几个键名，按实际含义给标题和类型。 */
 const VAULT_META = {
@@ -149,6 +183,8 @@ function fromLegacyTotp(item) {
 
 function scanLegacy() {
   const sources = [];
+  const PLUGIN_DATA = pluginDataDir();
+  const SETTINGS_FILE = settingsFile();
 
   const vault = readJson(path.join(PLUGIN_DATA, "cyrene-vault", "vault.json"));
   const vaultItems = vault
@@ -233,6 +269,8 @@ function scanLegacy() {
 async function collectLegacy() {
   const entries = [];
   const report = [];
+  const PLUGIN_DATA = pluginDataDir();
+  const SETTINGS_FILE = settingsFile();
 
   // 1. 旧保险箱
   const vault = readJson(path.join(PLUGIN_DATA, "cyrene-vault", "vault.json")) || {};

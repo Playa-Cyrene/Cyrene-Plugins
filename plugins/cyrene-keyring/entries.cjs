@@ -229,6 +229,7 @@ module.exports = {
   SECRET_FIELD,
   DEFAULT_ACCESS,
   normalizeEntry,
+  normalizeAccess,
   normalizeBase32,
   secretOf,
   publicView,
