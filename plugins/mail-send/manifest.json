@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "mail-send",
+  "name": "邮件发送",
+  "version": "1.0.1",
+  "description": "用 Cyrene 已配置的 SMTP 账号静默发送邮件，支持多个附件与 UTF-8 正文",
+  "author": "昔涟",
+  "entry": "index.cjs",
+  "defaultEnabled": false
+}

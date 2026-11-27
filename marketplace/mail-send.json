@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "用 Cyrene 已配置的 SMTP 账号静默发信，全程不弹确认框、不用打开邮箱网页",
+    "支持纯文本正文、多个附件，中文按 UTF-8 编码，标题和正文都不会乱码",
+    "能连 465 端口的 implicit TLS（163、QQ 邮箱等），不受 SmtpClient 只支持 STARTTLS 的限制",
+    "自带配置自检：一眼看出脚本在不在、主机/账号/密码是否齐全，不回显密码"
+  ],
+  "requirements": [
+    "仅 Windows：发信依赖系统自带的 PowerShell 5.1",
+    "需要先在 Cyrene 设置里填好 SMTP 主机、端口、账号与授权码"
+  ],
+  "setup": [
+    "在插件市场安装并启用「邮件发送」",
+    "打开 Cyrene 设置，填写 emailSmtpHost / emailSmtpPort / emailSmtpUser / emailSmtpPass",
+    "让 Agent 调一次 mail-send_status，确认结论是「可以发送」",
+    "之后直接说「把结果发到我邮箱」即可"
+  ],
+  "dataHandling": [
+    "只连接你在 app-settings.json 里配置的 SMTP 服务器，不访问其他域名，不采集遥测",
+    "邮件正文和附件写入系统临时目录，发送结束后立即删除",
+    "密码只从本机 app-settings.json 读取，自检工具只报告「已设置」，不回显内容"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/blob/main/plugins/mail-send/README.md"
+}
