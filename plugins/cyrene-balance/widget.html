@@ -23,7 +23,10 @@
     user-select: none;
   }
   #shell {
-    width: 203px;
+    /* 跟着窗口宽度走：气泡设了具体宽度时窗口会变宽，固定值会让内容偏左 */
+    width: 100%;
+    /* 高度由 fitSprite 按布局尺寸写成 px；窗口再按 scale 缩，
+       用百分比的话窗口一缩内容会跟着再缩一次 */
     height: 100%;
     transform: scale(var(--scale));
     transform-origin: top left;
@@ -167,10 +170,7 @@
     /* 台词字号独立，不跟着余额字号缩放 */
     font-size: var(--talk-fs, 12px);
     line-height: 1.45;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    /* 跟着文字自然长高，不再按行数截断 */
     word-break: break-word;
   }
 
@@ -715,7 +715,7 @@
     schedulePose();
     const pose = POSES[poseIndex];
     talkLine.textContent = pick(pose.lines);
-    showPanel(talkBubble, panelMs());
+    showPanel(talkBubble, Infinity);
     showSticker(pose.mood);
     sprite.classList.remove("showing-face");
     Object.values(FACES).forEach((f) => f.classList.remove("on"));
@@ -852,6 +852,7 @@
 
   /* ---------- 用户配置（右键菜单可调） ---------- */
   const CONFIG = {
+    stickerEnabled: false,
     stickerDuration: 3.4,
     stickerPlacement: "inside",
     stickerSize: 42,
@@ -893,10 +894,15 @@
   let lastBubbleWindowWidth = 0;
 
   function applySizes() {
-    document.documentElement.style.setProperty("--fs", String(CONFIG.bubbleFont));
-    document.documentElement.style.setProperty("--talk-fs", CONFIG.talkFont + "px");
-    document.documentElement.style.setProperty("--sticker-size", CONFIG.stickerSize + "px");
-    document.documentElement.style.setProperty("--task-fs", Number(CONFIG.taskFont) + "px");
+    // 字号一旦是 0，气泡会只剩 padding、台词整段看不见，这里兜住下限
+    const bubbleFs = Math.max(0.6, Math.min(3, Number(CONFIG.bubbleFont) || 1));
+    const talkFs = Math.max(9, Math.min(40, Number(CONFIG.talkFont) || 12));
+    const taskFs = Math.max(9, Math.min(40, Number(CONFIG.taskFont) || 12));
+    const stickerSize = Math.max(16, Math.min(120, Number(CONFIG.stickerSize) || 42));
+    document.documentElement.style.setProperty("--fs", String(bubbleFs));
+    document.documentElement.style.setProperty("--talk-fs", talkFs + "px");
+    document.documentElement.style.setProperty("--sticker-size", stickerSize + "px");
+    document.documentElement.style.setProperty("--task-fs", taskFs + "px");
     document.documentElement.style.setProperty("--task-list-h", Number(CONFIG.taskListHeight) + "px");
 
     const bubbleW = Math.max(0, Math.min(1400, Number(CONFIG.bubbleWidth) || 0));
@@ -917,7 +923,7 @@
     });
 
     // 气泡要更宽时，窗口一起向左长，不然会被裁掉
-    const cssWidth = Math.max(203, bubbleW > 0 ? bubbleW + 6 : 203);
+    const cssWidth = Math.max(240, bubbleW > 0 ? bubbleW + 6 : 240);
     if (Math.abs(cssWidth - lastBubbleWindowWidth) >= 2) {
       lastBubbleWindowWidth = cssWidth;
       ipcRenderer.invoke(CH + "set-widget-width", cssWidth).catch(() => {});
@@ -929,6 +935,12 @@
 
   /* ---------- 贴纸挂载：气泡内 / 窗口角落 ---------- */
   function mountSticker() {
+    if (!CONFIG.stickerEnabled) {
+      sticker.classList.remove("on");
+      sticker.style.display = "none";
+      return;
+    }
+    sticker.style.display = "";
     const place = CONFIG.stickerPlacement;
     const inside = place === "inside";
     const parent = inside ? talkRow : shell;
@@ -943,6 +955,7 @@
   }
 
   function showSticker(mood) {
+    if (!CONFIG.stickerEnabled) return;
     const pool = EMOJI[mood] || EMOJI.normal;
     sticker.src = "assets/emoji/" + pick(pool);
     sticker.classList.remove("on");
@@ -988,7 +1001,10 @@
       heightTimer = null;
       const shown = [taskBubble, infoBubble, talkBubble].find((b) => b.classList.contains("show"));
       const bubbleH = shown ? shown.offsetHeight + 8 : 0;
-      const h = Math.max(250, Math.min(760, Math.round(4 + bubbleH + 6 + 180 + bottom + 6)));
+      // 顶部留 18px：气泡阴影向上扩散约 11px，只留 4px 会被窗口边缘裁掉一截
+      const h = Math.max(250, Math.min(760, Math.round(18 + bubbleH + 6 + 180 + bottom + 6)));
+      // 布局高度写死成 px，窗口按 scale 缩时内容不会跟着二次缩放
+      shell.style.height = h + "px";
       if (Math.abs(h - lastHeight) < 6) return;
       lastHeight = h;
       ipcRenderer.invoke(CH + "set-widget-height", h).catch(() => {});
@@ -1082,16 +1098,27 @@
     [infoBubble, talkBubble, taskBubble].forEach((b) => {
       if (b !== el) b.classList.remove("show", "pop");
     });
+    const wasShown = el.classList.contains("show");
     activeBubble = el;
     el.classList.add("show");
-    el.classList.remove("pop");
-    void el.offsetWidth;
-    el.classList.add("pop");
-    if (bubbleTimer) clearTimeout(bubbleTimer);
-    bubbleTimer = setTimeout(() => {
-      el.classList.remove("show");
-      fitSprite();
-    }, ms || 5000);
+    // 已经挂着的面板不再重播入场动画，换文案时不会闪一下
+    if (!wasShown) {
+      el.classList.remove("pop");
+      void el.offsetWidth;
+      el.classList.add("pop");
+    }
+    if (bubbleTimer) {
+      clearTimeout(bubbleTimer);
+      bubbleTimer = null;
+    }
+    // ms 传 0 或 Infinity 表示常驻，不自动收起
+    const sticky = ms === Infinity || !(Number(ms) > 0);
+    if (!sticky) {
+      bubbleTimer = setTimeout(() => {
+        el.classList.remove("show");
+        fitSprite();
+      }, ms);
+    }
     requestAnimationFrame(() => {
       mountSticker();
       fitSprite();
@@ -1107,14 +1134,14 @@
     if (!force && CONFIG.bubbleMode === "talk") return;
     const text = chooseLine(lastData);
     infoLine.textContent = text;
-    showPanel(infoBubble, panelMs());
+    showPanel(infoBubble, Infinity);
   }
 
   function presentTalk(text, face, mood) {
     const line = text || pick(pick(GROUPS).lines);
     talkLine.textContent = line;
     if (face) setFace(face, 2600);
-    showPanel(talkBubble, panelMs());
+    showPanel(talkBubble, Infinity);
     if (mood) showSticker(mood);
   }
 
@@ -1388,13 +1415,20 @@
     rotateTimer = setInterval(() => {
       if (CONFIG.bubbleMode !== "rotate") return;
       if (!lastData || !lastData.ok) return;
+      if (activeBubble === taskBubble) return;
       rotateTick += 1;
-      if (rotateTick % 4 === 0) {
-        const greet = hourLine();
-        presentTalk(greet.t, greet.face, greet.mood);
-      } else if (activeBubble === infoBubble) saySomething();
-      else if (activeBubble === taskBubble) return;
-      else presentInfo(true);
+      // 常驻气泡只在当前面板里换文案，不切换面板，整块不会一闪一闪
+      if (activeBubble === talkBubble) {
+        if (rotateTick % 4 === 0) {
+          const greet = hourLine();
+          presentTalk(greet.t, greet.face, greet.mood);
+        } else {
+          const g = pick(GROUPS);
+          presentTalk(pick(g.lines), g.face, g.mood);
+        }
+      } else {
+        presentInfo(true);
+      }
     }, gap);
   }
 
@@ -1453,19 +1487,21 @@
     const low = Boolean(d.low);
     const over = Boolean(d.overBudget);
     const lowTurn = low && !wasLow;
-    const overTurn = over && !wasOverBudget && !lowTurn;
-    if (lowTurn || overTurn) {
-      if (overTurn) {
-        playSound("assets/task-end-a.wav", 0.62);
-        setTimeout(() => playSound("assets/Ya2.mp3", 0.5), 320);
-      } else {
-        playSound("assets/task-end-a.wav", 0.5);
-      }
-      const text = lowTurn ? fill(pick(LINES.low), d) : fill(pick(LINES.overLimit), d);
-      infoLine.textContent = text;
+    const overTurn = over && !wasOverBudget;
+    if (overTurn) {
+      // 超额是更严重的信号：即使同时越过阈值，也用超额文案和更长的提示
+      playSound("assets/task-end-a.wav", 0.62);
+      setTimeout(() => playSound("assets/Ya2.mp3", 0.5), 320);
+      infoLine.textContent = fill(pick(LINES.overLimit), d);
       setFace("serious", 3200);
       showSticker("low");
-      showPanel(infoBubble, overTurn ? Math.max(6000, panelMs()) : panelMs());
+      showPanel(infoBubble, Math.max(6000, panelMs()));
+    } else if (lowTurn) {
+      playSound("assets/task-end-a.wav", 0.5);
+      infoLine.textContent = fill(pick(LINES.low), d);
+      setFace("serious", 3200);
+      showSticker("low");
+      showPanel(infoBubble, panelMs());
     }
     wasLow = low;
     wasOverBudget = over;
@@ -1499,8 +1535,9 @@
   }
 
   function applyScale(value) {
-    scale = value;
-    document.documentElement.style.setProperty("--scale", String(value));
+    // 挂件固定 100%，不再按比例缩放
+    scale = 1;
+    document.documentElement.style.setProperty("--scale", "1");
   }
 
   /* ---------- 声音 ---------- */
@@ -1695,6 +1732,7 @@
     try {
       const c = await ipcRenderer.invoke(CH + "config");
       if (c) {
+        if (typeof c.stickerEnabled === "boolean") CONFIG.stickerEnabled = c.stickerEnabled;
         if (typeof c.stickerDuration === "number") CONFIG.stickerDuration = c.stickerDuration;
         if (c.stickerPlacement) CONFIG.stickerPlacement = c.stickerPlacement;
         if (c.bubbleSize) CONFIG.bubbleSize = c.bubbleSize;

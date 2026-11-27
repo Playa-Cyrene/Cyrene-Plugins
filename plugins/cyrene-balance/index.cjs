@@ -27,7 +27,7 @@ const HISTORY_DAYS = 7;
 const SETTINGS_KEY = "settings";
 const LEDGER_KEY = "ledger";
 
-const WIDGET_WIDTH = 203;
+const WIDGET_WIDTH = 240;
 const WIDGET_HEIGHT = 250;
 
 /** 高峰时段（北京时间，分钟） */
@@ -44,6 +44,8 @@ let win = null;
 let mainWin = null;
 let followMode = true;
 let openTimer = null;
+let openWidgetInFlight = null;
+let promptInjectionEnabled = false;
 let lastError = "";
 let tray = null;
 let petReloading = false;
@@ -62,6 +64,7 @@ const defaultSettings = () => ({
   followMain: true,
   widgetX: null,
   widgetY: null,
+  stickerEnabled: false,
   stickerDuration: 3.4,
   stickerPlacement: "inside",
   stickerSize: 42,
@@ -88,6 +91,8 @@ const defaultSettings = () => ({
   hideNativeTask: false,
   showTaskBubble: true,
   taskDetail: "auto",
+  // 默认不把余额注入模型提示词：远端模型可能不是 DeepSeek
+  injectBalancePrompt: false,
 });
 
 async function getSettings() {
@@ -112,6 +117,7 @@ async function getSettings() {
       followMain: raw.followMain !== false,
       widgetX: Number.isFinite(Number(raw.widgetX)) ? Number(raw.widgetX) : null,
       widgetY: Number.isFinite(Number(raw.widgetY)) ? Number(raw.widgetY) : null,
+      stickerEnabled: raw.stickerEnabled === true,
       stickerDuration:
         Number.isFinite(Number(raw.stickerDuration)) &&
         Number(raw.stickerDuration) >= 0.8 &&
@@ -135,7 +141,8 @@ async function getSettings() {
       bubbleMode: ["rotate", "info", "talk", "today", "balance"].includes(raw.bubbleMode)
         ? raw.bubbleMode
         : "rotate",
-      bubblePlace: ["top", "middle", "bottom"].includes(raw.bubblePlace) ? raw.bubblePlace : "top",
+      // 气泡固定在立绘头顶，历史设置里的 middle / bottom 不再生效
+      bubblePlace: "top",
       bubbleFont: [0.8, 1, 1.3, 1.6].includes(Number(raw.bubbleFont)) ? Number(raw.bubbleFont) : 1,
       talkFont: [10, 12, 14, 16, 18].includes(Number(raw.talkFont)) ? Number(raw.talkFont) : 12,
       rotateSec:
@@ -154,6 +161,7 @@ async function getSettings() {
       hideNativeTask: raw.hideNativeTask === true,
       showTaskBubble: raw.showTaskBubble !== false,
       taskDetail: ["auto", "always", "hidden"].includes(raw.taskDetail) ? raw.taskDetail : "auto",
+      injectBalancePrompt: raw.injectBalancePrompt === true,
     };
   } catch {
     return defaultSettings();
@@ -488,6 +496,7 @@ async function query(options) {
 async function tick() {
   if (disposed) return null;
   const settings = await getSettings();
+  promptInjectionEnabled = settings.injectBalancePrompt === true;
   if (!settings.enabled) return null;
   const result = await query();
   lastError = result && !result.ok ? result.error : "";
@@ -670,7 +679,12 @@ function keepInsideMain() {
     const maxX = size.x + size.w - b.width - margin;
     const maxY = size.y + size.h - b.height - margin;
     x = Math.min(Math.max(x, minX), Math.max(minX, maxX));
-    y = Math.min(Math.max(y, minY), Math.max(minY, maxY));
+    if (b.height > size.h - margin * 2) {
+      // 挂件比主窗口还高：底边对齐，先保住状态栏不被挤出可视区
+      y = size.y + size.h - b.height - margin;
+    } else {
+      y = Math.min(Math.max(y, minY), Math.max(minY, maxY));
+    }
     if (x !== b.x || y !== b.y) win.setPosition(Math.round(x), Math.round(y));
   } catch {
     /* 忽略 */
@@ -836,9 +850,7 @@ function recenterPet(options) {
     win.setPosition(Math.round(finalX), Math.round(finalY));
     if (!win.isVisible()) win.showInactive();
     try { win.moveTop(); } catch { /* 忽略 */ }
-    if (!followMode) {
-      try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
-    }
+    try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
     if (opts.save !== false && !followMode) void saveWidgetPosition();
     petLog("归位 -> " + Math.round(finalX) + "," + Math.round(finalY));
     return true;
@@ -1183,8 +1195,24 @@ async function openWidget() {
     win.show();
     return;
   }
+  // 自动打开与用户手动打开可能撞在一起：复用同一次建窗过程，避免留下两个窗口
+  if (openWidgetInFlight) return openWidgetInFlight;
+  openWidgetInFlight = createWidgetWindow();
+  try {
+    await openWidgetInFlight;
+  } finally {
+    openWidgetInFlight = null;
+  }
+}
+
+async function createWidgetWindow() {
+  if (win && !win.isDestroyed()) {
+    win.show();
+    return;
+  }
   const settings = await getSettings();
-  const scale = settings.widgetScale || 1;
+  // 挂件固定尺寸，不再按比例整体缩放
+  const scale = 1;
   widgetScaleCache = scale;
   const width = Math.round(widgetWidthCache * scale);
   const baseHeight = settings.hudEnabled ? WIDGET_HEIGHT + 78 : WIDGET_HEIGHT;
@@ -1204,7 +1232,7 @@ async function openWidget() {
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
-    alwaysOnTop: !followMode,
+    alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
     show: false,
@@ -1217,9 +1245,15 @@ async function openWidget() {
       backgroundThrottling: false,
     },
   });
-  if (!followMode) {
-    try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
-  }
+  try { win.setAlwaysOnTop(true, "floating"); } catch { /* 忽略 */ }
+  // 常驻置顶：别的程序提到 TOPMOST 之上时，定时把桌宠提回最前
+  const keepTopTimer = setInterval(() => {
+    if (!win || win.isDestroyed()) return;
+    try {
+      win.setAlwaysOnTop(true, "floating");
+      win.moveTop();
+    } catch { /* 忽略 */ }
+  }, 2000);
   win.loadFile(path.join(__dirname, "widget.html"));
   win.webContents.on("did-finish-load", () => {
     pushPetTodo();
@@ -1260,6 +1294,7 @@ async function openWidget() {
   });
   win.on("closed", () => {
     if (moveTimer) clearTimeout(moveTimer);
+    if (keepTopTimer) clearInterval(keepTopTimer);
     win = null;
   });
 }
@@ -1906,7 +1941,7 @@ module.exports = {
       id: "balance",
       modes: ["chat", "work", "learn", "code"],
       provide() {
-        if (!cached) return "";
+        if (!promptInjectionEnabled || !cached) return "";
         return (
           "DeepSeek 余额：" +
           cached.currency +
@@ -1953,6 +1988,7 @@ module.exports = {
     ctx.registerIpc("config", async () => {
       const settings = await getSettings();
       return {
+        stickerEnabled: settings.stickerEnabled,
         stickerDuration: settings.stickerDuration,
         stickerPlacement: settings.stickerPlacement,
         stickerSize: settings.stickerSize,
@@ -1991,8 +2027,9 @@ module.exports = {
       return { limit, payload: await buildWidgetPayload() };
     });
 
-    ctx.registerIpc("setScale", async (value) => {
-      const scale = Math.min(1.5, Math.max(0.75, Number(value) || 1));
+    ctx.registerIpc("setScale", async () => {
+      // 固定 100%，缩放档位不再生效
+      const scale = 1;
       const settings = await getSettings();
       settings.widgetScale = scale;
       widgetScaleCache = scale;
@@ -2156,6 +2193,7 @@ module.exports = {
       "hudDetail",
       "bubbleWidth",
       "bubbleHeight",
+      "injectBalancePrompt",
     ];
 
     const publicSettings = (s) => {
@@ -2192,6 +2230,10 @@ module.exports = {
       if (typeof patch.hideNativeCard === "boolean") s.hideNativeCard = patch.hideNativeCard;
       if (typeof patch.hideNativeTask === "boolean") s.hideNativeTask = patch.hideNativeTask;
       if (typeof patch.showTaskBubble === "boolean") s.showTaskBubble = patch.showTaskBubble;
+      if (typeof patch.injectBalancePrompt === "boolean") {
+        s.injectBalancePrompt = patch.injectBalancePrompt;
+        promptInjectionEnabled = patch.injectBalancePrompt;
+      }
       if (typeof patch.hudEnabled === "boolean") s.hudEnabled = patch.hudEnabled;
       if ([10, 12, 14, 16].includes(Number(patch.taskFont))) s.taskFont = Number(patch.taskFont);
       if ([100, 150, 220].includes(Number(patch.taskListHeight))) {
@@ -2630,16 +2672,6 @@ module.exports = {
                   })();
                 },
               },
-            ],
-          },
-          { type: "separator" },
-          {
-            label: "视图",
-            submenu: [
-              { label: "放大", click: () => send("zoom-in") },
-              { label: "缩小", click: () => send("zoom-out") },
-              { type: "separator" },
-              { label: "当前缩放 " + Math.round((widgetScaleCache || 1) * 100) + "%", enabled: false },
             ],
           },
           { type: "separator" },
