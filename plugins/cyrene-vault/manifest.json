@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "cyrene-vault",
+  "name": "保险箱",
+  "version": "1.0.0",
+  "description": "本机凭据保管：内容经 Windows DPAPI 加密，绑定当前账户，文件被拷走也解不开。",
+  "author": "昔涟",
+  "entry": "index.cjs",
+  "defaultEnabled": false
+}

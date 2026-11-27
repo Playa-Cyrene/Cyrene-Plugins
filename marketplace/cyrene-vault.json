@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "把密码、API Key、授权码锁在本机，加密用 Windows DPAPI，密钥绑定当前 Windows 账户",
+    "加密文件被拷到别的电脑或别的账户下都解不开，备份也只在原账户有效",
+    "自带管理界面：新增、看一眼、删除都在窗口里完成，密码框内容不经过对话",
+    "Agent 侧提供 list / save / get / delete / open 五个工具，list 只报名字和长度"
+  ],
+  "requirements": [
+    "仅 Windows：加密依赖系统自带的 DPAPI（PowerShell 5.1）",
+    "凭据保存在 %APPDATA%\\Cyrene\\plugin-data\\cyrene-vault\\vault.json"
+  ],
+  "setup": [
+    "在插件市场安装并启用「保险箱」",
+    "打开插件面板或说「打开保险箱」，在窗口里新增第一条凭据",
+    "需要核对时点「看一眼」，明文只在窗口里显示",
+    "Agent 要取用时调 cyrene-vault_get，但明文会进入对话上下文"
+  ],
+  "dataHandling": [
+    "值本身经 DPAPI 加密后落盘，键名、长度和更新时间以明文保存",
+    "不访问网络，不上传任何数据，不采集遥测",
+    "加解密通过本机 PowerShell 完成，明文只写入临时文件，用完立即删除，不进命令行参数",
+    "删除凭据会真的从 vault.json 移除；建议定期备份，但备份只在同一 Windows 账户下能解开"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/blob/main/plugins/cyrene-vault/README.md"
+}

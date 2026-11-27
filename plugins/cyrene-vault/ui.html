@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>保险箱</title>
+<style>
+  :root {
+    --pink: #f8a8c4;
+    --pink-deep: #e87ba3;
+    --pink-soft: #fff0f5;
+    --ink: #43333a;
+    --muted: #9b8a92;
+    --line: #f3dde5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 26px 28px 32px;
+    background: linear-gradient(180deg, #fff8fb 0%, #fff 100%);
+    color: var(--ink);
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    font-size: 14px;
+  }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 1px;
+  }
+  .sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; }
+  .panel {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
+  }
+  .panel h2 {
+    margin: 0 0 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--pink-deep);
+    letter-spacing: .5px;
+  }
+  .row { display: flex; gap: 10px; }
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--ink);
+    background: #fffdfe;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus { border-color: var(--pink); }
+  button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity .15s, transform .05s;
+  }
+  button:active { transform: scale(.98); }
+  .primary { background: var(--pink); color: #fff; font-weight: 600; }
+  .primary:hover { opacity: .88; }
+  .ghost {
+    background: var(--pink-soft);
+    color: var(--pink-deep);
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .danger { background: #fff0f2; color: #d4557a; padding: 6px 10px; font-size: 12px; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  li:last-child { border-bottom: none; }
+  .name { font-weight: 600; font-size: 13px; }
+  .meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .grow { flex: 1; min-width: 0; }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: 20px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity .2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: .92; }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 10px; line-height: 1.7; }
+  code {
+    background: var(--pink-soft);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--pink-deep);
+  }
+</style>
+</head>
+<body>
+  <h1>保险箱</h1>
+  <div class="sub">内容由 Windows DPAPI 加密，绑定当前账户</div>
+
+  <div class="panel">
+    <h2>存一条新的</h2>
+    <div class="row" style="margin-bottom:10px;">
+      <input id="key" placeholder="名字，例如 gmail_app_password" />
+    </div>
+    <div class="row">
+      <input id="value" type="password" placeholder="要保存的内容" />
+      <button class="primary" id="save">存入</button>
+    </div>
+    <div class="hint">
+      密码不会经过对话，只在这扇窗里进到加密文件。<br />
+      存好后其他脚本可以用 <code>plugin-data/cyrene-vault/vault.json</code> 里的密文配合本机账户解密。
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>已有的凭据</h2>
+    <ul id="list"><li class="empty">读取中…</li></ul>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  const { ipcRenderer } = require("electron");
+  const CH = (c) => `plugin:cyrene-vault:${c}`;
+
+  const $ = (id) => document.getElementById(id);
+  let toastTimer = null;
+
+  function toast(msg) {
+    const el = $("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function fmt(iso) {
+    if (!iso) return "—";
+    return iso.slice(0, 16).replace("T", " ");
+  }
+
+  async function refresh() {
+    const ul = $("list");
+    try {
+      const items = await ipcRenderer.invoke(CH("list"));
+      if (!items.length) {
+        ul.innerHTML = '<li class="empty">还没有存任何东西</li>';
+        return;
+      }
+      ul.innerHTML = items.map((it) => `
+        <li>
+          <div class="grow">
+            <div class="name">${esc(it.key)}</div>
+            <div class="meta">${it.len} 字符 · 更新于 ${fmt(it.updated)}</div>
+          </div>
+          <button class="ghost" data-reveal="${esc(it.key)}">看一眼</button>
+          <button class="danger" data-del="${esc(it.key)}">删除</button>
+        </li>`).join("");
+    } catch (e) {
+      ul.innerHTML = `<li class="empty">读取出错：${esc(e.message)}</li>`;
+    }
+  }
+
+  $("save").addEventListener("click", async () => {
+    const key = $("key").value.trim();
+    const value = $("value").value;
+    if (!key) return toast("先给这条凭据起个名字");
+    if (!value) return toast("内容还是空的");
+    try {
+      await ipcRenderer.invoke(CH("save"), { key, value });
+      $("value").value = "";
+      toast("已经锁进去了");
+      refresh();
+    } catch (e) {
+      toast(e.message.replace(/^Error:\s*/, ""));
+    }
+  });
+
+  $("value").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("save").click();
+  });
+
+  document.addEventListener("click", async (e) => {
+    const del = e.target.getAttribute("data-del");
+    if (del) {
+      if (!confirm(`确定删除「${del}」？`)) return;
+      await ipcRenderer.invoke(CH("del"), { key: del });
+      toast("已删除");
+      refresh();
+      return;
+    }
+    const rev = e.target.getAttribute("data-reveal");
+    if (rev) {
+      try {
+        const v = await ipcRenderer.invoke(CH("reveal"), { key: rev });
+        alert(`「${rev}」的内容是：\n\n${v}`);
+      } catch (err) {
+        toast(err.message.replace(/^Error:\s*/, ""));
+      }
+    }
+  });
+
+  refresh();
+</script>
+</body>
+</html>

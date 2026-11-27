@@ -187,6 +187,15 @@
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/cyrene-blender-0.1.0.zip",
       "sha256": "c81c4551ce2b888c0ee131697846cdca2f5c878bcdbb2b71c15f84e0156b76ba",
       "downloads": 0
+    },
+    {
+      "id": "cyrene-vault",
+      "name": "保险箱",
+      "version": "1.0.0",
+      "description": "本机凭据保管：密码、API Key、授权码经 Windows DPAPI 加密，密钥绑定当前账户，文件被拷到别的机器也解不开",
+      "author": "bestlike093",
+      "homepage": "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-vault",
+      "downloads": 0
     }
   ]
 }
