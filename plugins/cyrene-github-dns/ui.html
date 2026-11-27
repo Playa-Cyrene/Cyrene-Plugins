@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub 入口 IP</title>
+<style>
+  :root {
+    --pink: #e0709e;
+    --pink-deep: #b04a78;
+    --ink: #2c2430;
+    --muted: #8a7783;
+    --line: rgba(224, 112, 158, .18);
+    --ok: #2e9e6b;
+    --bad: #c04a4a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 18px 20px 26px;
+    background: radial-gradient(120% 80% at 0% 0%, #ffe9f2, #fff7fb 55%);
+    color: var(--ink);
+    font: 13px/1.6 "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  .hero {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    padding: 15px 17px; border-radius: 16px;
+    background: radial-gradient(120% 140% at 0% 0%, rgba(255, 206, 226, .6), transparent 55%),
+                linear-gradient(135deg, rgba(255, 246, 250, .97), rgba(255, 255, 255, .93));
+    border: 1px solid var(--line);
+    box-shadow: 0 8px 24px rgba(224, 112, 158, .09);
+  }
+  .hero h1 { margin: 0 0 3px; font-size: 16px; font-weight: 650; letter-spacing: .2px; }
+  .hero p { margin: 0; font-size: 12px; color: var(--muted); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+    padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    background: rgba(224, 112, 158, .13); color: var(--pink-deep);
+  }
+  .badge.off { background: rgba(120, 120, 120, .12); color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 13px; }
+  .tile { padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .78); border: 1px solid rgba(0, 0, 0, .055); min-width: 0; }
+  .tile span { font-size: 11px; color: var(--muted); display: block; }
+  .tile b { display: block; font-size: 15px; font-weight: 650; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 13px; }
+  button {
+    appearance: none; border: 1px solid rgba(224, 112, 158, .3);
+    background: rgba(255, 246, 250, .92); color: #a8436f;
+    border-radius: 10px; padding: 6px 13px; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: .15s ease;
+  }
+  button:hover:not(:disabled) { background: rgba(255, 232, 242, .96); border-color: rgba(224, 112, 158, .5); }
+  button.primary { background: linear-gradient(135deg, #e0709e, #d65d8c); border-color: transparent; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .msg { margin-top: 11px; padding: 8px 12px; border-radius: 10px; font-size: 12px; background: rgba(224, 112, 158, .09); color: #a8436f; }
+  .msg.err { background: rgba(192, 74, 74, .1); color: #a33; }
+  .msg:empty { display: none; }
+  .table-wrap { margin-top: 13px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(0, 0, 0, .055); background: rgba(255, 255, 255, .72); }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); padding: 7px 10px; background: rgba(255, 246, 250, .7); border-bottom: 1px solid rgba(0, 0, 0, .07); }
+  td { padding: 7px 10px; border-bottom: 1px solid rgba(0, 0, 0, .045); word-break: break-all; overflow-wrap: anywhere; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  th:nth-child(1) { width: 30%; }
+  th:nth-child(2) { width: 24%; }
+  th:nth-child(3) { width: 18%; }
+  th:nth-child(4) { width: 28%; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .bad { color: var(--bad); }
+  .muted { color: var(--muted); font-size: 11px; }
+  .empty { padding: 14px; color: var(--muted); font-size: 12px; }
+  .help { margin: 12px 0 0; font-size: 11px; color: #9a8a93; }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <div>
+      <h1>GitHub 入口 IP</h1>
+      <p>多源 DoH 取候选，TLS 握手验证，只在当前 IP 失效时替换 hosts。</p>
+    </div>
+    <span id="badge" class="badge off">读取中</span>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><span>当前 hosts IP</span><b id="currentIp">—</b></div>
+    <div class="tile"><span>上次扫描</span><b id="scanAt">—</b></div>
+    <div class="tile"><span>可用 / 候选</span><b id="scanCount">—</b></div>
+    <div class="tile"><span>最优延迟</span><b id="bestMs">—</b></div>
+  </div>
+
+  <div class="actions">
+    <button id="scanBtn" class="primary" type="button">立即扫描</button>
+    <button id="applyBtn" type="button">应用最优</button>
+    <button id="clearBtn" type="button">恢复 hosts</button>
+    <button id="installBtn" type="button">安装计划任务</button>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>IP</th><th>状态</th><th>延迟</th><th>来源</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="4" class="empty">正在读取…</td></tr></tbody>
+    </table>
+  </div>
+
+  <p class="help" id="help">写 hosts 由计划任务以最高权限完成，插件本身不提权。hosts 里只会多出一个带标记的块。</p>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+    const channel = (name) => 'plugin:cyrene-github-dns:' + name
+
+    let state = null
+    let busy = ''
+    const $ = (id) => document.getElementById(id)
+
+    function shortError(text) {
+      if (!text) return '不可用'
+      const raw = String(text)
+      if (/timeout/i.test(raw)) return '超时'
+      if (/EPROTO|WRONG_VERSION_NUMBER|SSL|TLS/i.test(raw)) return '握手失败'
+      const line = raw.replace(/\s+/g, ' ').trim()
+      return line.length > 14 ? line.slice(0, 14) + '…' : line
+    }
+
+    function timeText(ts) {
+      if (!ts) return '—'
+      try { return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }) } catch { return '—' }
+    }
+
+    function setMessage(text, kind) {
+      const el = $('msg')
+      el.textContent = text || ''
+      el.className = 'msg' + (kind === 'err' ? ' err' : '')
+    }
+
+    function render() {
+      if (!state) return
+      const scan = state.lastScan || {}
+      const rows = scan.rows || []
+      const best = scan.best || null
+
+      $('badge').textContent = !state.installed ? '未安装任务' : (state.enabled ? '自动运行' : '已暂停')
+      $('badge').className = 'badge' + (state.enabled && state.installed ? '' : ' off')
+      $('currentIp').textContent = state.currentIp || '未接管'
+      $('scanAt').textContent = scan.at ? timeText(scan.at) : '—'
+      $('scanCount').textContent = (scan.okCount || 0) + ' / ' + (scan.candidates || 0)
+      $('bestMs').textContent = best && best.ms ? best.ms + ' ms' : '—'
+
+      $('scanBtn').disabled = Boolean(busy)
+      $('applyBtn').disabled = Boolean(busy) || !best
+      $('clearBtn').disabled = Boolean(busy) || !state.currentIp
+      $('installBtn').disabled = Boolean(busy) || state.installed
+      $('installBtn').textContent = state.installed ? '任务已安装' : '安装计划任务'
+      $('help').textContent = state.installed
+        ? '写 hosts 由计划任务以最高权限完成，插件本身不提权。hosts 里只会多出一个带标记的块。'
+        : '第一次使用需要点「安装计划任务」，会弹一次 UAC。之后所有切换都静默完成。'
+
+      if (!rows.length) {
+        $('rows').innerHTML = '<tr><td colspan="4" class="empty">还没有扫描记录。点「立即扫描」看看哪些 IP 现在能握手。</td></tr>'
+        return
+      }
+      $('rows').innerHTML = rows.map((row) => {
+        const status = row.ok ? '可用' : shortError(row.error)
+        const cls = row.ok ? 'ok' : 'bad'
+        const title = row.error ? String(row.error).replace(/"/g, '&quot;') : ''
+        return '<tr>'
+          + '<td>' + row.ip + '</td>'
+          + '<td class="' + cls + '" title="' + title + '">' + status + '</td>'
+          + '<td>' + (row.ms ? row.ms + ' ms' : '—') + '</td>'
+          + '<td class="muted">' + ((row.sources || []).join(' / ') || '—') + '</td>'
+          + '</tr>'
+      }).join('')
+    }
+
+    async function load() {
+      try {
+        state = await ipcRenderer.invoke(channel('state'))
+        render()
+      } catch (error) {
+        setMessage('读不到状态：' + (error && error.message ? error.message : error), 'err')
+      }
+    }
+
+    async function run(name, fn) {
+      busy = name
+      render()
+      setMessage('')
+      try {
+        await fn()
+        await load()
+      } catch (error) {
+        setMessage((error && error.message ? error.message : String(error)), 'err')
+      } finally {
+        busy = ''
+        render()
+      }
+    }
+
+    $('scanBtn').addEventListener('click', () => run('scan', async () => {
+      setMessage('扫描中，请稍等十几秒…')
+      const row = await ipcRenderer.invoke(channel('scan'))
+      const scan = row.scan || {}
+      setMessage('扫描完成：' + (scan.candidates || 0) + ' 个候选，' + (scan.okCount || 0) + ' 个可用')
+    }))
+
+    $('applyBtn').addEventListener('click', () => run('apply', async () => {
+      const row = await ipcRenderer.invoke(channel('apply'))
+      setMessage('已写入 hosts：' + (row.ip || ''))
+    }))
+
+    $('clearBtn').addEventListener('click', () => run('clear', async () => {
+      await ipcRenderer.invoke(channel('clear'))
+      setMessage('已移除 hosts 里的标记块，备份留在 data 目录')
+    }))
+
+    $('installBtn').addEventListener('click', () => run('install', async () => {
+      const row = await ipcRenderer.invoke(channel('install'))
+      setMessage(row.message || '已发起安装，请在 UAC 弹窗里点「是」')
+    }))
+
+    load()
+    setInterval(load, 6000)
+  </script>
+</body>
+</html>
