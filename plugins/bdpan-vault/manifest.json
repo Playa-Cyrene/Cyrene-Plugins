@@ -1,0 +1,10 @@
+{
+  "apiVersion": 1,
+  "id": "bdpan-vault",
+  "name": "百度网盘 API 保险箱",
+  "version": "1.0.0",
+  "description": "在本机加密保存百度网盘 API Key，Agent 可直接代发请求而不看到明文；明文仅在明确要求时取出",
+  "author": "昔涟",
+  "entry": "index.cjs",
+  "defaultEnabled": false
+}
