@@ -1,6 +1,6 @@
 {
   "apiVersion": 1,
-  "updatedAt": "2026-11-23",
+  "updatedAt": "2026-11-27",
   "plugins": [
     {
       "id": "ripples-of-aion",
@@ -52,7 +52,7 @@
       "description": "把本地聊天存档导出为人可读的 HTML / Markdown：聊天气泡界面、双方头像、思考过程与工具调用折叠展示",
       "author": "Playa",
       "homepage": "https://gitee.com/playa0/cyrene-plugins/tree/main/plugins/chat-export",
-      "downloads": 24,
+      "downloads": 26,
       "version": "1.0.0",
       "zip": "https://gitee.com/playa0/cyrene-plugins/raw/main/zips/chat-export-1.0.0.zip",
       "sha256": "6e6341c60a7de2b387764f96a86b77522ac433cef337357ec33520f64b9af243"
