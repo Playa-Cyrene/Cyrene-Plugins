@@ -247,6 +247,16 @@
     <button class="switch" id="taskBubbleSwitch" type="button" role="switch" aria-checked="true" aria-label="气泡里显示任务"></button>
   </div>
 
+  <div class="group-title">数据与隐私</div>
+
+  <div class="row">
+    <div class="text">
+      <div class="title">把余额写进模型提示词</div>
+      <div class="desc">默认关闭。开启后，余额、今日消费和额度会随每轮对话发给当前模型；用非 DeepSeek 的远端模型时请保持关闭。</div>
+    </div>
+    <button class="switch" id="promptSwitch" type="button" role="switch" aria-checked="false" aria-label="把余额写进模型提示词"></button>
+  </div>
+
   <div class="group-title">气泡尺寸</div>
 
   <div class="row">
@@ -301,6 +311,7 @@
   const approvalSwitch = document.getElementById("approvalSwitch");
   const nativeSwitch = document.getElementById("nativeSwitch");
   const taskBubbleSwitch = document.getElementById("taskBubbleSwitch");
+  const promptSwitch = document.getElementById("promptSwitch");
   const hudSwitch = document.getElementById("hudSwitch");
   const taskFontSelect = document.getElementById("taskFont");
   const taskListHeightSelect = document.getElementById("taskListHeight");
@@ -322,7 +333,8 @@
     taskFont: 12,
     taskListHeight: 150,
     bubbleWidth: 0,
-    bubbleHeight: 0
+    bubbleHeight: 0,
+    injectBalancePrompt: false
   };
   let busy = false;
 
@@ -369,6 +381,7 @@
     approvalSwitch.setAttribute("aria-checked", settings.catchApproval !== false ? "true" : "false");
     nativeSwitch.setAttribute("aria-checked", settings.hideNativeCard === true ? "true" : "false");
     taskBubbleSwitch.setAttribute("aria-checked", settings.showTaskBubble !== false ? "true" : "false");
+    promptSwitch.setAttribute("aria-checked", settings.injectBalancePrompt === true ? "true" : "false");
     hudSwitch.setAttribute("aria-checked", settings.hudEnabled === true ? "true" : "false");
     taskFontSelect.value = [10, 12, 14, 16].includes(Number(settings.taskFont))
       ? String(settings.taskFont)
@@ -404,6 +417,7 @@
   approvalSwitch.addEventListener("click", () => save({ catchApproval: settings.catchApproval === false }));
   nativeSwitch.addEventListener("click", () => save({ hideNativeCard: settings.hideNativeCard !== true }));
   taskBubbleSwitch.addEventListener("click", () => save({ showTaskBubble: settings.showTaskBubble === false }));
+  promptSwitch.addEventListener("click", () => save({ injectBalancePrompt: settings.injectBalancePrompt !== true }));
   hudSwitch.addEventListener("click", () => save({ hudEnabled: settings.hudEnabled !== true }));
   taskFontSelect.addEventListener("change", () => save({ taskFont: Number(taskFontSelect.value) }));
   taskListHeightSelect.addEventListener("change", () => save({ taskListHeight: Number(taskListHeightSelect.value) }));
