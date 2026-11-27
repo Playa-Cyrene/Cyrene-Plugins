@@ -1,0 +1,13 @@
+{
+  "apiVersion": 1,
+  "id": "cyrene-blender",
+  "name": "Blender 工作台",
+  "version": "0.1.0",
+  "description": "连接本机 Blender，读取场景、调整物体、查看预览并管理独立渲染任务。",
+  "author": "抽卡保底真君",
+  "entry": "index.cjs",
+  "settingsPanel": "settings.html",
+  "settingsSection": "plugins",
+  "defaultEnabled": false,
+  "deps": []
+}

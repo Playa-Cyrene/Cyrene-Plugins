@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Better Lessons</title>
+  <style>
+    /* settingsPanel 是宿主设置页里的 iframe，主题变量由宿主桥下发（与自建窗口不同，§16）。 */
+    :root { font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
+    body {
+      margin: 0;
+      padding: 4px 0 8px;
+      color: #493942;
+      background: transparent;
+      font-size: 13px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 0;
+    }
+    .row + .row { border-top: 1px solid rgba(243, 220, 230, 0.55); }
+    .row-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #9a8991;
+    }
+    .row-label::before {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ef78a9;
+      box-shadow: 0 0 0 3px rgba(239, 120, 169, 0.16);
+      content: "";
+    }
+    .row-value {
+      color: #493942;
+      font-weight: 700;
+      text-align: right;
+      word-break: break-all;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    button {
+      padding: 7px 14px;
+      border: 1px solid #f0d6e2;
+      border-radius: 10px;
+      background: #fff7fa;
+      color: #df4f8a;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 160ms ease;
+    }
+    button:hover { background: #ffeaf3; }
+    .hint {
+      margin: 10px 0 0;
+      color: #b29fa8;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    code { font-family: Consolas, "Courier New", monospace; }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <span class="row-label">课堂窗口</span>
+    <span class="row-value" id="windowState">—</span>
+  </div>
+  <div class="row">
+    <span class="row-label">已登记会话</span>
+    <span class="row-value" id="roomCount">—</span>
+  </div>
+  <div class="row">
+    <span class="row-label">learn/lessons 剧本</span>
+    <span class="row-value" id="lessonState">—</span>
+  </div>
+
+  <div class="actions">
+    <button id="openWindow">打开课堂窗口</button>
+    <button id="refresh">刷新</button>
+  </div>
+
+  <p class="hint">
+    剧本写在当前会话工作区的 <code>learn/lessons/</code> 下，按文件名推送与回放。
+    窗口默认占半屏，另一半留给宿主 learn 模式写在 <code>notes/</code> 里的笔记——本插件不碰笔记。
+  </p>
+
+  <!-- 宿主官方桥：invoke / onTheme / 高度自动上报 -->
+  <script src="/.cyrene/panel-bridge.js"></script>
+  <script>
+    function setText(id, value) {
+      document.getElementById(id).textContent = value == null || value === "" ? "—" : String(value);
+    }
+
+    async function refresh() {
+      try {
+        const state = await CyrenePanel.invoke("state");
+        setText("windowState", state.windowOpen ? "已打开" : "未打开");
+        const playing = state.rooms
+          .map((room) => room.playing && room.playing.file)
+          .filter(Boolean);
+        setText(
+          "roomCount",
+          state.rooms.length
+            ? `${state.rooms.length} 个${playing.length ? "（播放中：" + playing.join("、") + "）" : ""}`
+            : "无",
+        );
+      } catch (err) {
+        setText("windowState", "读取失败");
+        setText("roomCount", String(err && err.message ? err.message : err));
+      }
+
+      // 剧本清单共享同一条读盘 IPC（窗口的"选择剧本"下拉用的也是它）
+      try {
+        const res = await CyrenePanel.invoke("lessons");
+        setText(
+          "lessonState",
+          res && res.ok
+            ? res.files.length
+              ? `${res.files.length} 个：${res.files.slice(0, 3).join("、")}${res.files.length > 3 ? "…" : ""}`
+              : "还没有剧本"
+            : (res && res.reason) || "—",
+        );
+      } catch (err) {
+        setText("lessonState", "读取失败");
+      }
+    }
+
+    document.getElementById("openWindow").addEventListener("click", async () => {
+      try {
+        await CyrenePanel.invoke("open-window");
+      } catch (err) {
+        /* 打开失败不改面板状态，刷新时自然反映 */
+      }
+      refresh();
+    });
+
+    document.getElementById("refresh").addEventListener("click", refresh);
+
+    refresh();
+  </script>
+</body>
+</html>
