@@ -4,10 +4,10 @@
  * GitHub 令牌保险箱
  *
  * 设计原则：
- * 1. 令牌只保存在本机插件存储里；Windows 下优先用 Electron safeStorage（DPAPI）加密。
+ * 1. 令牌只保存在宿主提供的加密密钥存储（ctx.deps.secrets）里。
  * 2. 默认不给 Agent 明文，而是提供 github 请求代理：Agent 只说「请求哪个路径」，
  *    令牌在插件内部拼接，永远不会出现在工具返回值里。
- * 3. 明文读取单独做成一个工具，描述里写明风险；只在用户明确要求时才调用。
+ * 3. Agent 侧没有读取明文的工具；明文只能由用户在面板里手动查看。
  */
 
 const path = require("node:path");
@@ -21,6 +21,7 @@ try {
 }
 
 const TOKEN_KEY = "githubToken";
+const META_KEY = "githubTokenMeta";
 const CH = "plugin:gh-vault:";
 const MAX_BODY_CHARS = 8000;
 const MAX_RESPONSE_BYTES = 400000;
@@ -36,33 +37,70 @@ function getSafeStorage() {
     const safeStorage = electron.safeStorage;
     if (safeStorage && safeStorage.isEncryptionAvailable()) return safeStorage;
   } catch {
-    /* 环境不支持时退回明文存储 */
+    /* 环境不支持时返回 null，由调用方决定如何处理 */
   }
   return null;
 }
 
-async function readRecord() {
-  if (!ctxRef) return null;
-  try {
-    const raw = await ctxRef.storage.get(TOKEN_KEY);
-    if (!raw || typeof raw !== "object" || typeof raw.data !== "string" || !raw.data) return null;
+function getSecrets() {
+  const deps = ctxRef && ctxRef.deps;
+  return deps && deps.secrets ? deps.secrets : null;
+}
 
-    let value = raw.data;
-    if (raw.enc) {
+/**
+ * 旧版本把令牌直接写在 ctx.storage 里（githubToken）。
+ * 升级后首次读取时迁移到 ctx.deps.secrets；迁移成功才清掉旧记录，
+ * 安全存储不可用时保留旧记录，等下次再试。
+ */
+async function migrateLegacyRecord() {
+  if (!ctxRef) return;
+  try {
+    const legacy = await ctxRef.storage.get(TOKEN_KEY);
+    if (!legacy || typeof legacy !== "object" || typeof legacy.data !== "string" || !legacy.data) return;
+
+    const secrets = getSecrets();
+    if (!secrets) return;
+
+    let value = legacy.data;
+    if (legacy.enc) {
       const safeStorage = getSafeStorage();
-      if (!safeStorage) return null;
+      if (!safeStorage) return;
       try {
-        value = safeStorage.decryptString(Buffer.from(raw.data, "base64"));
+        value = safeStorage.decryptString(Buffer.from(legacy.data, "base64"));
       } catch {
-        return null;
+        return;
       }
     }
+    if (!value) return;
+
+    await secrets.set(TOKEN_KEY, value);
+    await ctxRef.storage.set(META_KEY, {
+      v: 2,
+      label: typeof legacy.label === "string" ? legacy.label : "",
+      updatedAt: Number.isFinite(Number(legacy.updatedAt)) ? Number(legacy.updatedAt) : Date.now(),
+    });
+    await ctxRef.storage.set(TOKEN_KEY, null);
+  } catch {
+    /* 迁移失败不影响正常读取，下次继续尝试 */
+  }
+}
+
+async function readRecord() {
+  if (!ctxRef) return null;
+  const secrets = getSecrets();
+  if (!secrets) return null;
+
+  await migrateLegacyRecord();
+
+  try {
+    const value = await secrets.get(TOKEN_KEY);
     if (!value) return null;
+    const meta = await ctxRef.storage.get(META_KEY);
     return {
       value,
-      enc: Boolean(raw.enc),
-      label: typeof raw.label === "string" ? raw.label : "",
-      updatedAt: Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : 0,
+      enc: true,
+      label: meta && typeof meta.label === "string" ? meta.label : "",
+      updatedAt: meta && Number.isFinite(Number(meta.updatedAt)) ? Number(meta.updatedAt) : 0,
     };
   } catch {
     return null;
@@ -71,20 +109,29 @@ async function readRecord() {
 
 async function writeRecord(value, label) {
   if (!ctxRef) throw new Error("插件尚未就绪");
-  const safeStorage = getSafeStorage();
-  const record = {
+  const secrets = getSecrets();
+  if (!secrets) {
+    throw new Error("宿主安全存储不可用，已拒绝保存令牌。请使用支持 ctx.deps.secrets 的 Cyrene 版本。");
+  }
+  await secrets.set(TOKEN_KEY, value);
+  await ctxRef.storage.set(META_KEY, {
     v: 2,
-    enc: Boolean(safeStorage),
-    data: safeStorage ? safeStorage.encryptString(value).toString("base64") : value,
     label: typeof label === "string" ? label.slice(0, 60) : "",
     updatedAt: Date.now(),
-  };
-  await ctxRef.storage.set(TOKEN_KEY, record);
-  return record;
+  });
 }
 
 async function clearRecord() {
   if (!ctxRef) return;
+  const secrets = getSecrets();
+  if (secrets) {
+    try {
+      await secrets.delete(TOKEN_KEY);
+    } catch {
+      /* 删除失败时仍清理元数据，避免面板继续显示已保存 */
+    }
+  }
+  await ctxRef.storage.set(META_KEY, null);
   await ctxRef.storage.set(TOKEN_KEY, null);
 }
 
@@ -189,8 +236,10 @@ async function openPanel() {
     autoHideMenuBar: true,
     backgroundColor: "#fff9fc",
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
     },
   });
   panelWin.on("closed", () => {
@@ -206,7 +255,7 @@ function toolStatus() {
     id: "gh-vault_status",
     name: "查看 GitHub 令牌状态",
     description:
-      "查看是否已保存 GitHub 令牌、掩码、保存时间与加密方式。不会返回令牌明文，需要明文请用 gh-vault_reveal。",
+      "查看是否已保存 GitHub 令牌、掩码、保存时间与加密方式。不会返回令牌明文；用户要看明文请在「GitHub 令牌保险箱」面板里手动点「显示令牌」。",
     enabled: true,
     risk: "safe",
     effectKind: "read",
@@ -219,7 +268,7 @@ function toolStatus() {
         "掩码：" + maskToken(rec.value),
         rec.label ? "备注：" + rec.label : "",
         "保存时间：" + formatTime(rec.updatedAt),
-        "存储方式：" + (rec.enc ? "本机 DPAPI 加密（Electron safeStorage）" : "本机明文存储（当前环境不支持系统加密）"),
+        "存储方式：宿主加密存储（ctx.deps.secrets）",
       ]
         .filter(Boolean)
         .join("\n");
@@ -234,8 +283,8 @@ function toolApi() {
     description:
       "用本机保存的 GitHub 令牌请求 api.github.com，令牌由插件内部拼接、不会出现在返回结果里。需要查仓库、建分支、提 PR、查用户信息时优先用这个工具。path 传 / 开头的 API 路径，例如 /user 或 /repos/owner/repo。",
     enabled: true,
-    risk: "write",
-    effectKind: "network",
+    risk: "network",
+    effectKind: "external_side_effect",
     inputSchema: {
       type: "object",
       properties: {
@@ -284,35 +333,6 @@ function toolApi() {
   };
 }
 
-function toolReveal() {
-  return {
-    id: "gh-vault_reveal",
-    name: "取出 GitHub 令牌明文",
-    description:
-      "返回本机保存的 GitHub 令牌明文。只在用户明确要求「把令牌显示出来 / 我要核对令牌」时调用；返回值会进入本轮对话上下文并留在记录里，无法撤回。日常操作请改用 gh-vault_api。",
-    enabled: true,
-    risk: "read",
-    effectKind: "read",
-    inputSchema: {
-      type: "object",
-      properties: {
-        confirm: {
-          type: "string",
-          description: "必须传 REVEAL 才会返回明文，用于二次确认",
-        },
-      },
-      required: ["confirm"],
-    },
-    async execute(args) {
-      const confirm = String((args && args.confirm) || "").trim().toUpperCase();
-      if (confirm !== "REVEAL") return "没有确认，已取消。需要明文时请传 confirm: \"REVEAL\"。";
-      const rec = await readRecord();
-      if (!rec) return "还没有保存 GitHub 令牌。";
-      return rec.value;
-    },
-  };
-}
-
 function toolClear() {
   return {
     id: "gh-vault_clear",
@@ -320,7 +340,7 @@ function toolClear() {
     description: "删除本机保存的 GitHub 令牌。用户要求撤销或更换令牌时使用。",
     enabled: true,
     risk: "write",
-    effectKind: "write",
+    effectKind: "mutation",
     inputSchema: {
       type: "object",
       properties: {
@@ -349,7 +369,6 @@ module.exports = {
 
     ctx.registerTool(toolStatus());
     ctx.registerTool(toolApi());
-    ctx.registerTool(toolReveal());
     ctx.registerTool(toolClear());
 
     ctx.registerIpc("state", async () => {
@@ -358,7 +377,7 @@ module.exports = {
         saved: Boolean(rec),
         masked: rec ? maskToken(rec.value) : "",
         label: rec ? rec.label : "",
-        enc: rec ? rec.enc : Boolean(getSafeStorage()),
+        enc: Boolean(getSecrets()),
         updatedAt: rec ? formatTime(rec.updatedAt) : "",
       };
     });
@@ -370,7 +389,11 @@ module.exports = {
       if (!/^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{10,}$/.test(token)) {
         return { ok: false, message: "看起来不是有效的 GitHub 令牌（应以 ghp_ 或 github_pat_ 开头）" };
       }
-      await writeRecord(token, label);
+      try {
+        await writeRecord(token, label);
+      } catch (error) {
+        return { ok: false, message: String(error && error.message ? error.message : error) };
+      }
       return { ok: true, message: "已保存", masked: maskToken(token) };
     });
 
@@ -392,7 +415,14 @@ module.exports = {
       return { ok: true, message: "已删除" };
     });
 
-    ctx.log("GitHub 令牌保险箱已注册：gh-vault_status / gh-vault_api / gh-vault_reveal / gh-vault_clear");
+    // 明文只允许用户在面板里手动查看，Agent 侧不再提供对应工具。
+    ctx.registerIpc("reveal", async () => {
+      const rec = await readRecord();
+      if (!rec) return { ok: false, message: "还没有保存令牌" };
+      return { ok: true, token: rec.value };
+    });
+
+    ctx.log("GitHub 令牌保险箱已注册：gh-vault_status / gh-vault_api / gh-vault_clear（明文仅面板可见）");
   },
 
   unregister() {

@@ -134,11 +134,25 @@
       }
       .actions {
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
         margin-top: 16px;
       }
       .actions button {
-        flex: 1;
+        flex: 1 1 40%;
+      }
+      .reveal-box {
+        display: none;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-radius: 12px 14px 11px 15px;
+        background: #fff5f9;
+        border: 1px dashed #ffd0e2;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        word-break: break-all;
+        user-select: all;
       }
       .hint {
         margin-top: 14px;
@@ -191,21 +205,23 @@
     <div class="actions">
       <button class="primary" id="save">保存</button>
       <button id="test">测试连接</button>
+      <button id="reveal">显示令牌</button>
       <button class="danger" id="clear">删除</button>
     </div>
+
+    <pre class="reveal-box" id="revealBox"></pre>
 
     <div class="msg" id="msg"></div>
 
     <div class="hint">
-      保存时会用 Windows 的 DPAPI 加密，只有当前 Windows 账户能解开。<br />
-      昔涟默认只拿到掩码；需要她代查仓库、建分支、提 PR 时，直接用对话说就行，令牌不会出现在回复里。
+      令牌保存在宿主提供的加密存储里，不会写进普通插件设置。<br />
+      昔涟默认只拿到掩码，也没有读取明文的工具；要看明文，只能由你在这里点「显示令牌」。
     </div>
 
     <div class="foot">gh-vault · 只在本机</div>
 
     <script>
-      const { ipcRenderer } = require("electron");
-      const CH = "plugin:gh-vault:";
+      const ghVault = window.ghVault;
 
       const $ = (id) => document.getElementById(id);
       const msg = $("msg");
@@ -215,27 +231,45 @@
         msg.className = "msg" + (kind ? " " + kind : "");
       }
 
+      function metaLine(label, value, mono) {
+        const row = document.createElement("div");
+        if (label) row.appendChild(document.createTextNode(label));
+        if (mono) {
+          const span = document.createElement("span");
+          span.className = "mask";
+          span.textContent = value;
+          row.appendChild(span);
+        } else {
+          row.appendChild(document.createTextNode(value));
+        }
+        $("meta").appendChild(row);
+      }
+
+      function renderMeta(s) {
+        const meta = $("meta");
+        meta.textContent = "";
+        if (!s.saved) {
+          meta.textContent = "填入令牌后点保存即可。";
+          return;
+        }
+        metaLine("掩码：", s.masked, true);
+        if (s.label) metaLine("备注：", s.label, false);
+        metaLine("保存时间：", s.updatedAt, false);
+        metaLine("存储：", s.enc ? "宿主加密存储（ctx.deps.secrets）" : "安全存储不可用", false);
+      }
+
       async function refresh() {
         try {
-          const s = await ipcRenderer.invoke(CH + "state");
+          const s = await ghVault.invoke("state");
           const dot = $("dot");
           if (s.saved) {
             dot.classList.add("on");
             $("stateText").textContent = "已保存";
-            $("meta").innerHTML =
-              "掩码：<span class='mask'>" +
-              s.masked +
-              "</span><br />" +
-              (s.label ? "备注：" + s.label + "<br />" : "") +
-              "保存时间：" +
-              s.updatedAt +
-              "<br />存储：" +
-              (s.enc ? "DPAPI 加密" : "明文（当前环境不支持系统加密）");
           } else {
             dot.classList.remove("on");
             $("stateText").textContent = "未保存";
-            $("meta").textContent = "填入令牌后点保存即可。";
           }
+          renderMeta(s);
         } catch (error) {
           setMsg("读取状态失败：" + error.message, "err");
         }
@@ -254,7 +288,7 @@
           return;
         }
         try {
-          const r = await ipcRenderer.invoke(CH + "save", { token, label });
+          const r = await ghVault.invoke("save", { token, label });
           if (r.ok) {
             $("token").value = "";
             $("token").type = "password";
@@ -271,7 +305,7 @@
       $("test").addEventListener("click", async () => {
         setMsg("正在连接 GitHub…");
         try {
-          const r = await ipcRenderer.invoke(CH + "test");
+          const r = await ghVault.invoke("test");
           if (r.ok) {
             setMsg("连接正常，账号 " + r.login + (r.scopes ? "（scopes: " + r.scopes + "）" : ""), "ok");
           } else {
@@ -282,10 +316,38 @@
         }
       });
 
+      $("reveal").addEventListener("click", async () => {
+        const box = $("revealBox");
+        const button = $("reveal");
+        if (box.dataset.shown === "1") {
+          box.textContent = "";
+          box.dataset.shown = "0";
+          box.style.display = "none";
+          button.textContent = "显示令牌";
+          setMsg("已隐藏明文");
+          return;
+        }
+        if (!confirm("确定在当前窗口显示令牌明文吗？")) return;
+        try {
+          const r = await ghVault.invoke("reveal");
+          if (!r.ok) {
+            setMsg(r.message || "读取失败", "err");
+            return;
+          }
+          box.textContent = r.token;
+          box.dataset.shown = "1";
+          box.style.display = "block";
+          button.textContent = "隐藏令牌";
+          setMsg("明文已显示，用完记得点「隐藏令牌」", "ok");
+        } catch (error) {
+          setMsg("读取失败：" + error.message, "err");
+        }
+      });
+
       $("clear").addEventListener("click", async () => {
         if (!confirm("确定删除本机保存的 GitHub 令牌吗？")) return;
         try {
-          const r = await ipcRenderer.invoke(CH + "clear");
+          const r = await ghVault.invoke("clear");
           setMsg(r.ok ? "已删除" : r.message || "删除失败", r.ok ? "ok" : "err");
           await refresh();
         } catch (error) {
