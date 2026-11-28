@@ -23,6 +23,7 @@ const DEFAULT_CONFIG = { enabled: true, intervalMinutes: 10, currentIp: '', last
 let win = null
 let scanTimer = null
 let scanPromise = null
+let hostsQueue = Promise.resolve()
 let ctxRef = null
 let disposed = false
 
@@ -101,6 +102,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function runHostsExclusive(fn) {
+  const next = hostsQueue.then(fn, fn)
+  hostsQueue = next.catch(() => {})
+  return next
+}
+
 async function runTask() {
   const state = await taskState()
   if (state === 'Missing') throw new Error('计划任务还没安装，先点「安装计划任务」')
@@ -119,36 +126,40 @@ async function waitResult(requestId, timeoutMs = 20000) {
   return null
 }
 
-async function applyIp(ip) {
+function applyIp(ip) {
   if (disposed) throw new Error('插件已停用')
-  if (!ip || !/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error('IP 格式不对')
-  await ensureDir()
-  const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-  await writeJson(APPLY_FILE, { action: 'apply', ip, domains: DOMAINS, requestId, at: new Date().toISOString() })
-  await runTask()
-  const row = await waitResult(requestId)
-  if (!row) {
-    const state = await taskState()
-    if (state === 'Disabled') throw new Error('计划任务被禁用了，去任务计划程序里启用它')
-    if (state === 'Running') throw new Error('计划任务还在运行，稍等一下再试')
-    throw new Error('计划任务没有回结果，检查任务是否被禁用')
-  }
-  if (!row.ok) throw new Error(row.error || '写入 hosts 失败')
-  await saveConfig({ currentIp: ip, lastApply: { at: row.at, action: 'apply', ip, backup: row.backup } })
-  return row
+  if (!scanner.isIPv4(ip)) throw new Error('IP 格式不对')
+  return runHostsExclusive(async () => {
+    await ensureDir()
+    const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    await writeJson(APPLY_FILE, { action: 'apply', ip, domains: DOMAINS, requestId, at: new Date().toISOString() })
+    await runTask()
+    const row = await waitResult(requestId)
+    if (!row) {
+      const state = await taskState()
+      if (state === 'Disabled') throw new Error('计划任务被禁用了，去任务计划程序里启用它')
+      if (state === 'Running') throw new Error('计划任务还在运行，稍等一下再试')
+      throw new Error('计划任务没有回结果，检查任务是否被禁用')
+    }
+    if (!row.ok) throw new Error(row.error || '写入 hosts 失败')
+    await saveConfig({ currentIp: ip, lastApply: { at: row.at, action: 'apply', ip, backup: row.backup } })
+    return row
+  })
 }
 
-async function clearBlock() {
+function clearBlock() {
   if (disposed) throw new Error('插件已停用')
-  await ensureDir()
-  const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-  await writeJson(APPLY_FILE, { action: 'clear', domains: DOMAINS, requestId, at: new Date().toISOString() })
-  await runTask()
-  const row = await waitResult(requestId)
-  if (!row) throw new Error('计划任务没有回结果，检查任务是否被禁用')
-  if (!row.ok) throw new Error(row.error || '恢复 hosts 失败')
-  await saveConfig({ currentIp: '', lastApply: { at: row.at, action: 'clear', ip: '', backup: row.backup } })
-  return row
+  return runHostsExclusive(async () => {
+    await ensureDir()
+    const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    await writeJson(APPLY_FILE, { action: 'clear', domains: DOMAINS, requestId, at: new Date().toISOString() })
+    await runTask()
+    const row = await waitResult(requestId)
+    if (!row) throw new Error('计划任务没有回结果，检查任务是否被禁用')
+    if (!row.ok) throw new Error(row.error || '恢复 hosts 失败')
+    await saveConfig({ currentIp: '', lastApply: { at: row.at, action: 'clear', ip: '', backup: row.backup } })
+    return row
+  })
 }
 
 async function scanNow() {
@@ -204,10 +215,21 @@ async function applyBest() {
 async function installTask() {
   const script = path.join(PLUGIN_DIR, 'scripts', 'install-task.ps1')
   if (!fs.existsSync(script)) throw new Error('安装脚本缺失')
+  const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
   const quoted = script.replace(/'/g, "''")
-  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${quoted}"'`
-  await exec('powershell.exe', ['-NoProfile', '-Command', command], 8000)
-  return { ok: true, message: '已发起安装，请在 UAC 弹窗里点「是」' }
+  const quotedPlugin = PLUGIN_DIR.replace(/'/g, "''")
+  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${quoted}" -PluginDir "${quotedPlugin}" -RequestId "${requestId}"'`
+  try {
+    await exec('powershell.exe', ['-NoProfile', '-Command', command], 120000)
+  } catch (error) {
+    return { ok: false, message: '安装没有完成：' + (error && error.message ? error.message : error) }
+  }
+  const result = await readJson(path.join(DATA_DIR, 'install-result.json'), null)
+  if (!result || result.requestId !== requestId) {
+    return { ok: false, message: '安装脚本没有回结果，检查 UAC 是否被取消' }
+  }
+  if (!result.ok) return { ok: false, message: '安装失败：' + (result.error || '未知错误') }
+  return { ok: true, message: '计划任务已安装' }
 }
 
 function scheduleScan(delayMs, first) {
@@ -218,7 +240,11 @@ function scheduleScan(delayMs, first) {
       const config = await readConfig()
       if (config.enabled) {
         const scan = await scanNow()
-        const currentOk = scan.rows.find((row) => row.ip === config.currentIp && row.ok)
+        let currentOk = scan.rows.find((row) => row.ip === config.currentIp && row.ok)
+        if (config.currentIp && !currentOk) {
+          const currentRow = await scanner.probe(config.currentIp, { host: scanner.TARGET_HOST, timeout: 4000 })
+          if (currentRow.ok) currentOk = currentRow
+        }
         if (config.currentIp && !currentOk && scan.best && scan.best.ip !== config.currentIp) {
           if (disposed) return
           log('当前 IP 失效，自动切换到 ' + scan.best.ip)

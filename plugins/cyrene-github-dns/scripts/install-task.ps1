@@ -1,10 +1,15 @@
+param(
+  [string]$PluginDir = '',
+  [string]$RequestId = ''
+)
+
 $ErrorActionPreference = 'Stop'
 
 # cyrene-github-dns: register the on-demand scheduled task that applies hosts.
 # Run this once with administrator rights (the plugin launches it via UAC).
 # Writes data\install-result.json so the plugin can report the outcome.
 
-$plugin = Split-Path -Parent $PSScriptRoot
+$plugin = if ($PluginDir) { $PluginDir } else { Split-Path -Parent $PSScriptRoot }
 $data = Join-Path $plugin 'data'
 $resultPath = Join-Path $data 'install-result.json'
 $scriptPath = Join-Path $PSScriptRoot 'apply-hosts.ps1'
@@ -83,9 +88,9 @@ try {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
     throw 'registered scheduled task action does not match the expected command'
   }
-  $row = [ordered]@{ ok = $true; task = $taskName; script = $stableScript; source = $scriptPath; at = (Get-Date).ToString('o'); error = '' }
+  $row = [ordered]@{ ok = $true; task = $taskName; script = $stableScript; source = $scriptPath; requestId = $RequestId; at = (Get-Date).ToString('o'); error = '' }
 } catch {
-  $row = [ordered]@{ ok = $false; task = $taskName; script = $stableScript; source = $scriptPath; at = (Get-Date).ToString('o'); error = $_.Exception.Message }
+  $row = [ordered]@{ ok = $false; task = $taskName; script = $stableScript; source = $scriptPath; requestId = $RequestId; at = (Get-Date).ToString('o'); error = $_.Exception.Message }
 }
 
 [System.IO.File]::WriteAllText($resultPath, ($row | ConvertTo-Json -Compress), $utf8)

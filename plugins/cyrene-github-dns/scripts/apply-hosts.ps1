@@ -16,6 +16,59 @@ $markEnd = '# <<< cyrene-github-dns <<<'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $rid = ''
 
+function Test-IPv4([string]$value) {
+  $parts = $value.Split('.')
+  if ($parts.Length -ne 4) { return $false }
+  foreach ($part in $parts) {
+    if ($part -notmatch '^\d{1,3}$') { return $false }
+    if ([int]$part -gt 255) { return $false }
+  }
+  return $true
+}
+
+function Read-HostsDocument([string]$path) {
+  $bytes = [System.IO.File]::ReadAllBytes($path)
+  if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+    return @{ Text = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3); Encoding = 'utf8-bom'; Bytes = $bytes }
+  }
+  if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+    return @{ Text = [System.Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2); Encoding = 'utf16-le'; Bytes = $bytes }
+  }
+  if ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+    return @{ Text = [System.Text.Encoding]::BigEndianUnicode.GetString($bytes, 2, $bytes.Length - 2); Encoding = 'utf16-be'; Bytes = $bytes }
+  }
+  $strict = New-Object System.Text.UTF8Encoding($false, $true)
+  try {
+    $text = $strict.GetString($bytes)
+    return @{ Text = $text; Encoding = 'utf8'; Bytes = $bytes }
+  } catch {
+    return @{ Text = [System.Text.Encoding]::Default.GetString($bytes); Encoding = 'ansi'; Bytes = $bytes }
+  }
+}
+
+function Write-HostsDocument([string]$path, [string]$text, [string]$encoding) {
+  switch ($encoding) {
+    'utf8-bom' { [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($true))); break }
+    'utf16-le' { [System.IO.File]::WriteAllText($path, $text, [System.Text.Encoding]::Unicode); break }
+    'utf16-be' { [System.IO.File]::WriteAllText($path, $text, [System.Text.Encoding]::BigEndianUnicode); break }
+    'utf8' { [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false))); break }
+    default { [System.IO.File]::WriteAllText($path, $text, [System.Text.Encoding]::Default); break }
+  }
+}
+
+function New-BackupPath([string]$requestId) {
+  $suffix = if ($requestId) { $requestId -replace '[^A-Za-z0-9_-]', '' } else { '' }
+  if (-not $suffix) { $suffix = [guid]::NewGuid().ToString('N').Substring(0, 8) }
+  $base = Join-Path $data ('hosts.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + $suffix)
+  $candidate = $base + '.txt'
+  $index = 1
+  while (Test-Path -LiteralPath $candidate) {
+    $candidate = $base + '-' + $index + '.txt'
+    $index++
+  }
+  return $candidate
+}
+
 function Write-Result($ok, $action, $ip, $errorText, $backup, $requestId) {
   $row = [ordered]@{
     ok = $ok
@@ -39,9 +92,10 @@ try {
   $domains = @($request.domains)
   if (-not $domains -or $domains.Count -eq 0) { $domains = @('github.com', 'www.github.com') }
 
-  $raw = [System.IO.File]::ReadAllText($hostsPath)
-  $backup = Join-Path $data ('hosts.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')
-  [System.IO.File]::WriteAllText($backup, $raw, $utf8)
+  $hostsDocument = Read-HostsDocument $hostsPath
+  $raw = $hostsDocument.Text
+  $backup = New-BackupPath $rid
+  [System.IO.File]::WriteAllBytes($backup, $hostsDocument.Bytes)
 
   $lines = $raw -split '\r?\n'
   $out = New-Object System.Collections.Generic.List[string]
@@ -69,7 +123,7 @@ try {
   if ($action -ne 'apply' -and $action -ne 'clear') { throw 'invalid action: ' + $action }
 
   if ($action -eq 'apply') {
-    if ($ip -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { throw 'invalid ip: ' + $ip }
+    if (-not (Test-IPv4 $ip)) { throw 'invalid ip: ' + $ip }
     foreach ($d in $domains) {
       if ($d -ne 'github.com' -and $d -ne 'www.github.com') { throw 'invalid domain: ' + $d }
     }
@@ -80,7 +134,7 @@ try {
   }
 
   $text = ($out -join "`r`n") + "`r`n"
-  [System.IO.File]::WriteAllText($hostsPath, $text, $utf8)
+  Write-HostsDocument $hostsPath $text $hostsDocument.Encoding
   ipconfig /flushdns | Out-Null
   Write-Result $true $action $ip '' $backup $rid
 } catch {
