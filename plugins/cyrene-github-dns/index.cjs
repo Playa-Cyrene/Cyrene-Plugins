@@ -12,7 +12,10 @@ const PLUGIN_DIR = __dirname
 const DATA_DIR = path.join(PLUGIN_DIR, 'data')
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json')
 const APPLY_FILE = path.join(DATA_DIR, 'apply.json')
-const APPLY_RESULT = path.join(DATA_DIR, 'apply-result.json')
+const PROGRAM_DATA = process.env.ProgramData || 'C:\\ProgramData'
+const STATE_DIR = path.join(PROGRAM_DATA, 'cyrene-github-dns')
+const APPLY_RESULT = path.join(STATE_DIR, 'apply-result.json')
+const INSTALL_RESULT = path.join(STATE_DIR, 'install-result.json')
 const SYSTEM_ROOT = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows'
 const HOSTS_PATH = path.join(SYSTEM_ROOT, 'System32', 'drivers', 'etc', 'hosts')
 const TASK_NAME = 'cyrene-github-dns-apply'
@@ -88,11 +91,7 @@ function decodeHosts(buffer) {
 }
 
 async function readHosts() {
-  try {
-    return decodeHosts(await fsp.readFile(HOSTS_PATH))
-  } catch {
-    return ''
-  }
+  return decodeHosts(await fsp.readFile(HOSTS_PATH))
 }
 
 async function readCurrentIp() {
@@ -191,7 +190,14 @@ async function scanNow() {
   scanPromise = (async () => {
     const result = await scanner.scan({ host: scanner.TARGET_HOST, timeout: 4000, concurrency: 5 })
     const config = await readConfig()
-    const currentIp = config.currentIp || await readCurrentIp()
+    let currentIp = config.currentIp
+    if (!currentIp) {
+      try {
+        currentIp = await readCurrentIp()
+      } catch (error) {
+        log('读取 hosts 失败，保留上次状态：' + (error && error.message ? error.message : error))
+      }
+    }
     const lastScan = {
       at: result.scannedAt,
       elapsedMs: result.elapsedMs,
@@ -213,12 +219,20 @@ async function scanNow() {
 
 async function stateNow() {
   const config = await readConfig()
-  const currentIp = await readCurrentIp()
+  let currentIp = config.currentIp
+  let hostsReadOk = true
+  try {
+    currentIp = await readCurrentIp()
+  } catch (error) {
+    hostsReadOk = false
+    log('读取 hosts 失败，保留上次状态：' + (error && error.message ? error.message : error))
+  }
   const task = await taskState()
-  if (currentIp !== config.currentIp) await saveConfig({ currentIp })
+  if (hostsReadOk && currentIp !== config.currentIp) await saveConfig({ currentIp })
   return {
     ok: true,
     currentIp,
+    hostsReadOk,
     installed: task !== 'Missing',
     taskState: task,
     enabled: config.enabled,
@@ -250,7 +264,7 @@ async function installTask() {
   } catch (error) {
     return { ok: false, message: '安装没有完成：' + (error && error.message ? error.message : error) }
   }
-  const result = await readJson(path.join(DATA_DIR, 'install-result.json'), null)
+  const result = await readJson(INSTALL_RESULT, null)
   if (!result || result.requestId !== requestId) {
     return { ok: false, message: '安装脚本没有回结果，检查 UAC 是否被取消' }
   }
@@ -277,10 +291,10 @@ function scheduleScan(delayMs, first) {
           const latestHostsIp = await readCurrentIp()
           if (!latest.enabled || !latest.currentIp || latest.currentIp !== config.currentIp || latestHostsIp !== config.currentIp) {
             log('托管状态已变化，跳过自动切换')
-            return
+          } else {
+            log('当前 IP 失效，自动切换到 ' + scan.best.ip)
+            await applyIp(scan.best.ip)
           }
-          log('当前 IP 失效，自动切换到 ' + scan.best.ip)
-          await applyIp(scan.best.ip)
         }
       }
     } catch (error) {

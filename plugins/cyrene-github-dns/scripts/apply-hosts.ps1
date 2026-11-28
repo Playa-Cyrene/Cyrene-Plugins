@@ -4,14 +4,17 @@ $ErrorActionPreference = 'Stop'
 
 # cyrene-github-dns: apply the requested hosts block.
 # Runs from the scheduled task with highest privileges.
-# Protocol: read data\apply.json, rewrite only our marked block, write data\apply-result.json.
+# Protocol: read data\apply.json (user-writable request), rewrite only our marked block,
+# then write apply-result.json and backups under the protected ProgramData state directory.
 
 $plugin = if ($PluginDir) { $PluginDir } else { Split-Path -Parent $PSScriptRoot }
 $data = Join-Path $plugin 'data'
+$stateDir = Join-Path $env:ProgramData 'cyrene-github-dns'
+$backupDir = Join-Path $stateDir 'backups'
 $systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { 'C:\Windows' }
 $hostsPath = Join-Path $systemRoot 'System32\drivers\etc\hosts'
 $requestPath = Join-Path $data 'apply.json'
-$resultPath = Join-Path $data 'apply-result.json'
+$resultPath = Join-Path $stateDir 'apply-result.json'
 $markStart = '# >>> cyrene-github-dns >>>'
 $markEnd = '# <<< cyrene-github-dns <<<'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -57,10 +60,21 @@ function Write-HostsDocument([string]$path, [string]$text, [string]$encoding) {
   }
 }
 
+function Assert-SafeStateDir() {
+  if (-not (Test-Path -LiteralPath $stateDir)) { throw 'protected state directory missing; reinstall the scheduled task' }
+  $item = Get-Item -LiteralPath $stateDir -Force
+  if (-not $item.PSIsContainer) { throw 'protected state path is not a directory' }
+  if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw 'protected state path is a reparse point' }
+  $owner = (Get-Acl -LiteralPath $stateDir).Owner
+  try { $sid = (New-Object System.Security.Principal.NTAccount($owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = $owner }
+  if ($sid -ne 'S-1-5-32-544' -and $sid -ne 'S-1-5-18') { throw 'protected state directory is not owned by Administrators/SYSTEM' }
+  New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+}
+
 function New-BackupPath([string]$requestId) {
   $suffix = if ($requestId) { $requestId -replace '[^A-Za-z0-9_-]', '' } else { '' }
   if (-not $suffix) { $suffix = [guid]::NewGuid().ToString('N').Substring(0, 8) }
-  $base = Join-Path $data ('hosts.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + $suffix)
+  $base = Join-Path $backupDir ('hosts.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '-' + $suffix)
   $candidate = $base + '.txt'
   $index = 1
   while (Test-Path -LiteralPath $candidate) {
@@ -93,6 +107,7 @@ try {
   $domains = @($request.domains)
   if (-not $domains -or $domains.Count -eq 0) { $domains = @('github.com', 'www.github.com') }
 
+  Assert-SafeStateDir
   $hostsDocument = Read-HostsDocument $hostsPath
   $raw = $hostsDocument.Text
   $backup = New-BackupPath $rid

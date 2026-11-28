@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 
 $plugin = if ($PluginDir) { $PluginDir } else { Split-Path -Parent $PSScriptRoot }
 $data = Join-Path $plugin 'data'
-$resultPath = Join-Path $data 'install-result.json'
+$resultPath = Join-Path $stableDir 'install-result.json'
 $scriptPath = Join-Path $PSScriptRoot 'apply-hosts.ps1'
 $stableDir = Join-Path $env:ProgramData 'cyrene-github-dns'
 $stableScript = Join-Path $stableDir 'apply-hosts.ps1'
@@ -58,19 +58,24 @@ function Set-LockedAcl([string]$target, [string[]]$grant) {
   if ($LASTEXITCODE -ne 0) { throw 'failed to lock down ' + $target }
 }
 
+# Lock the protected state directory before writing any elevated output.
+# Reuse an existing directory only when it is a real directory owned by
+# Administrators/SYSTEM, and lock it before writing anything into it.
 try {
-  if (-not (Test-Path -LiteralPath $scriptPath)) { throw 'apply-hosts.ps1 not found' }
-
-  # Keep the elevated task away from the user-writable plugin directory.
-  # Reuse an existing directory only when it is a real directory owned by
-  # Administrators/SYSTEM, and lock it before copying anything into it.
   if (Test-Path -LiteralPath $stableDir) {
     Assert-SafeDirectory $stableDir
   } else {
     New-Item -ItemType Directory -Path $stableDir | Out-Null
   }
   Set-LockedAcl $stableDir @('*S-1-5-32-544:(OI)(CI)F', '*S-1-5-18:(OI)(CI)F', '*S-1-5-32-545:(OI)(CI)RX')
+} catch {
+  exit 1
+}
 
+try {
+  if (-not (Test-Path -LiteralPath $scriptPath)) { throw 'apply-hosts.ps1 not found' }
+
+  Assert-SafeDirectory $stableDir
   Assert-SafeFile $stableScript
   Copy-Item -Force -Path $scriptPath -Destination $stableScript
   Set-LockedAcl $stableScript @('*S-1-5-32-544:F', '*S-1-5-18:F', '*S-1-5-32-545:RX')
