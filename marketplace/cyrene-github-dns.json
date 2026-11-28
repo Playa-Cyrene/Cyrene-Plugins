@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "features": [
+    "扫描 GitHub 可用入口 IP，按 TLS 握手结果排序并给出延迟",
+    "把选中的 IP 写入 hosts 独立标记块，切换 github.com 的解析入口",
+    "只有一个计划任务负责写入 hosts，插件本身不提权；支持一键恢复",
+    "提供状态面板，查看当前 IP、计划任务状态和上次扫描结果"
+  ],
+  "requirements": [
+    "Windows，支持 apiVersion 1 插件与工具调用的 Cyrene",
+    "首次安装计划任务需要管理员权限并确认一次 UAC",
+    "需要能访问公共 DoH 源和 github.com 的网络环境"
+  ],
+  "setup": [
+    "在 Cyrene 插件市场安装并启用插件，点击插件卡片的「打开」",
+    "点「安装计划任务」，在 UAC 弹窗里确认；更新插件后点「刷新任务」同步固定副本",
+    "点「立即扫描」，等待候选 IP 的 TLS 握手结果",
+    "点「应用最优」写入 hosts；需要撤销时点「恢复 hosts」"
+  ],
+  "dataHandling": [
+    "网络：访问阿里、腾讯、Cloudflare、Google 的公共 DoH 源和 github.com，做 DNS 收集与 TLS 握手验证，不上传本地数据",
+    "文件：读写系统 hosts，只在 # >>> cyrene-github-dns >>> 标记块内增删；每次改写前在插件 data 目录保留备份",
+    "计划任务：注册 cyrene-github-dns-apply，以最高权限执行 C:\\ProgramData\\cyrene-github-dns\\apply-hosts.ps1 固定副本；该目录限制为 Administrators / SYSTEM 可写",
+    "配置与扫描结果保存在插件私有 data 目录；插件与 Cyrene 同权限运行，不自行提权"
+  ],
+  "documentationUrl": "https://github.com/Playa-Cyrene/Cyrene-Plugins/tree/main/plugins/cyrene-github-dns"
+}

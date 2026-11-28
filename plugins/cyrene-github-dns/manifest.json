@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "cyrene-github-dns",
+  "name": "GitHub 入口 IP",
+  "version": "0.1.0",
+  "description": "扫描 GitHub 可用入口 IP，按需维护 hosts，解决 github.com 打不开或握手失败的问题",
+  "author": "昔涟 & 柒柒",
+  "entry": "index.cjs",
+  "icon": "icon.svg",
+  "defaultEnabled": false
+}
