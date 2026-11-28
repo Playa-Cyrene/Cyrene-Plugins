@@ -13,7 +13,8 @@ const DATA_DIR = path.join(PLUGIN_DIR, 'data')
 const CONFIG_FILE = path.join(DATA_DIR, 'config.json')
 const APPLY_FILE = path.join(DATA_DIR, 'apply.json')
 const APPLY_RESULT = path.join(DATA_DIR, 'apply-result.json')
-const HOSTS_PATH = 'C:\\Windows\\System32\\drivers\\etc\\hosts'
+const SYSTEM_ROOT = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows'
+const HOSTS_PATH = path.join(SYSTEM_ROOT, 'System32', 'drivers', 'etc', 'hosts')
 const TASK_NAME = 'cyrene-github-dns-apply'
 const MARK_START = '# >>> cyrene-github-dns >>>'
 const MARK_END = '# <<< cyrene-github-dns <<<'
@@ -24,6 +25,7 @@ let win = null
 let scanTimer = null
 let scanPromise = null
 let hostsQueue = Promise.resolve()
+let configQueue = Promise.resolve()
 let ctxRef = null
 let disposed = false
 
@@ -58,16 +60,36 @@ async function readConfig() {
   return Object.assign({}, DEFAULT_CONFIG, saved || {})
 }
 
-async function saveConfig(patch) {
-  const config = await readConfig()
-  Object.assign(config, patch)
-  await writeJson(CONFIG_FILE, config)
-  return config
+function saveConfig(patch) {
+  const run = async () => {
+    const config = await readConfig()
+    Object.assign(config, patch)
+    await writeJson(CONFIG_FILE, config)
+    return config
+  }
+  const next = configQueue.then(run, run)
+  configQueue = next.catch(() => {})
+  return next
+}
+
+function decodeHosts(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return buffer.subarray(3).toString('utf8')
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+    return buffer.subarray(2).toString('utf16le')
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+    const swapped = Buffer.from(buffer.subarray(2))
+    swapped.swap16()
+    return swapped.toString('utf16le')
+  }
+  return buffer.toString('utf8')
 }
 
 async function readHosts() {
   try {
-    return await fsp.readFile(HOSTS_PATH, 'utf8')
+    return decodeHosts(await fsp.readFile(HOSTS_PATH))
   } catch {
     return ''
   }
@@ -130,6 +152,7 @@ function applyIp(ip) {
   if (disposed) throw new Error('插件已停用')
   if (!scanner.isIPv4(ip)) throw new Error('IP 格式不对')
   return runHostsExclusive(async () => {
+    if (disposed) throw new Error('插件已停用')
     await ensureDir()
     const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
     await writeJson(APPLY_FILE, { action: 'apply', ip, domains: DOMAINS, requestId, at: new Date().toISOString() })
@@ -150,6 +173,7 @@ function applyIp(ip) {
 function clearBlock() {
   if (disposed) throw new Error('插件已停用')
   return runHostsExclusive(async () => {
+    if (disposed) throw new Error('插件已停用')
     await ensureDir()
     const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
     await writeJson(APPLY_FILE, { action: 'clear', domains: DOMAINS, requestId, at: new Date().toISOString() })
@@ -218,7 +242,9 @@ async function installTask() {
   const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
   const quoted = script.replace(/'/g, "''")
   const quotedPlugin = PLUGIN_DIR.replace(/'/g, "''")
-  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${quoted}" -PluginDir "${quotedPlugin}" -RequestId "${requestId}"'`
+  const taskUser = [process.env.USERDOMAIN, process.env.USERNAME].filter(Boolean).join('\\')
+  const quotedUser = taskUser.replace(/'/g, "''")
+  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${quoted}" -PluginDir "${quotedPlugin}" -RequestId "${requestId}" -TaskUser "${quotedUser}"'`
   try {
     await exec('powershell.exe', ['-NoProfile', '-Command', command], 120000)
   } catch (error) {
@@ -247,6 +273,12 @@ function scheduleScan(delayMs, first) {
         }
         if (config.currentIp && !currentOk && scan.best && scan.best.ip !== config.currentIp) {
           if (disposed) return
+          const latest = await readConfig()
+          const latestHostsIp = await readCurrentIp()
+          if (!latest.enabled || !latest.currentIp || latest.currentIp !== config.currentIp || latestHostsIp !== config.currentIp) {
+            log('托管状态已变化，跳过自动切换')
+            return
+          }
           log('当前 IP 失效，自动切换到 ' + scan.best.ip)
           await applyIp(scan.best.ip)
         }

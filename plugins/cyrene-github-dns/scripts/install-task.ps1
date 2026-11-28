@@ -1,6 +1,7 @@
 param(
   [string]$PluginDir = '',
-  [string]$RequestId = ''
+  [string]$RequestId = '',
+  [string]$TaskUser = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -79,7 +80,8 @@ try {
   $argument = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $stableScript + '" -PluginDir "' + $plugin + '"'
   $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argument
   if ($action.Arguments -ne $argument) { throw 'scheduled task action did not preserve the argument string' }
-  $user = "$env:USERDOMAIN\$env:USERNAME"
+  $user = if ($TaskUser) { $TaskUser } else { "$env:USERDOMAIN\$env:USERNAME" }
+  if (-not $user) { throw 'cannot determine the interactive user for the scheduled task' }
   $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -MultipleInstances IgnoreNew
   Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null

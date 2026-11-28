@@ -128,6 +128,12 @@
       try { return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }) } catch { return '—' }
     }
 
+    function escHtml(value) {
+      return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[ch]))
+    }
+
     function setMessage(text, kind) {
       const el = $('msg')
       el.textContent = text || ''
@@ -163,12 +169,12 @@
       $('rows').innerHTML = rows.map((row) => {
         const status = row.ok ? '可用' : shortError(row.error)
         const cls = row.ok ? 'ok' : 'bad'
-        const title = row.error ? String(row.error).replace(/"/g, '&quot;') : ''
+        const title = row.error ? escHtml(row.error) : ''
         return '<tr>'
-          + '<td>' + row.ip + '</td>'
-          + '<td class="' + cls + '" title="' + title + '">' + status + '</td>'
+          + '<td>' + escHtml(row.ip) + '</td>'
+          + '<td class="' + cls + '" title="' + title + '">' + escHtml(status) + '</td>'
           + '<td>' + (row.ms ? row.ms + ' ms' : '—') + '</td>'
-          + '<td class="muted">' + ((row.sources || []).join(' / ') || '—') + '</td>'
+          + '<td class="muted">' + escHtml((row.sources || []).join(' / ') || '—') + '</td>'
           + '</tr>'
       }).join('')
     }

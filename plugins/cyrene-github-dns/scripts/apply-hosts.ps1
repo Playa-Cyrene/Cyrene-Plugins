@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 
 $plugin = if ($PluginDir) { $PluginDir } else { Split-Path -Parent $PSScriptRoot }
 $data = Join-Path $plugin 'data'
-$hostsPath = 'C:\Windows\System32\drivers\etc\hosts'
+$systemRoot = if ($env:SystemRoot) { $env:SystemRoot } else { 'C:\Windows' }
+$hostsPath = Join-Path $systemRoot 'System32\drivers\etc\hosts'
 $requestPath = Join-Path $data 'apply.json'
 $resultPath = Join-Path $data 'apply-result.json'
 $markStart = '# >>> cyrene-github-dns >>>'
