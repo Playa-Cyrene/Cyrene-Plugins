@@ -22,7 +22,7 @@ const DEFAULT_CONFIG = { enabled: true, intervalMinutes: 10, currentIp: '', last
 
 let win = null
 let scanTimer = null
-let scanBusy = false
+let scanPromise = null
 let ctxRef = null
 let disposed = false
 
@@ -152,9 +152,8 @@ async function clearBlock() {
 }
 
 async function scanNow() {
-  if (scanBusy) return (await readConfig()).lastScan
-  scanBusy = true
-  try {
+  if (scanPromise) return scanPromise
+  scanPromise = (async () => {
     const result = await scanner.scan({ host: scanner.TARGET_HOST, timeout: 4000, concurrency: 5 })
     const config = await readConfig()
     const currentIp = config.currentIp || await readCurrentIp()
@@ -169,8 +168,11 @@ async function scanNow() {
     }
     await saveConfig({ currentIp, lastScan })
     return lastScan
+  })()
+  try {
+    return await scanPromise
   } finally {
-    scanBusy = false
+    scanPromise = null
   }
 }
 
@@ -203,7 +205,7 @@ async function installTask() {
   const script = path.join(PLUGIN_DIR, 'scripts', 'install-task.ps1')
   if (!fs.existsSync(script)) throw new Error('安装脚本缺失')
   const quoted = script.replace(/'/g, "''")
-  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','${quoted}'`
+  const command = `Start-Process -FilePath powershell.exe -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File "${quoted}"'`
   await exec('powershell.exe', ['-NoProfile', '-Command', command], 8000)
   return { ok: true, message: '已发起安装，请在 UAC 弹窗里点「是」' }
 }
@@ -217,7 +219,7 @@ function scheduleScan(delayMs, first) {
       if (config.enabled) {
         const scan = await scanNow()
         const currentOk = scan.rows.find((row) => row.ip === config.currentIp && row.ok)
-        if (!currentOk && scan.best && scan.best.ip !== config.currentIp) {
+        if (config.currentIp && !currentOk && scan.best && scan.best.ip !== config.currentIp) {
           if (disposed) return
           log('当前 IP 失效，自动切换到 ' + scan.best.ip)
           await applyIp(scan.best.ip)
@@ -267,7 +269,7 @@ async function register(ctx) {
     name: '扫描 GitHub 入口 IP',
     description: '从多个 DoH 源和系统 DNS 收集 github.com 候选 IP，逐个做 TLS 握手验证，返回可用列表。用户说 GitHub 打不开、扫描入口 IP 时使用。',
     enabled: true,
-    risk: 'safe',
+    risk: 'network',
     effectKind: 'read',
     inputSchema: { type: 'object', properties: {}, required: [] },
     async execute() {
